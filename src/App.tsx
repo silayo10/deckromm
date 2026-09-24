@@ -1,0 +1,731 @@
+import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, Square } from 'lucide-react';
+import { Collection, DownloadItem, FilterTag, Game, LibraryViewMode, NavigationAction, Platform, RommConfig, SortOption } from './types';
+import { AuthStatus, EmulatorStateEvent, RomProgressEvent } from './env/electron';
+import { rommApi } from './services/rommApi';
+import { bridge, isNativeApp } from './services/bridge';
+import { markPlayed } from './services/cloudSaves';
+import { gamepadService } from './services/gamepadService';
+import { focusManager, isTextInput } from './services/focusManager';
+import { soundService } from './services/soundService';
+import { useFocusScope } from './hooks/useFocusScope';
+import { HeaderBar } from './components/HeaderBar';
+import { LibrarySource, PlatformBar, sourceKey } from './components/PlatformBar';
+import { SearchFilterBar, VIEW_MODES } from './components/SearchFilterBar';
+import { GameGrid } from './components/GameGrid';
+import { GameDetailModal } from './components/GameDetailModal';
+import { LoginOverlay } from './components/LoginOverlay';
+import { MainMenu } from './components/MainMenu';
+import { SettingsScreen } from './components/SettingsScreen';
+import { DownloadsPanel } from './components/DownloadsPanel';
+import { KeyboardMode, VirtualKeyboardModal } from './components/VirtualKeyboardModal';
+import { ControllerHUD, HudHint } from './components/ControllerHUD';
+import { FocusScope } from './components/FocusScope';
+import { WebEmulatorModal } from './components/WebEmulatorModal';
+
+interface KeyboardRequest {
+  input: HTMLInputElement | HTMLTextAreaElement;
+  title: string;
+  mode: KeyboardMode;
+  value: string;
+  placeholder: string;
+}
+
+interface Toast {
+  id: number;
+  text: string;
+  tone: 'info' | 'ok' | 'error';
+}
+
+/** Set an input's value so React's onChange fires (used by the on-screen keyboard). */
+function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function playersOf(g: Game): number {
+  const n = typeof g.players === 'number' ? g.players : parseInt(String(g.players || '').replace(/^.*-/, ''), 10);
+  return Number.isFinite(n) ? n : 1;
+}
+
+function sourceLabel(s: LibrarySource) {
+  switch (s.kind) {
+    case 'all': return 'All Games';
+    case 'recent': return 'Recently Played';
+    case 'favorites': return 'Favorites';
+    case 'installed': return 'On this Deck';
+    case 'platform': return s.platform.name;
+    case 'collection': return s.collection.name;
+  }
+}
+
+export default function App() {
+  const [booted, setBooted] = useState(false);
+  const [config, setConfig] = useState<RommConfig>(rommApi.getConfig());
+  const [auth, setAuth] = useState<AuthStatus>(rommApi.getAuthStatus());
+  const [login, setLogin] = useState<{ open: boolean; reason?: string }>({ open: false });
+
+  const [platforms, setPlatforms] = useState<Platform[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [source, setSource] = useState<LibrarySource>({ kind: 'all' });
+  const [games, setGames] = useState<Game[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const filter: FilterTag = config.filterTag || 'all';
+  const sortBy: SortOption = config.sortBy || 'title';
+  const viewMode: LibraryViewMode = config.viewMode || 'grid';
+
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  const [playingGame, setPlayingGame] = useState<Game | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const [keyboard, setKeyboard] = useState<KeyboardRequest | null>(null);
+  const [downloads, setDownloads] = useState<Record<string, DownloadItem>>({});
+  const [emulator, setEmulator] = useState<EmulatorStateEvent>({ running: false });
+  const [exiting, setExiting] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusGridOnLoad = useRef(true);
+  const gamesRef = useRef<Game[]>([]);
+  gamesRef.current = games;
+
+  const ready = booted && (auth.authenticated || config.isDemoMode);
+
+  // ------------------------------------------------------------ toasts
+  const toast = useCallback((text: string, tone: Toast['tone'] = 'info') => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t.slice(-3), { id, text, tone }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === 'error' ? 6000 : 3500);
+  }, []);
+
+  // ------------------------------------------------------------ boot
+  useEffect(() => {
+    focusManager.init();
+    let alive = true;
+    rommApi
+      .init()
+      .then((cfg) => {
+        if (!alive) return;
+        const a = rommApi.getAuthStatus();
+        soundService.enabled = cfg.audioFeedback !== false;
+        setConfig(cfg);
+        setAuth(a);
+        if (!a.authenticated && !cfg.isDemoMode) setLogin({ open: true });
+      })
+      .catch((e) => {
+        console.error('init failed', e);
+        setLogin({ open: true, reason: `Startup error: ${e?.message || e}` });
+      })
+      .finally(() => alive && setBooted(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 401/403 anywhere -> gamepad login overlay (library stays mounted underneath).
+  useEffect(
+    () =>
+      rommApi.onAuthRequired((info) => {
+        setAuth(rommApi.getAuthStatus());
+        setLogin({ open: true, reason: info.message || `Your RomM session expired (HTTP ${info.status}). Please sign in again.` });
+      }),
+    []
+  );
+
+  // ------------------------------------------------------------ native events
+  useEffect(() => {
+    const offProgress = bridge.on('rom:progress', (ev: RomProgressEvent) => {
+      setDownloads((d) => {
+        const prev = d[ev.romId];
+        const game = gamesRef.current.find((g) => String(g.id) === ev.romId);
+        const total = ev.total || prev?.fileSizeBytes || game?.fileSizeBytes || 0;
+        const item: DownloadItem = {
+          id: ev.romId,
+          gameId: ev.romId,
+          title: prev?.title || game?.title || `ROM ${ev.romId}`,
+          platform: prev?.platform || game?.platformName || '',
+          fileSizeBytes: total,
+          bytesDownloaded: ev.loaded,
+          progress: ev.status === 'completed' ? 100 : total ? Math.min(99.9, (ev.loaded / total) * 100) : 0,
+          speedMbps: ev.speedMbps,
+          status: ev.status === 'cancelled' ? 'error' : ev.status,
+          errorMessage: ev.status === 'cancelled' ? 'Cancelled' : ev.message,
+          startedAt: prev?.startedAt || Date.now(),
+          completedAt: ev.status === 'completed' ? Date.now() : undefined,
+        };
+        return { ...d, [ev.romId]: item };
+      });
+      if (ev.status === 'completed') {
+        const patch = (g: Game) => (String(g.id) === ev.romId ? { ...g, isInstalled: true, localPath: ev.path || g.localPath } : g);
+        startTransition(() => setGames((list) => list.map(patch)));
+        setSelectedGame((g) => (g ? patch(g) : g));
+      } else if (ev.status === 'error') {
+        toast(`Download failed: ${ev.message || 'unknown error'}`, 'error');
+      }
+    });
+
+    const offEmu = bridge.on('emulator:state', (ev) => {
+      setEmulator(ev);
+      gamepadService.setSuspended(ev.running);
+      if (!ev.running && ev.error) toast(`Emulator error: ${ev.error}`, 'error');
+      else if (!ev.running && ev.title) toast(`Finished playing ${ev.title}`, 'info');
+    });
+
+    // Desktop mode: if the user alt-tabs back while a game runs, allow "Stop game".
+    const offFocus = bridge.on('window:focus', ({ focused }) => {
+      bridge.emulator.status().then((s) => gamepadService.setSuspended(s.running && !focused)).catch(() => {});
+    });
+
+    const offQuit = bridge.on('app:shutting-down', () => {
+      setExiting(true);
+      gamepadService.destroy(); // release every held button, stop the rAF poller
+    });
+
+    if (isNativeApp) bridge.emulator.status().then(setEmulator).catch(() => {});
+    return () => {
+      offProgress();
+      offEmu();
+      offFocus();
+      offQuit();
+    };
+  }, [toast]);
+
+  // ------------------------------------------------------------ data loading (never blocks rendering)
+  useEffect(() => {
+    if (!ready) return;
+    let alive = true;
+    Promise.all([rommApi.getPlatforms(), rommApi.getCollections()]).then(([p, c]) => {
+      if (!alive) return;
+      startTransition(() => {
+        setPlatforms(p);
+        setCollections(c);
+      });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [ready, reloadToken]);
+
+  const activeKey = sourceKey(source);
+  useEffect(() => {
+    if (!ready) return;
+    const ctrl = new AbortController();
+    setLoading(true);
+    setLoadError(null);
+    startTransition(() => setGames([]));
+    const q =
+      source.kind === 'platform'
+        ? { platform: source.platform }
+        : source.kind === 'collection'
+        ? { collectionId: source.collection.id }
+        : {};
+    (source.kind === 'recent'
+      ? rommApi.getRecentlyPlayed(30, ctrl.signal)
+      : rommApi.getGamesPaged({
+          ...q,
+          signal: ctrl.signal,
+          onPage: (list) => {
+            if (!ctrl.signal.aborted) startTransition(() => setGames(list));
+          },
+        }))
+      .then((list) => {
+        if (!ctrl.signal.aborted) startTransition(() => setGames(list));
+      })
+      .catch((e) => {
+        if (ctrl.signal.aborted || e?.name === 'AbortError') return;
+        const err = rommApi.getLastError();
+        if (!err?.requiresAuth) {
+          setLoadError(e?.message || 'Could not load games');
+          toast(`Library error: ${e?.message || e}`, 'error');
+        }
+      })
+      .finally(() => !ctrl.signal.aborted && setLoading(false));
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, activeKey, reloadToken, config.hideInfoFiles]);
+
+  const visibleGames = useMemo(() => {
+    const term = deferredSearch.trim().toLowerCase();
+    let list = games;
+    if (source.kind === 'favorites') list = list.filter((g) => g.isFavorite);
+    if (source.kind === 'installed') list = list.filter((g) => g.isInstalled || g.isCached);
+    if (term) list = list.filter((g) => g.title.toLowerCase().includes(term) || g.fileName?.toLowerCase().includes(term));
+    switch (filter) {
+      case 'cached': list = list.filter((g) => g.isInstalled || g.isCached); break;
+      case 'favorites': list = list.filter((g) => g.isFavorite); break;
+      case 'streamable': list = list.filter((g) => g.playableOnline !== false); break;
+      case 'multiplayer': list = list.filter((g) => playersOf(g) > 1); break;
+    }
+    const sorted = [...list];
+    const lp = (g: Game) => (g.lastPlayed ? Date.parse(g.lastPlayed) || 0 : 0);
+    // Recently Played keeps its own order (newest first) regardless of the sort setting.
+    if (source.kind === 'recent') return sorted.sort((a, b) => lp(b) - lp(a));
+    const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' });
+    switch (sortBy) {
+      case 'recent': {
+        // v1 subtracted ISO strings (NaN) - compare timestamps instead.
+        const t = (g: Game) => (g.lastPlayed ? Date.parse(g.lastPlayed) || 0 : 0);
+        sorted.sort((a, b) => t(b) - t(a) || byTitle(a, b));
+        break;
+      }
+      case 'rating': sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0) || byTitle(a, b)); break;
+      case 'year': sorted.sort((a, b) => (b.releaseYear || 0) - (a.releaseYear || 0) || byTitle(a, b)); break;
+      case 'size': sorted.sort((a, b) => (b.fileSizeBytes || 0) - (a.fileSizeBytes || 0)); break;
+      default: sorted.sort(byTitle);
+    }
+    return sorted;
+  }, [games, deferredSearch, filter, sortBy, source.kind]);
+
+  // Land on the first cover after boot / platform switch.
+  useEffect(() => {
+    if (focusGridOnLoad.current && visibleGames.length > 0) {
+      focusGridOnLoad.current = false;
+      requestAnimationFrame(() => {
+        const cur = focusManager.getCurrent();
+        if (!cur || !cur.closest('[data-focus-memory="platforms"]')) focusManager.focusSelector('[data-game-id]');
+      });
+    }
+  }, [visibleGames]);
+
+  const sources: LibrarySource[] = useMemo(
+    () => [
+      { kind: 'all' },
+      { kind: 'recent' },
+      { kind: 'favorites' },
+      ...(isNativeApp ? [{ kind: 'installed' } as LibrarySource] : []),
+      ...platforms.map((p) => ({ kind: 'platform', platform: p }) as LibrarySource),
+      ...collections.map((c) => ({ kind: 'collection', collection: c }) as LibrarySource),
+    ],
+    [platforms, collections]
+  );
+
+  const selectSource = useCallback((s: LibrarySource) => {
+    focusGridOnLoad.current = !document.activeElement?.closest('[data-focus-memory="platforms"]');
+    setSource(s);
+  }, []);
+
+  const cycleSource = (delta: number) => {
+    const idx = Math.max(0, sources.findIndex((s) => sourceKey(s) === activeKey));
+    const next = sources[(idx + delta + sources.length) % sources.length];
+    focusGridOnLoad.current = true;
+    setSource(next);
+  };
+
+  // ------------------------------------------------------------ config
+  const updateConfig = useCallback((patch: Partial<RommConfig>) => {
+    if (patch.audioFeedback !== undefined) soundService.enabled = patch.audioFeedback;
+    setConfig(rommApi.saveConfig(patch));
+  }, []);
+
+  const refresh = useCallback(() => {
+    toast('Refreshing library');
+    setReloadToken((n) => n + 1);
+  }, [toast]);
+
+  // ------------------------------------------------------------ on-screen keyboard
+  useEffect(() => {
+    focusManager.onEditRequest = (input) => {
+      setKeyboard({
+        input,
+        title: input.getAttribute('data-keyboard-title') || input.getAttribute('placeholder') || 'Enter text',
+        mode: (input.getAttribute('data-keyboard-mode') as KeyboardMode) || (input.type === 'password' ? 'password' : 'text'),
+        value: input.value,
+        placeholder: input.getAttribute('placeholder') || '',
+      });
+    };
+    return () => {
+      focusManager.onEditRequest = null;
+    };
+  }, []);
+
+  const submitKeyboard = (text: string) => {
+    if (!keyboard) return;
+    const { input } = keyboard;
+    setNativeValue(input, text);
+    setKeyboard(null);
+    if (input.id === 'header-search' && text.trim()) {
+      focusGridOnLoad.current = false;
+      setTimeout(() => focusManager.focusSelector('[data-game-id]'), 60);
+    }
+  };
+
+  const openSearch = () => {
+    const el = document.getElementById('header-search');
+    if (el && isTextInput(el)) {
+      focusManager.focus(el);
+      focusManager.onEditRequest?.(el);
+    }
+  };
+
+  // ------------------------------------------------------------ game actions
+  const patchGame = (id: string | number, patch: Partial<Game>) => {
+    const key = String(id);
+    startTransition(() => setGames((list) => list.map((g) => (String(g.id) === key ? { ...g, ...patch } : g))));
+    setSelectedGame((g) => (g && String(g.id) === key ? { ...g, ...patch } : g));
+  };
+
+  /** Update last-played locally; on the Recently Played tab, move the game to the front. */
+  const handlePlayed = (game: Game, lastPlayed: string) => {
+    patchGame(game.id, { lastPlayed });
+    if (source.kind === 'recent') {
+      startTransition(() =>
+        setGames((list) => (list.some((g) => String(g.id) === String(game.id)) ? list : [{ ...game, lastPlayed }, ...list]))
+      );
+    }
+  };
+
+  const handleDownload = async (game: Game, force = true) => {
+    if (!isNativeApp) return toast('Downloads to the Deck require the desktop app', 'error');
+    setDownloads((d) => ({
+      ...d,
+      [String(game.id)]: {
+        id: String(game.id), gameId: game.id, title: game.title, platform: game.platformName,
+        fileSizeBytes: game.fileSizeBytes, bytesDownloaded: 0, progress: 0, speedMbps: 0, status: 'queued', startedAt: Date.now(),
+      },
+    }));
+    toast(`Downloading ${game.title}`);
+    const r = await rommApi.downloadToDeck(game, force && Boolean(game.isInstalled));
+    if (r.ok) {
+      patchGame(game.id, { isInstalled: true, localPath: r.path });
+      if (!r.cached) toast(`${game.title} is ready to play`, 'ok');
+    } else if (!r.cancelled && !r.authRequired) {
+      toast(r.message || 'Download failed', 'error');
+    }
+  };
+
+  const handleCancelDownload = (id: string | number) => {
+    void rommApi.cancelDownload(id);
+  };
+
+  const handleLaunch = async (game: Game) => {
+    if (emulator.running) return toast('A game is already running', 'error');
+    toast(game.isInstalled ? `Starting ${game.title}` : `Downloading ${game.title} before launch`);
+    const r = await rommApi.launchNative(game);
+    if (r.success) {
+      handlePlayed(game, new Date().toISOString());
+      patchGame(game.id, { isInstalled: true });
+      // Record the play on RomM so Recently Played matches on every device.
+      markPlayed(game).then((ts) => ts && handlePlayed(game, ts));
+    } else {
+      toast(r.message, 'error');
+    }
+  };
+
+  const handleDelete = async (game: Game) => {
+    const r = await rommApi.deleteLocal(game);
+    if (r.ok) {
+      patchGame(game.id, { isInstalled: false, localPath: undefined });
+      toast(`Removed ${game.title} from this Deck`, 'ok');
+    } else toast('Could not delete the file', 'error');
+  };
+
+  const handleFavorite = (game: Game) => {
+    const fav = rommApi.toggleFavorite(game.id);
+    patchGame(game.id, { isFavorite: fav });
+    soundService.playSuccess();
+  };
+
+  const openGame = useCallback((g: Game) => setSelectedGame(g), []);
+
+  // The detail modal is closed while playing (it used to stay stacked above the
+  // player) and re-opened on exit so the user lands back where they started.
+  const resumeDetailRef = useRef<Game | null>(null);
+  const playInBrowser = (g: Game) => {
+    focusManager.setEnabled(false);
+    resumeDetailRef.current = selectedGame;
+    setSelectedGame(null);
+    setPlayingGame(g);
+  };
+  const closeBrowserPlayer = () => {
+    setPlayingGame(null);
+    gamepadService.setEmulationMode(false);
+    // Wait for the button that confirmed "Exit" to be released; otherwise the
+    // same press is delivered to the re-opened detail modal and closes it.
+    const resume = resumeDetailRef.current;
+    resumeDetailRef.current = null;
+    window.setTimeout(() => {
+      if (resume) setSelectedGame(resume);
+      focusManager.setEnabled(true);
+      requestAnimationFrame(() => focusManager.ensureFocus());
+    }, 300);
+  };
+
+  // ------------------------------------------------------------ auth actions
+  const onLoggedIn = () => {
+    setAuth(rommApi.getAuthStatus());
+    setConfig(rommApi.getConfig());
+    setLogin({ open: false });
+    focusGridOnLoad.current = true;
+    setReloadToken((n) => n + 1);
+    toast(`Signed in to ${rommApi.getAuthStatus().baseUrl}`, 'ok');
+  };
+
+  const onDemo = () => {
+    setConfig(rommApi.saveConfig({ isDemoMode: true, firstLaunchSetupCompleted: true }));
+    setLogin({ open: false });
+    focusGridOnLoad.current = true;
+    setReloadToken((n) => n + 1);
+  };
+
+  const logout = async () => {
+    setMenuOpen(false);
+    setSettingsOpen(false);
+    await rommApi.logout();
+    setConfig(rommApi.saveConfig({ isDemoMode: false }));
+    setAuth(rommApi.getAuthStatus());
+    setGames([]);
+    setPlatforms([]);
+    setCollections([]);
+    setSource({ kind: 'all' });
+    setLogin({ open: true });
+  };
+
+  const exitToSteam = async () => {
+    setExiting(true);
+    soundService.playBack();
+    gamepadService.destroy();
+    await bridge.app.quit();
+  };
+
+  // ------------------------------------------------------------ root (library) controller bindings
+  const rootAction = (a: NavigationAction): boolean => {
+    switch (a) {
+      case 'MENU': setMenuOpen(true); return true;
+      case 'FILTER': setSettingsOpen(true); return true;
+      case 'ACTION_X': refresh(); return true;
+      case 'ACTION_Y': openSearch(); return true;
+      case 'PREV_PLATFORM': cycleSource(-1); return true;
+      case 'NEXT_PLATFORM': cycleSource(1); return true;
+      case 'VIEW_MODE_TOGGLE':
+        updateConfig({ viewMode: VIEW_MODES[(VIEW_MODES.indexOf(viewMode) + 1) % VIEW_MODES.length] });
+        return true;
+      case 'HELP':
+        toast('A open  B back  X refresh  Y search  L1/R1 platform  Start menu  Select settings  R-stick scroll');
+        return true;
+      case 'BACK': {
+        if (search) {
+          setSearch('');
+          return true;
+        }
+        const cur = focusManager.getCurrent();
+        if (!cur?.hasAttribute('data-game-id')) focusManager.focusSelector('[data-game-id]');
+        else focusManager.focusSelector('[data-focus-memory="platforms"] [data-focusable]');
+        return true;
+      }
+      default:
+        return false;
+    }
+  };
+  useFocusScope(rootRef, { name: 'library', base: true, onAction: rootAction, initialFocus: '[data-game-id]', active: booted });
+
+  // ------------------------------------------------------------ HUD hints
+  const hints: HudHint[] = keyboard
+    ? []
+    : login.open
+    ? [{ button: 'A', label: 'Select' }, { button: 'X', label: 'Test' }, { button: 'START', label: 'Sign in' }]
+    : selectedGame
+    ? [{ button: 'A', label: 'Select' }, { button: 'B', label: 'Back' }, { button: 'X', label: 'Download' }, { button: 'Y', label: 'Favorite' }, { button: 'R-STICK', label: 'Scroll' }]
+    : menuOpen || settingsOpen || downloadsOpen
+    ? [{ button: 'A', label: 'Select' }, { button: 'B', label: 'Back' }]
+    : [
+        { button: 'A', label: 'Open' },
+        { button: 'X', label: 'Refresh' },
+        { button: 'Y', label: 'Search' },
+        { button: 'LB', label: 'Platform' },
+        { button: 'SELECT', label: 'Settings' },
+        { button: 'START', label: 'Menu' },
+      ];
+
+  const progressById = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const d of Object.values(downloads)) if (d.status === 'downloading' || d.status === 'queued') out[d.id] = d.progress;
+    return out;
+  }, [downloads]);
+  const activeDownloads = Object.keys(progressById).length;
+  const serverLabel = config.isDemoMode ? 'Demo library' : (auth.baseUrl || config.serverUrl || 'No server').replace(/^https?:\/\//, '');
+
+  // ------------------------------------------------------------ render
+  if (!booted) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 bg-deck-bg">
+        <div className="text-4xl font-extrabold tracking-tight">DeckRomM</div>
+        <Loader2 className="animate-spin text-deck-accent" size={32} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full w-full flex flex-col overflow-hidden">
+      <div ref={rootRef} className="flex-1 min-h-0 flex flex-col">
+        <HeaderBar
+          title={sourceLabel(source)}
+          subtitle={auth.username ? `Signed in as ${auth.username}` : config.isDemoMode ? 'Demo mode' : undefined}
+          searchQuery={search}
+          onSearchChange={setSearch}
+          onOpenMenu={() => setMenuOpen(true)}
+          onOpenDownloads={() => setDownloadsOpen(true)}
+          activeDownloads={activeDownloads}
+          connected={auth.authenticated || config.isDemoMode}
+          serverLabel={serverLabel}
+        />
+        <PlatformBar sources={sources} active={source} onSelect={selectSource} />
+        <SearchFilterBar
+          filter={filter}
+          onFilterChange={(f) => updateConfig({ filterTag: f })}
+          sortBy={sortBy}
+          onSortChange={(s) => updateConfig({ sortBy: s })}
+          viewMode={viewMode}
+          onViewModeChange={(v) => updateConfig({ viewMode: v })}
+          resultCount={visibleGames.length}
+          totalCount={games.length}
+          loading={loading}
+          onRefresh={refresh}
+        />
+        <GameGrid
+          games={visibleGames}
+          viewMode={viewMode}
+          loading={loading}
+          progressById={progressById}
+          onOpen={openGame}
+          emptyMessage={loadError ? `Could not load the library: ${loadError}. Press X to retry.` : search ? `No games match "${search}"` : 'No games here yet'}
+        />
+      </div>
+
+      <ControllerHUD
+        hints={hints}
+        status={emulator.running ? `Playing ${emulator.title || ''}` : activeDownloads ? `${activeDownloads} download(s) in progress` : serverLabel}
+      />
+
+      {selectedGame && (
+        <GameDetailModal
+          game={selectedGame}
+          isNative={isNativeApp}
+          progress={progressById[String(selectedGame.id)]}
+          emulatorRunning={emulator.running}
+          onClose={() => setSelectedGame(null)}
+          onLaunch={handleLaunch}
+          onDownload={(g) => handleDownload(g)}
+          onCancelDownload={(g) => handleCancelDownload(g.id)}
+          onDelete={handleDelete}
+          onPlayInBrowser={playInBrowser}
+          onToggleFavorite={handleFavorite}
+          onGameUpdated={(g) => patchGame(g.id, { summary: g.summary, screenshots: g.screenshots, isInstalled: g.isInstalled, localPath: g.localPath })}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsScreen
+          config={config}
+          auth={auth}
+          onChange={updateConfig}
+          onClose={() => setSettingsOpen(false)}
+          onSignIn={() => setLogin({ open: true })}
+          onLogout={logout}
+        />
+      )}
+
+      {downloadsOpen && (
+        <DownloadsPanel
+          items={Object.values(downloads).sort((a, b) => b.startedAt - a.startedAt)}
+          onCancel={(d) => handleCancelDownload(d.gameId)}
+          onClearFinished={() => setDownloads((d) => Object.fromEntries(Object.entries(d).filter(([, v]) => v.status === 'downloading' || v.status === 'queued')))}
+          onClose={() => setDownloadsOpen(false)}
+        />
+      )}
+
+      {menuOpen && (
+        <MainMenu
+          username={auth.username}
+          serverLabel={serverLabel}
+          authenticated={auth.authenticated || config.isDemoMode}
+          onClose={() => setMenuOpen(false)}
+          onLibrary={() => setMenuOpen(false)}
+          onSearch={() => {
+            setMenuOpen(false);
+            setTimeout(openSearch, 60);
+          }}
+          onRefresh={() => {
+            setMenuOpen(false);
+            refresh();
+          }}
+          onDownloads={() => {
+            setMenuOpen(false);
+            setDownloadsOpen(true);
+          }}
+          onSettings={() => {
+            setMenuOpen(false);
+            setSettingsOpen(true);
+          }}
+          onSignIn={() => {
+            setMenuOpen(false);
+            setLogin({ open: true });
+          }}
+          onLogout={logout}
+          onToggleFullscreen={() => void bridge.app.toggleFullscreen()}
+          onExit={exitToSteam}
+        />
+      )}
+
+      {login.open && (
+        <LoginOverlay
+          initialUrl={auth.baseUrl || config.serverUrl || ''}
+          initialUsername={auth.username || ''}
+          reason={login.reason}
+          canCancel={auth.authenticated || config.isDemoMode}
+          onCancel={() => setLogin({ open: false })}
+          onLoggedIn={onLoggedIn}
+          onDemo={onDemo}
+        />
+      )}
+
+      {emulator.running && (
+        <div className="fixed inset-0 z-[160] bg-black/90 flex items-center justify-center">
+          <FocusScope name="emulator-running" initialFocus="#stop-game" className="flex flex-col items-center gap-5 text-center">
+            <Loader2 className="animate-spin text-deck-accent" size={40} />
+            <div className="text-2xl font-extrabold">Playing {emulator.title || 'game'}</div>
+            <div className="text-deck-dim max-w-md">The emulator is running. Quit it normally to return here, or stop it if it stopped responding.</div>
+            <button id="stop-game" data-focusable onClick={() => void bridge.emulator.kill()} className="h-12 px-6 rounded-xl bg-deck-danger text-white font-bold flex items-center gap-2">
+              <Square size={18} /> Stop game
+            </button>
+          </FocusScope>
+        </div>
+      )}
+
+      <VirtualKeyboardModal
+        isOpen={Boolean(keyboard)}
+        title={keyboard?.title}
+        initialValue={keyboard?.value}
+        placeholder={keyboard?.placeholder}
+        mode={keyboard?.mode}
+        onClose={() => setKeyboard(null)}
+        onSubmit={submitKeyboard}
+      />
+
+      {playingGame && <WebEmulatorModal key={String(playingGame.id)} game={playingGame} onClose={closeBrowserPlayer} onLaunchNative={handleLaunch} onPlayed={handlePlayed} />}
+
+      <div className="fixed top-20 right-5 z-[300] flex flex-col gap-2 pointer-events-none">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`deck-enter max-w-[420px] px-4 py-3 rounded-xl shadow-xl border text-sm font-semibold ${
+              t.tone === 'error' ? 'bg-[#3a1414] border-deck-danger text-red-100' : t.tone === 'ok' ? 'bg-[#15301a] border-deck-ok text-green-100' : 'bg-deck-panel-2 border-deck-line text-deck-text'
+            }`}
+          >
+            {t.text}
+          </div>
+        ))}
+      </div>
+
+      {exiting && (
+        <div className="fixed inset-0 z-[400] bg-black flex items-center justify-center text-xl font-bold">Returning to Steam</div>
+      )}
+    </div>
+  );
+}

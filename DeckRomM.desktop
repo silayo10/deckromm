@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DeckRomM
+Comment=RomM client for Steam Deck
+Exec=@LAUNCHER@ %U
+Icon=deckromm
+Terminal=false
+Categories=Game;Emulator;
+StartupWMClass=deckromm
+Keywords=romm;retro;emulator;deck;games;

@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+/*
+ * DeckRomM design tokens - tuned for the 7" 1280x800 Steam Deck LCD/OLED:
+ * high contrast, >= 14px body text, 44px+ hit targets and an unmistakable
+ * focus ring (Steam "Big Picture" style: bright outline + glow + lift).
+ */
+@theme {
+  --color-deck-bg: #0b0f17;
+  --color-deck-panel: #131a26;
+  --color-deck-panel-2: #1a2333;
+  --color-deck-line: #2a3549;
+  --color-deck-text: #eef2f8;
+  --color-deck-dim: #9aa7bd;
+  --color-deck-accent: #1a9fff; /* Steam blue */
+  --color-deck-accent-2: #67c1f5;
+  --color-deck-ok: #5ba32b;
+  --color-deck-warn: #e5a50a;
+  --color-deck-danger: #e0443e;
+  --font-sans: "Motiva Sans", "Noto Sans", "Cantarell", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Noto Sans Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+}
+
+:root {
+  --focus-ring: #ffffff;
+  --focus-glow: rgba(26, 159, 255, 0.85);
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-deck-bg);
+  color: var(--color-deck-text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.4;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Everything that can take controller focus keeps a margin when scrolled into view,
+   so the neighbour row stays visible and the glow is never clipped. */
+[data-focusable],
+button,
+input,
+select,
+textarea,
+a[href] {
+  scroll-margin: 28px 20px;
+  outline: none;
+}
+
+/* The single source of truth for "what is selected". Set by focusManager. */
+[data-focused="true"] {
+  position: relative;
+  z-index: 2;
+  outline: 3px solid var(--focus-ring) !important;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 6px var(--focus-glow),
+    0 0 26px 6px rgba(26, 159, 255, 0.45) !important;
+  transition:
+    box-shadow 120ms ease-out,
+    outline-color 120ms ease-out,
+    transform 120ms ease-out;
+}
+
+/* Cards lift and brighten when focused */
+.deck-card[data-focused="true"] {
+  transform: scale(1.045);
+}
+.deck-card[data-focused="true"] .deck-card-title {
+  color: #fff;
+  background: var(--color-deck-accent);
+}
+
+/* Rows / list items get a highlight fill instead of scaling */
+.deck-row[data-focused="true"] {
+  background: rgba(26, 159, 255, 0.22) !important;
+  box-shadow: inset 4px 0 0 var(--color-deck-accent), 0 0 0 3px var(--focus-glow) !important;
+  outline: none !important;
+}
+
+/* Chips / pills */
+.deck-chip[data-focused="true"] {
+  background: var(--color-deck-accent) !important;
+  color: #fff !important;
+}
+
+/* Text fields: bright border when focused, blinking caret when being edited */
+.deck-input[data-focused="true"] {
+  border-color: var(--color-deck-accent) !important;
+}
+.deck-input:focus {
+  border-color: #fff !important;
+  background: #0f1622 !important;
+}
+
+/* Keyboard keys */
+.deck-key[data-focused="true"] {
+  background: var(--color-deck-accent) !important;
+  color: #fff !important;
+  transform: scale(1.08);
+}
+
+/* Mouse / touch hover mirrors focus lightly */
+@media (hover: hover) {
+  [data-focusable]:hover:not([data-focused="true"]) {
+    filter: brightness(1.15);
+  }
+}
+
+/* Scroll containers: slim visible scrollbars (useful feedback on a handheld) */
+.deck-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-deck-line) transparent;
+}
+.deck-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.deck-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-deck-line);
+  border-radius: 3px;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .image-render-pixelated {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+}
+
+@keyframes deck-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.deck-enter {
+  animation: deck-fade-in 160ms ease-out;
+}
+
+@keyframes deck-shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+.deck-skeleton {
+  background: linear-gradient(90deg, #151c29 0px, #1f2939 80px, #151c29 160px);
+  background-size: 400px 100%;
+  animation: deck-shimmer 1.2s infinite linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

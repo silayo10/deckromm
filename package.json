@@ -1,0 +1,44 @@
+{
+  "name": "deckromm",
+  "private": true,
+  "version": "1.3.0",
+  "description": "Controller-first RomM client for Steam Deck and SteamOS Game Mode",
+  "author": "DeckRomM <deckromm@users.noreply.github.com>",
+  "license": "MIT",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "desktopName": "deckromm.desktop",
+  "scripts": {
+    "dev": "vite --port 3000 --host 0.0.0.0",
+    "dev:electron": "concurrently -k -n vite,electron \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "typecheck": "tsc --noEmit",
+    "check:main": "node --check electron/main.cjs && node --check electron/preload.cjs && for f in electron/lib/*.cjs; do node --check \"$f\" || exit 1; done",
+    "build": "tsc --noEmit && vite build",
+    "start": "electron .",
+    "start:gamemode": "electron . --gamemode",
+    "pack:dir": "bun run build && electron-builder --config electron-builder.json --linux dir",
+    "dist:appimage": "bun run build && electron-builder --config electron-builder.json --linux AppImage",
+    "dist:appimage:npm": "npm run build && electron-builder --config electron-builder.json --linux AppImage",
+    "clean": "rm -rf dist release"
+  },
+  "dependencies": {
+    "lucide-react": "^0.546.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3",
+    "tailwindcss": "^4.1.14",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3",
+    "wait-on": "^8.0.3"
+  }
+}

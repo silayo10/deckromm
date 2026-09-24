@@ -1,0 +1,57 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.deckromm.app",
+  "productName": "DeckRomM",
+  "copyright": "DeckRomM",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json",
+    "!**/*.map"
+  ],
+  "asar": true,
+  "compression": "normal",
+  "npmRebuild": false,
+  "electronLanguages": [
+    "en-US"
+  ],
+  "extraMetadata": {
+    "main": "electron/main.cjs"
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "category": "Game",
+    "executableName": "deckromm",
+    "icon": "build/icon.png",
+    "synopsis": "Controller-first RomM client for Steam Deck",
+    "description": "Browse, download and launch games from a self-hosted RomM server using only a controller. Built for SteamOS Game Mode at 1280x800.",
+    "maintainer": "DeckRomM <deckromm@users.noreply.github.com>",
+    "executableArgs": [
+      "--no-sandbox"
+    ],
+    "desktop": {
+      "entry": {
+        "Name": "DeckRomM",
+        "Comment": "RomM client for Steam Deck",
+        "StartupWMClass": "deckromm",
+        "Keywords": "romm;retro;emulator;deck;games;",
+        "Terminal": "false"
+      }
+    },
+    "syncDesktopName": true
+  },
+  "appImage": {
+    "artifactName": "DeckRomM-${version}-x86_64.${ext}"
+  }
+}
