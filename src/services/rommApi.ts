@@ -29,7 +29,7 @@ export const STREAMABLE_PLATFORM_SLUGS = new Set([
 
 export const DEFAULT_CONFIG: RommConfig = {
   serverUrl: '',
-  isDemoMode: false,
+  isDemoMode: !isNativeApp,
   autoCacheBoxArt: true,
   emulationPath: '',
   audioFeedback: true,
@@ -140,6 +140,9 @@ class RommApiService {
 
     this.auth = await bridge.auth.status().catch(() => this.auth);
     if (this.auth.baseUrl && !merged.serverUrl) merged.serverUrl = this.auth.baseUrl;
+    if (!isNativeApp && !this.auth.authenticated && (stored as Partial<RommConfig>).isDemoMode === undefined) {
+      merged.isDemoMode = true;
+    }
     this.config = merged;
     this.initialized = true;
     return this.getConfig();

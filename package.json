@@ -11,13 +11,14 @@
   "scripts": {
     "dev": "vite --port 3000 --host 0.0.0.0",
     "dev:electron": "concurrently -k -n vite,electron \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "check:main": "node --check electron/main.cjs && node --check electron/preload.cjs && for f in electron/lib/*.cjs; do node --check \"$f\" || exit 1; done",
     "build": "tsc --noEmit && vite build",
     "start": "electron .",
     "start:gamemode": "electron . --gamemode",
-    "pack:dir": "bun run build && electron-builder --config electron-builder.json --linux dir",
-    "dist:appimage": "bun run build && electron-builder --config electron-builder.json --linux AppImage",
+    "pack:dir": "npm run build && electron-builder --config electron-builder.json --linux dir",
+    "dist:appimage": "npm run build && electron-builder --config electron-builder.json --linux AppImage",
     "dist:appimage:npm": "npm run build && electron-builder --config electron-builder.json --linux AppImage",
     "clean": "rm -rf dist release"
   },

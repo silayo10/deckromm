@@ -18,6 +18,9 @@ export default defineConfig({
     chunkSizeWarningLimit: 1500,
   },
   server: {
+    host: '0.0.0.0',
+    port: 3000,
+    allowedHosts: true,
     // `npm run dev` serves on port 3000 (what Google AI Studio's preview expects);
     // `npm run dev:electron` passes --port 5173 itself.
     // AI Studio sets DISABLE_HMR=true while its agent edits files.
