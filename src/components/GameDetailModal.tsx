@@ -1,17 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square } from 'lucide-react';
-import { Game } from '../types';
+import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, ChevronDown, AlertTriangle, Tag, Disc, Wand2 } from 'lucide-react';
+import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, getActiveCoreForGame } from '../types';
 import { FocusScope } from './FocusScope';
 import { PlatformBadge } from './PlatformBadge';
 import { formatBytes } from './GameCard';
 import { rommApi } from '../services/rommApi';
-import { NavigationAction } from '../types';
+import { CoreSelectorModal } from './CoreSelectorModal';
+import { RomPatcherModal } from './RomPatcherModal';
+import { bridge, isNativeApp } from '../services/bridge';
+import { soundService } from '../services/soundService';
 
 interface GameDetailModalProps {
   game: Game;
   isNative: boolean;
   progress?: number;
   emulatorRunning: boolean;
+  config: RommConfig;
+  onUpdateConfig?: (patch: Partial<RommConfig>) => void;
   onClose: () => void;
   onLaunch: (game: Game) => void;
   onDownload: (game: Game) => void;
@@ -20,6 +25,7 @@ interface GameDetailModalProps {
   onPlayInBrowser: (game: Game) => void;
   onToggleFavorite: (game: Game) => void;
   onGameUpdated: (game: Game) => void;
+  onSelectGenre?: (genre: string) => void;
 }
 
 /**
@@ -32,6 +38,8 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   isNative,
   progress,
   emulatorRunning,
+  config,
+  onUpdateConfig,
   onClose,
   onLaunch,
   onDownload,
@@ -40,9 +48,12 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   onPlayInBrowser,
   onToggleFavorite,
   onGameUpdated,
+  onSelectGenre,
 }) => {
   const [game, setGame] = useState<Game>(initial);
   const [loadingDetails, setLoadingDetails] = useState(true);
+  const [coreModalOpen, setCoreModalOpen] = useState(false);
+  const [patcherOpen, setPatcherOpen] = useState(false);
 
   useEffect(() => setGame((g) => ({ ...g, ...initial })), [initial]);
 
@@ -65,6 +76,96 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   const downloading = progress != null;
   const streamable = game.playableOnline !== false;
 
+  const activeCoreId = getActiveCoreForGame(game, config);
+  const platformOptions: CoreOption[] = PLATFORM_AVAILABLE_CORES[game.platformSlug] || [];
+  const activeCoreObj = platformOptions.find((c) => c.id === activeCoreId);
+  const activeCoreName = activeCoreObj ? activeCoreObj.name : activeCoreId.toUpperCase();
+
+  const [flatpakInstalled, setFlatpakInstalled] = useState<boolean | null>(null);
+  const [flatpakInstalling, setFlatpakInstalling] = useState(false);
+  const [flatpakProgress, setFlatpakProgress] = useState<number | undefined>(undefined);
+  const [flatpakError, setFlatpakError] = useState<string | null>(null);
+
+  const flatpakId = activeCoreObj?.flatpakId;
+
+  useEffect(() => {
+    if (!isNativeApp || !flatpakId) {
+      setFlatpakInstalled(null);
+      return;
+    }
+    bridge.system.flatpakStatus([flatpakId]).then((res) => {
+      if (res && res.installed) {
+        setFlatpakInstalled(Boolean(res.installed[flatpakId]));
+      }
+    }).catch(() => {});
+
+    const offProgress = bridge.on('flatpak:progress', (ev) => {
+      if (ev.flatpakId === flatpakId) {
+        if (ev.status === 'installing') {
+          setFlatpakInstalling(true);
+          setFlatpakProgress(ev.progress);
+        } else if (ev.status === 'completed') {
+          setFlatpakInstalling(false);
+          setFlatpakInstalled(true);
+        } else if (ev.status === 'error') {
+          setFlatpakInstalling(false);
+          setFlatpakError(ev.message || 'Installation failed');
+        }
+      }
+    });
+
+    return () => {
+      offProgress();
+    };
+  }, [flatpakId, config]);
+
+  const handleInstallFlatpak = async () => {
+    if (!flatpakId || !isNativeApp) return;
+    soundService.playTick();
+    setFlatpakInstalling(true);
+    setFlatpakError(null);
+
+    const res = await bridge.system.installFlatpak(flatpakId);
+    if (res.ok) {
+      soundService.playSuccess();
+      setFlatpakInstalled(true);
+      setFlatpakInstalling(false);
+    } else {
+      soundService.playBack();
+      setFlatpakError(res.message || 'Installation failed');
+      setFlatpakInstalling(false);
+    }
+  };
+
+  const handleSelectCore = (coreId: string, applyToAll: boolean) => {
+    if (applyToAll) {
+      const nextPlatformCores = { ...(config.platformCores || {}), [game.platformSlug]: coreId };
+      onUpdateConfig?.({ platformCores: nextPlatformCores });
+    } else {
+      const nextGameCores = { ...(config.gameCores || {}), [String(game.id)]: coreId };
+      onUpdateConfig?.({ gameCores: nextGameCores });
+    }
+  };
+
+  const handlePrimaryPlay = () => {
+    if (installed) {
+      if (isNative) onLaunch(game);
+      else onPlayInBrowser(game);
+      return;
+    }
+
+    if (streamable) {
+      onPlayInBrowser(game);
+    } else {
+      // For non-streamable games, trigger seamless download & launch
+      if (isNative) {
+        onLaunch(game);
+      } else {
+        onPlayInBrowser(game);
+      }
+    }
+  };
+
   const onAction = (a: NavigationAction) => {
     if (a === 'ACTION_Y') {
       onToggleFavorite(game);
@@ -72,7 +173,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
     }
     if (a === 'ACTION_X') {
       if (downloading) onCancelDownload(game);
-      else if (isNative) onDownload(game);
+      else onDownload(game);
       return true;
     }
     // Swallow library-level shortcuts while the page is open.
@@ -109,59 +210,207 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               <X size={22} />
             </button>
           </div>
-          <div className="mt-1 text-deck-dim">
-            {[game.releaseYear || null, game.developer || null, game.genres?.slice(0, 3).join(', ') || null].filter(Boolean).join('  \u00b7  ')}
+          <div className="mt-2 flex items-center flex-wrap gap-2 text-deck-dim text-sm">
+            {game.releaseYear && <span className="font-semibold text-white/90">{game.releaseYear}</span>}
+            {game.developer && <span>· {game.developer}</span>}
+            {game.genres && game.genres.length > 0 && (
+              <div className="flex items-center flex-wrap gap-1.5 ml-1">
+                {game.genres.map((g) => (
+                  <button
+                    key={g}
+                    data-focusable
+                    onClick={() => {
+                      onSelectGenre?.(g);
+                      onClose();
+                    }}
+                    className="deck-chip px-2.5 py-0.5 rounded-md bg-deck-panel-2 border border-deck-line text-xs font-semibold text-deck-text hover:border-deck-accent hover:text-white transition-colors"
+                    title={`Filter library by ${g}`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Action Row */}
           <div className="mt-6 flex flex-wrap gap-3">
-            {streamable && (
+            {/* Primary Action Button */}
+            <button
+              id="detail-primary"
+              data-focusable
+              disabled={emulatorRunning}
+              onClick={handlePrimaryPlay}
+              className={`${btn} bg-deck-ok border-deck-ok text-white shadow-lg disabled:opacity-50 transition-all`}
+            >
+              {downloading ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  <span>Downloading ({Math.round(progress || 0)}%)...</span>
+                </>
+              ) : installed ? (
+                <>
+                  <Play size={20} className="fill-white" />
+                  <span>Play Game</span>
+                </>
+              ) : streamable ? (
+                <>
+                  <Globe size={20} />
+                  <span>Play (Stream)</span>
+                </>
+              ) : (
+                <>
+                  <Play size={20} className="fill-white" />
+                  <span>Download & Play</span>
+                </>
+              )}
+            </button>
+
+            {/* Core Selector Button */}
+            <button
+              data-focusable
+              id="detail-core-selector"
+              onClick={() => setCoreModalOpen(true)}
+              className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-accent flex items-center gap-2`}
+              title="Select which core or emulator to use for this game"
+            >
+              <Cpu size={18} className="text-deck-accent" />
+              <span className="text-xs uppercase text-deck-dim font-bold">Core:</span>
+              <span className="font-extrabold text-sm text-white">{activeCoreName}</span>
+              <ChevronDown size={14} className="opacity-70 ml-0.5" />
+            </button>
+
+            {/* Offline Play Option if streamable and installed */}
+            {streamable && isNative && installed && (
               <button
-                id="detail-primary"
-                data-focusable
-                onClick={() => onPlayInBrowser(game)}
-                className={`${btn} bg-deck-ok border-deck-ok text-white`}
-              >
-                <Globe size={20} /> Play from RomM
-              </button>
-            )}
-            {isNative && (
-              <button
-                id={streamable ? 'detail-native' : 'detail-primary'}
                 data-focusable
                 disabled={emulatorRunning}
                 onClick={() => onLaunch(game)}
-                className={`${btn} ${streamable ? 'bg-deck-panel-2 border-deck-line' : 'bg-deck-ok border-deck-ok text-white'} disabled:opacity-50`}
+                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text`}
               >
-                <Play size={20} className={streamable ? '' : 'fill-white'} /> {installed ? 'Play offline (native)' : 'Download & Play (native)'}
+                <Play size={18} /> Launch Native
               </button>
             )}
-            {isNative &&
-              (downloading ? (
-                <button data-focusable onClick={() => onCancelDownload(game)} className={`${btn} bg-deck-panel-2 border-deck-line`}>
-                  <Square size={18} /> Cancel {Math.round(progress!)}%
-                </button>
-              ) : (
-                <button data-focusable onClick={() => onDownload(game)} className={`${btn} bg-deck-panel-2 border-deck-line`}>
-                  <Download size={20} /> {installed ? 'Re-download' : 'Download'}
-                </button>
-              ))}
-            <button data-focusable onClick={() => onToggleFavorite(game)} className={`${btn} bg-deck-panel-2 border-deck-line`}>
-              <Star size={20} className={game.isFavorite ? 'text-yellow-400 fill-yellow-400' : ''} /> {game.isFavorite ? 'Favorited' : 'Favorite'}
+
+            {/* Download Button */}
+            {downloading ? (
+              <button
+                data-focusable
+                onClick={() => onCancelDownload(game)}
+                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-danger hover:bg-deck-danger/20`}
+              >
+                <Square size={18} /> Cancel ({Math.round(progress!)}%)
+              </button>
+            ) : (
+              <button
+                data-focusable
+                onClick={() => onDownload(game)}
+                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-dim`}
+              >
+                <Download size={20} /> {installed ? 'Re-download' : 'Download'}
+              </button>
+            )}
+
+            {/* Patch ROM / Hacks Button */}
+            <button
+              data-focusable
+              onClick={() => setPatcherOpen(true)}
+              className={`${btn} bg-deck-panel-2 border-deck-line text-deck-accent hover:border-deck-accent/50`}
+              title="Apply fan translations, color patches, or ROM hacks"
+            >
+              <Wand2 size={20} /> Patch ROM
             </button>
-            {isNative && installed && (
-              <button data-focusable onClick={() => onDelete(game)} className={`${btn} bg-deck-panel-2 border-deck-line text-deck-danger`}>
+
+            {/* Favorite Button */}
+            <button
+              data-focusable
+              onClick={() => onToggleFavorite(game)}
+              className={`${btn} bg-deck-panel-2 border-deck-line`}
+            >
+              <Star size={20} className={game.isFavorite ? 'text-yellow-400 fill-yellow-400' : ''} />
+              {game.isFavorite ? 'Favorited' : 'Favorite'}
+            </button>
+
+            {/* Delete button */}
+            {installed && (
+              <button
+                data-focusable
+                onClick={() => onDelete(game)}
+                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-danger hover:bg-red-950/30`}
+              >
                 <Trash2 size={20} /> Delete
               </button>
             )}
           </div>
 
           {downloading && (
-            <div className="mt-4 h-2 rounded-full bg-deck-panel-2 overflow-hidden">
-              <div className="h-full bg-deck-accent transition-[width]" style={{ width: `${progress}%` }} />
+            <div className="mt-4 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between text-xs text-deck-dim">
+                <span>Downloading ROM for seamless offline play...</span>
+                <span className="font-mono font-bold text-white">{Math.round(progress || 0)}%</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-deck-panel-2 overflow-hidden border border-deck-line">
+                <div className="h-full bg-deck-accent transition-[width] duration-200" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          )}
+
+          {/* Missing Standalone Emulator Alert Banner */}
+          {isNative && flatpakId && flatpakInstalled === false && (
+            <div className="mt-4 p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-10 w-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-white flex items-center gap-2">
+                    Standalone Emulator Required ({activeCoreName})
+                  </h3>
+                  <p className="text-xs text-amber-200/80">
+                    {activeCoreName} ({flatpakId}) is not installed on this Steam Deck. Install it directly from DeckRomM.
+                  </p>
+                  {flatpakError && <p className="text-xs text-red-400 font-semibold mt-1">{flatpakError}</p>}
+                </div>
+              </div>
+
+              <button
+                data-focusable
+                disabled={flatpakInstalling}
+                onClick={handleInstallFlatpak}
+                className="px-4 py-2.5 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-2 border border-blue-400/30 shadow-lg transition-all shrink-0 active:scale-95 disabled:opacity-50"
+              >
+                {flatpakInstalling ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Installing {flatpakProgress != null ? `${flatpakProgress}%` : ''}</span>
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} />
+                    <span>Install {activeCoreName}</span>
+                  </>
+                )}
+              </button>
             </div>
           )}
 
           <div className="mt-6 flex flex-col gap-4">
+            {/* Server Tags */}
+            {game.tags && game.tags.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <Tag size={14} className="text-deck-dim" />
+                <span className="text-xs font-bold text-deck-dim uppercase tracking-wider">Tags:</span>
+                {game.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-2.5 py-1 rounded-md text-xs font-semibold bg-deck-accent/15 border border-deck-accent/30 text-deck-accent"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+
             <section data-focusable tabIndex={-1} className={section}>
               <h2 className="text-sm font-bold uppercase tracking-wide text-deck-dim mb-2">About</h2>
               {loadingDetails && !game.summary ? (
@@ -173,9 +422,39 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               )}
             </section>
 
+            {/* Multi-File / Disc Browser */}
+            {game.files && game.files.length > 1 && (
+              <section data-focusable tabIndex={-1} className={section}>
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-deck-dim flex items-center gap-2">
+                    <Disc size={16} className="text-deck-accent" /> Associated Files & Discs ({game.files.length})
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {game.files.map((file, idx) => (
+                    <div
+                      key={file.id || idx}
+                      className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-deck-panel-2 border border-deck-line text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="px-2 py-0.5 rounded font-mono font-bold bg-deck-bg text-deck-accent shrink-0">
+                          {idx + 1}
+                        </span>
+                        <span className="font-mono text-white truncate" title={file.fileName}>
+                          {file.fileName}
+                        </span>
+                      </div>
+                      <span className="text-deck-dim font-mono shrink-0">{formatBytes(file.fileSizeBytes)}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section data-focusable tabIndex={-1} className={`${section} grid grid-cols-2 gap-x-8 gap-y-2 text-sm`}>
               <h2 className="col-span-2 text-sm font-bold uppercase tracking-wide text-deck-dim mb-1">Details</h2>
               {[
+                ['Emulator Core', `${activeCoreName} (${activeCoreObj?.type === 'standalone' ? 'Standalone' : 'RetroArch'})`],
                 ['File', game.fileName],
                 ['Size', formatBytes(game.fileSizeBytes)],
                 ['Publisher', game.publisher],
@@ -188,7 +467,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
                 .filter(([, v]) => v)
                 .map(([k, v]) => (
                   <div key={k} className="flex gap-3 min-w-0">
-                    <span className="w-24 shrink-0 text-deck-dim">{k}</span>
+                    <span className="w-28 shrink-0 text-deck-dim">{k}</span>
                     <span className="truncate font-mono text-deck-text" title={String(v)}>{v}</span>
                   </div>
                 ))}
@@ -209,6 +488,29 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
           </div>
         </div>
       </FocusScope>
+
+      {/* Core Selector Modal */}
+      {coreModalOpen && (
+        <CoreSelectorModal
+          game={game}
+          platformSlug={game.platformSlug}
+          platformName={game.platformName}
+          config={config}
+          onSelectCore={handleSelectCore}
+          onClose={() => setCoreModalOpen(false)}
+        />
+      )}
+
+      {/* ROM Patcher Modal */}
+      {patcherOpen && (
+        <RomPatcherModal
+          game={game}
+          onClose={() => setPatcherOpen(false)}
+          onSuccess={(patchedName) => {
+            setGame((g) => ({ ...g, isInstalled: true }));
+          }}
+        />
+      )}
     </div>
   );
 };

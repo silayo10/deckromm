@@ -61,9 +61,13 @@ const LIBRETRO_CORES = {
 
 /** Standalone emulators preferred over RetroArch when installed (flatpak ids). */
 const STANDALONE = {
-  ps2: { flatpak: 'net.pcsx2.PCSX2', args: (rom) => ['-fullscreen', '-batch', '--', rom] },
+  psx: { flatpak: 'org.duckstation.DuckStation', args: (rom) => ['-batch', '-fullscreen', rom] },
+  ps1: { flatpak: 'org.duckstation.DuckStation', args: (rom) => ['-batch', '-fullscreen', rom] },
+  playstation: { flatpak: 'org.duckstation.DuckStation', args: (rom) => ['-batch', '-fullscreen', rom] },
+  ps2: { flatpak: 'net.pcsx2.PCSX2', args: (rom) => ['-fullscreen', '-batch', rom] },
   gc: { flatpak: 'org.DolphinEmu.dolphin-emu', args: (rom) => ['-b', '-e', rom] },
   ngc: { flatpak: 'org.DolphinEmu.dolphin-emu', args: (rom) => ['-b', '-e', rom] },
+  gamecube: { flatpak: 'org.DolphinEmu.dolphin-emu', args: (rom) => ['-b', '-e', rom] },
   wii: { flatpak: 'org.DolphinEmu.dolphin-emu', args: (rom) => ['-b', '-e', rom] },
   psp: { flatpak: 'org.ppsspp.PPSSPP', args: (rom) => [rom] },
   ps3: { flatpak: 'net.rpcs3.RPCS3', args: (rom) => ['--no-gui', rom] },
@@ -71,6 +75,32 @@ const STANDALONE = {
   n3ds: { flatpak: 'io.github.lime3ds.Lime3DS', args: (rom) => [rom] },
   wiiu: { flatpak: 'info.cemu.Cemu', args: (rom) => ['-f', '-g', rom] },
   switch: { flatpak: 'org.ryujinx.Ryujinx', args: (rom) => ['--fullscreen', rom] },
+  dc: { flatpak: 'org.flycast.Flycast', args: (rom) => [rom] },
+  dreamcast: { flatpak: 'org.flycast.Flycast', args: (rom) => [rom] },
+};
+
+/** Fallback core search order when a specific core is not specified or not installed */
+const CORE_FALLBACKS = {
+  dc: ['flycast', 'redream'],
+  dreamcast: ['flycast', 'redream'],
+  psx: ['duckstation', 'pcsx_rearmed', 'swanstation', 'mednafen_psx_hw', 'mednafen_psx', 'beetle_psx_hw', 'beetle_psx'],
+  ps1: ['duckstation', 'pcsx_rearmed', 'swanstation', 'mednafen_psx_hw', 'mednafen_psx'],
+  playstation: ['duckstation', 'pcsx_rearmed', 'swanstation', 'mednafen_psx_hw', 'mednafen_psx'],
+  snes: ['snes9x', 'bsnes', 'snes9x2010', 'snes9x2005', 'mesen-s'],
+  'super-nintendo': ['snes9x', 'bsnes', 'snes9x2010', 'mesen-s'],
+  gba: ['mgba', 'vba_next', 'gpsp', 'vbam'],
+  'game-boy-advance': ['mgba', 'vba_next', 'gpsp'],
+  n64: ['mupen64plus_next', 'parallel_n64'],
+  'nintendo-64': ['mupen64plus_next', 'parallel_n64'],
+  nds: ['melondsds', 'melonds', 'desmume'],
+  'nintendo-ds': ['melondsds', 'melonds', 'desmume'],
+  genesis: ['genesis_plus_gx', 'picodrive'],
+  'sega-genesis': ['genesis_plus_gx', 'picodrive'],
+  megadrive: ['genesis_plus_gx', 'picodrive'],
+  nes: ['mesen', 'fceumm', 'nestopia'],
+  arcade: ['fbneo', 'mame', 'mame2003_plus'],
+  gb: ['gambatte', 'sameboy', 'mgba'],
+  gbc: ['gambatte', 'sameboy', 'mgba'],
 };
 
 function expandHome(p) {
@@ -102,11 +132,101 @@ function execFileP(cmd, args, timeout = 5000) {
 }
 
 let flatpakCache = null;
+function clearFlatpakCache() {
+  flatpakCache = null;
+}
+
 async function installedFlatpaks() {
   if (flatpakCache) return flatpakCache;
   const out = which('flatpak') ? await execFileP('flatpak', ['list', '--app', '--columns=application']) : null;
   flatpakCache = new Set((out || '').split('\n').map((s) => s.trim()).filter(Boolean));
   return flatpakCache;
+}
+
+async function getFlatpakStatus(flatpakIds = []) {
+  const hasFlatpakBin = Boolean(which('flatpak'));
+  if (!hasFlatpakBin) {
+    return { flatpakAvailable: false, installed: {} };
+  }
+  const installedSet = await installedFlatpaks();
+  const installedMap = {};
+  for (const id of flatpakIds) {
+    installedMap[id] = installedSet.has(id);
+  }
+  return { flatpakAvailable: true, installed: installedMap };
+}
+
+async function installFlatpak(flatpakId, emitProgress) {
+  if (!which('flatpak')) {
+    return { ok: false, message: 'Flatpak package manager is not installed on this system.' };
+  }
+  if (!flatpakId || typeof flatpakId !== 'string') {
+    return { ok: false, message: 'Invalid Flatpak application ID.' };
+  }
+
+  clearFlatpakCache();
+
+  return new Promise((resolve) => {
+    emitProgress?.({ flatpakId, status: 'installing', progress: 0, message: `Starting installation of ${flatpakId}...` });
+
+    const child = spawn('flatpak', ['install', '-y', '--noninteractive', 'flathub', flatpakId], {
+      env: childEnv(),
+    });
+
+    let stdoutData = '';
+    let stderrData = '';
+
+    child.stdout?.on('data', (data) => {
+      const str = data.toString();
+      stdoutData += str;
+      const match = str.match(/(\d+)%/);
+      const pct = match ? parseInt(match[1], 10) : undefined;
+      emitProgress?.({ flatpakId, status: 'installing', progress: pct, message: str.trim().split('\n').pop() || 'Installing...' });
+    });
+
+    child.stderr?.on('data', (data) => {
+      const str = data.toString();
+      stderrData += str;
+    });
+
+    child.on('error', (err) => {
+      clearFlatpakCache();
+      emitProgress?.({ flatpakId, status: 'error', message: err.message });
+      resolve({ ok: false, message: err.message });
+    });
+
+    child.on('close', (code) => {
+      clearFlatpakCache();
+      if (code === 0) {
+        emitProgress?.({ flatpakId, status: 'completed', progress: 100, message: `Successfully installed ${flatpakId}` });
+        resolve({ ok: true, message: `Successfully installed ${flatpakId}` });
+      } else {
+        // Fallback run without 'flathub' remote explicitly specified
+        const fallbackChild = spawn('flatpak', ['install', '-y', '--noninteractive', flatpakId], {
+          env: childEnv(),
+        });
+        let fbStderr = '';
+        fallbackChild.stderr?.on('data', (d) => { fbStderr += d.toString(); });
+        fallbackChild.stdout?.on('data', (d) => {
+          const str = d.toString();
+          const match = str.match(/(\d+)%/);
+          const pct = match ? parseInt(match[1], 10) : undefined;
+          emitProgress?.({ flatpakId, status: 'installing', progress: pct, message: str.trim().split('\n').pop() || 'Installing...' });
+        });
+        fallbackChild.on('close', (fbCode) => {
+          clearFlatpakCache();
+          if (fbCode === 0) {
+            emitProgress?.({ flatpakId, status: 'completed', progress: 100, message: `Successfully installed ${flatpakId}` });
+            resolve({ ok: true, message: `Successfully installed ${flatpakId}` });
+          } else {
+            const err = (fbStderr || stderrData || stdoutData || `Process exited with code ${code}`).trim();
+            emitProgress?.({ flatpakId, status: 'error', message: err });
+            resolve({ ok: false, message: `Failed to install ${flatpakId}: ${err}` });
+          }
+        });
+      }
+    });
+  });
 }
 
 /** Read EmuDeck's settings.sh for the configured emulation root. */
@@ -466,12 +586,14 @@ class EmulatorManager {
     return { running: true, romId, title, startedAt, command };
   }
 
-  async resolveCommand({ romPath, platformSlug }) {
+  async resolveCommand({ romPath, platformSlug, romId, emulatorCore }) {
     const cfg = this.getConfig();
-    const core = LIBRETRO_CORES[platformSlug] || '';
-    const vars = { rom: romPath, platform: platformSlug, core, romdir: path.dirname(romPath) };
+    const slug = (platformSlug || '').toLowerCase();
+    const explicitCore = emulatorCore || cfg.gameCores?.[String(romId)] || cfg.platformCores?.[slug] || '';
+    const core = explicitCore || LIBRETRO_CORES[slug] || '';
+    const vars = { rom: romPath, platform: slug, core, romdir: path.dirname(romPath) };
 
-    const override = (cfg.launcherOverrides || {})[platformSlug];
+    const override = (cfg.launcherOverrides || {})[slug];
     if (override && override.trim()) {
       const [cmd, ...args] = fillTemplate(override, vars);
       return { cmd, args, label: 'custom override' };
@@ -481,8 +603,11 @@ class EmulatorManager {
       return { cmd, args, label: 'custom command' };
     }
 
-    if (cfg.launcherMode !== 'retroarch') {
-      const sa = STANDALONE[platformSlug];
+    const isStandaloneExplicit = explicitCore.endsWith('_standalone') || explicitCore === 'duckstation' && (slug === 'psx' || slug === 'ps1' || slug === 'playstation');
+
+    // 1. Standalone emulator check if explicitly requested or auto-launcher mode without retroarch-only forced
+    if (isStandaloneExplicit || (cfg.launcherMode !== 'retroarch' && !explicitCore)) {
+      const sa = STANDALONE[slug];
       if (sa) {
         const flatpaks = await installedFlatpaks();
         if (flatpaks.has(sa.flatpak)) {
@@ -491,16 +616,43 @@ class EmulatorManager {
       }
     }
 
+    // 2. RetroArch check with selected core or smart fallback search
     const ra = await findRetroArch();
     if (ra) {
-      const corePath = findCore(ra.coreDirs, core);
+      const targetCore = core.replace('_standalone', '');
+      let corePath = findCore(ra.coreDirs, targetCore);
+      let activeCoreName = targetCore;
+
+      // If requested core is not found on disk, look through fallback cores
+      if (!corePath) {
+        const fallbacks = CORE_FALLBACKS[slug] || [];
+        for (const fb of fallbacks) {
+          const fbPath = findCore(ra.coreDirs, fb);
+          if (fbPath) {
+            corePath = fbPath;
+            activeCoreName = fb;
+            this.log(`[launch] Core ${targetCore || '(none)'} not found; falling back to ${fb}`);
+            break;
+          }
+        }
+      }
+
       if (corePath) {
         const args = [...ra.pre, '-L', corePath];
         if (cfg.retroarchFullscreen !== false) args.push('-f');
         args.push(romPath);
-        return { cmd: ra.cmd, args, label: `RetroArch (${core})`, flatpakId: ra.flatpakId };
+        return { cmd: ra.cmd, args, label: `RetroArch (${activeCoreName})`, flatpakId: ra.flatpakId };
       }
-      this.log(`[launch] RetroArch found but core ${core || '(none)'} missing for ${platformSlug}`);
+      this.log(`[launch] RetroArch found but no compatible core found for ${slug}`);
+    }
+
+    // 3. Fall back to standalone emulator if RetroArch had no matching core
+    const sa = STANDALONE[slug];
+    if (sa) {
+      const flatpaks = await installedFlatpaks();
+      if (flatpaks.has(sa.flatpak)) {
+        return { cmd: 'flatpak', args: ['run', sa.flatpak, ...sa.args(romPath)], label: sa.flatpak, flatpakId: sa.flatpak };
+      }
     }
 
     // Last resort: desktop association (works in Desktop Mode, often not in Game Mode)
@@ -607,4 +759,7 @@ module.exports = {
   DownloadManager,
   EmulatorManager,
   expandHome,
+  clearFlatpakCache,
+  getFlatpakStatus,
+  installFlatpak,
 };

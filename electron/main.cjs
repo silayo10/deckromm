@@ -35,7 +35,7 @@ const { pathToFileURL } = require('url');
 const { SecureStore } = require('./lib/secureStore.cjs');
 const { ConfigStore } = require('./lib/configStore.cjs');
 const { RommClient, normalizeBaseUrl } = require('./lib/rommClient.cjs');
-const { detectEmulationRoot, storageStats, DownloadManager, EmulatorManager } = require('./lib/emulation.cjs');
+const { detectEmulationRoot, storageStats, DownloadManager, EmulatorManager, getFlatpakStatus, installFlatpak } = require('./lib/emulation.cjs');
 const { CloudSync } = require('./lib/cloudSync.cjs');
 
 // ---------------------------------------------------------------------------
@@ -472,6 +472,8 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory', 'createDirectory'] });
     return r.canceled ? null : r.filePaths[0];
   });
+  handle('system:flatpak-status', (flatpakIds) => getFlatpakStatus(flatpakIds));
+  handle('system:install-flatpak', (flatpakId) => installFlatpak(flatpakId, (ev) => emit('flatpak:progress', ev)));
 
   // ---- v1.0 compatibility channels -------------------------------------
   handle('deckromm:is-electron', () => true);

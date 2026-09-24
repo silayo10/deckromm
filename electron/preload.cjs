@@ -8,7 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const invoke = (channel) => (...args) => ipcRenderer.invoke(channel, ...args);
 
-const EVENTS = new Set(['auth:required', 'rom:progress', 'emulator:state', 'app:shutting-down', 'window:focus']);
+const EVENTS = new Set(['auth:required', 'rom:progress', 'emulator:state', 'app:shutting-down', 'window:focus', 'flatpak:progress']);
 
 function on(channel, listener) {
   if (!EVENTS.has(channel)) throw new Error(`Unknown event channel ${channel}`);
@@ -65,6 +65,8 @@ const api = {
     storage: invoke('system:storage'),
     emulationPath: invoke('system:emulation-path'),
     selectDirectory: invoke('system:select-directory'),
+    flatpakStatus: invoke('system:flatpak-status'),
+    installFlatpak: invoke('system:install-flatpak'),
   },
   on,
 };

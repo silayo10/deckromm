@@ -173,6 +173,8 @@ function createBrowserFallback(): DeckRommBridge {
       }),
       emulationPath: async () => '',
       selectDirectory: async () => null,
+      flatpakStatus: async () => ({ flatpakAvailable: false, installed: {} }),
+      installFlatpak: async () => ({ ok: false, message: 'Only available in desktop app' }),
     },
     on: ((channel: string, cb: Listener) => {
       if (!listeners.has(channel)) listeners.set(channel, new Set());

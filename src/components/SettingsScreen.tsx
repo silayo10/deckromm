@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2 } from 'lucide-react';
+import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { FocusScope } from './FocusScope';
-import { RommConfig } from '../types';
+import { PLATFORM_AVAILABLE_CORES, RommConfig, SUPPORTED_STANDALONE_EMULATORS } from '../types';
 import { AppInfo, AuthStatus, NativeStorage } from '../env/electron';
 import { bridge, isNativeApp } from '../services/bridge';
+import { soundService } from '../services/soundService';
+import { rommApi } from '../services/rommApi';
 import { formatBytes } from './GameCard';
+import { CoreSelectorModal } from './CoreSelectorModal';
 
 interface SettingsScreenProps {
   config: RommConfig;
@@ -14,6 +17,19 @@ interface SettingsScreenProps {
   onSignIn: () => void;
   onLogout: () => void;
 }
+
+const CONFIGURABLE_PLATFORMS = [
+  { slug: 'psx', name: 'Sony PlayStation (PS1)', defaultCore: 'swanstation' },
+  { slug: 'ps2', name: 'Sony PlayStation 2', defaultCore: 'pcsx2_standalone' },
+  { slug: 'n64', name: 'Nintendo 64', defaultCore: 'mupen64plus_next' },
+  { slug: 'snes', name: 'Super Nintendo (SNES)', defaultCore: 'snes9x' },
+  { slug: 'gba', name: 'Game Boy Advance', defaultCore: 'mgba' },
+  { slug: 'genesis', name: 'Sega Genesis / Mega Drive', defaultCore: 'genesis_plus_gx' },
+  { slug: 'nds', name: 'Nintendo DS', defaultCore: 'melondsds' },
+  { slug: 'nes', name: 'Nintendo Entertainment System', defaultCore: 'mesen' },
+  { slug: 'gamecube', name: 'Nintendo GameCube / Wii', defaultCore: 'dolphin_standalone' },
+  { slug: 'arcade', name: 'Arcade (MAME / Neo-Geo)', defaultCore: 'fbneo' },
+];
 
 const LAUNCHERS: Array<{ id: NonNullable<RommConfig['launcherMode']>; label: string; hint: string }> = [
   { id: 'auto', label: 'Automatic', hint: 'Standalone emulator flatpak if installed (EmuDeck), otherwise RetroArch' },
@@ -49,12 +65,92 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [emuPath, setEmuPath] = useState(config.emulationPath || '');
   const [customCmd, setCustomCmd] = useState(config.customLaunchCommand || '');
+  const [editingPlatformSlug, setEditingPlatformSlug] = useState<string | null>(null);
+
+  const [installedFlatpaks, setInstalledFlatpaks] = useState<Record<string, boolean>>({});
+  const [installingFlatpaks, setInstallingFlatpaks] = useState<Record<string, { message?: string; progress?: number }>>({});
+  const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
+
+  const [scanningServer, setScanningServer] = useState(false);
+  const [scanStatusMsg, setScanStatusMsg] = useState('');
+
+  const handleTriggerScan = async (type: 'quick' | 'full' = 'quick') => {
+    setScanningServer(true);
+    setScanStatusMsg('Sending scan request to RomM server...');
+    soundService.playTick();
+    const res = await rommApi.triggerServerScan(type);
+    if (res.success) {
+      soundService.playSuccess();
+      setScanStatusMsg(res.message || 'Scan started on server.');
+    } else {
+      soundService.playBack();
+      setScanStatusMsg(`Scan failed: ${res.message}`);
+    }
+    setScanningServer(false);
+  };
 
   useEffect(() => {
     if (!isNativeApp) return;
     bridge.system.storage().then(setStorage).catch(() => {});
     bridge.app.info().then(setInfo).catch(() => {});
+
+    const flatpakIds = SUPPORTED_STANDALONE_EMULATORS.map((e) => e.flatpakId);
+    bridge.system.flatpakStatus(flatpakIds).then((res) => {
+      if (res && res.installed) {
+        setInstalledFlatpaks(res.installed);
+      }
+    }).catch(() => {});
+
+    const offProgress = bridge.on('flatpak:progress', (ev) => {
+      if (ev.status === 'installing') {
+        setInstallingFlatpaks((prev) => ({ ...prev, [ev.flatpakId]: { message: ev.message, progress: ev.progress } }));
+      } else if (ev.status === 'completed') {
+        setInstalledFlatpaks((prev) => ({ ...prev, [ev.flatpakId]: true }));
+        setInstallingFlatpaks((prev) => {
+          const next = { ...prev };
+          delete next[ev.flatpakId];
+          return next;
+        });
+      } else if (ev.status === 'error') {
+        setInstallErrors((prev) => ({ ...prev, [ev.flatpakId]: ev.message || 'Installation failed' }));
+        setInstallingFlatpaks((prev) => {
+          const next = { ...prev };
+          delete next[ev.flatpakId];
+          return next;
+        });
+      }
+    });
+
+    return () => {
+      offProgress();
+    };
   }, [config.emulationPath]);
+
+  const handleInstallEmulator = async (flatpakId: string) => {
+    if (!isNativeApp) return;
+    soundService.playTick();
+    setInstallingFlatpaks((prev) => ({ ...prev, [flatpakId]: { message: 'Starting...' } }));
+    setInstallErrors((prev) => ({ ...prev, [flatpakId]: '' }));
+
+    const res = await bridge.system.installFlatpak(flatpakId);
+    if (res.ok) {
+      soundService.playSuccess();
+      setInstalledFlatpaks((prev) => ({ ...prev, [flatpakId]: true }));
+      setInstallingFlatpaks((prev) => {
+        const next = { ...prev };
+        delete next[flatpakId];
+        return next;
+      });
+    } else {
+      soundService.playBack();
+      setInstallErrors((prev) => ({ ...prev, [flatpakId]: res.message || 'Installation failed' }));
+      setInstallingFlatpaks((prev) => {
+        const next = { ...prev };
+        delete next[flatpakId];
+        return next;
+      });
+    }
+  };
 
   const browse = async () => {
     const dir = await bridge.system.selectDirectory();
@@ -114,6 +210,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
                   )}
                 </div>
               </div>
+
+              {auth.authenticated && !config.isDemoMode && (
+                <div className="mt-3 p-4 rounded-xl bg-deck-panel/50 border border-deck-line flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-sm text-white">RomM Server Tasks & Scans</h4>
+                      <p className="text-xs text-deck-dim">Trigger background scans directly on your remote RomM server</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      data-focusable
+                      disabled={scanningServer}
+                      onClick={() => handleTriggerScan('quick')}
+                      className="px-3.5 py-2 rounded-lg bg-deck-panel-2 hover:bg-deck-panel border border-deck-line text-xs font-bold text-white flex items-center gap-2 transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                    >
+                      <RefreshCw size={14} className={scanningServer ? 'animate-spin' : ''} />
+                      Quick Scan (New Files)
+                    </button>
+                    <button
+                      data-focusable
+                      disabled={scanningServer}
+                      onClick={() => handleTriggerScan('full')}
+                      className="px-3.5 py-2 rounded-lg bg-deck-panel-2 hover:bg-deck-panel border border-deck-line text-xs font-bold text-deck-accent flex items-center gap-2 transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                    >
+                      <RefreshCw size={14} className={scanningServer ? 'animate-spin' : ''} />
+                      Full Rescan & Metadata Refresh
+                    </button>
+                  </div>
+                  {scanStatusMsg && (
+                    <div className="text-xs font-semibold text-emerald-400 bg-emerald-950/30 border border-emerald-500/30 px-3 py-1.5 rounded-lg">
+                      {scanStatusMsg}
+                    </div>
+                  )}
+                </div>
+              )}
             </Section>
 
             {isNativeApp && (
@@ -155,6 +287,98 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
                   />
                 )}
                 <Toggle label="RetroArch fullscreen" hint="Pass -f so games open fullscreen in Game Mode" value={config.retroarchFullscreen !== false} onChange={(v) => onChange({ retroarchFullscreen: v })} />
+              </Section>
+            )}
+
+            <Section icon={<Cpu size={16} />} title="Emulator Cores (Native Defaults & Overrides)">
+              <div className="flex flex-col gap-2">
+                {CONFIGURABLE_PLATFORMS.map((p) => {
+                  const activeCore = config.platformCores?.[p.slug] || p.defaultCore;
+                  const coreObj = PLATFORM_AVAILABLE_CORES[p.slug]?.find((c) => c.id === activeCore);
+                  const coreName = coreObj ? coreObj.name : activeCore;
+
+                  return (
+                    <button
+                      key={p.slug}
+                      data-focusable
+                      onClick={() => setEditingPlatformSlug(p.slug)}
+                      className="deck-row w-full min-h-14 px-4 py-2.5 rounded-xl flex items-center justify-between gap-4 text-left bg-deck-panel/70 border border-deck-line hover:border-deck-dim/50 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-semibold block text-white">{p.name}</span>
+                        <span className="text-xs text-deck-dim">Default: {p.defaultCore}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-bold text-deck-accent">{coreName}</span>
+                        <ChevronRight size={16} className="text-deck-dim" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
+
+            {isNativeApp && (
+              <Section icon={<Download size={16} />} title="Standalone Emulators (Flatpaks)">
+                <div className="flex flex-col gap-2">
+                  {SUPPORTED_STANDALONE_EMULATORS.map((emu) => {
+                    const isInstalled = Boolean(installedFlatpaks[emu.flatpakId]);
+                    const isInstalling = Boolean(installingFlatpaks[emu.flatpakId]);
+                    const progress = installingFlatpaks[emu.flatpakId]?.progress;
+                    const errMsg = installErrors[emu.flatpakId];
+
+                    return (
+                      <div
+                        key={emu.id}
+                        className="rounded-xl bg-deck-panel/70 border border-deck-line p-4 flex items-center justify-between gap-4"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-extrabold text-white text-base">{emu.name}</span>
+                            <span className="text-xs font-mono text-deck-dim">({emu.flatpakId})</span>
+                            {isInstalled ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                                <CheckCircle2 size={11} /> Installed
+                              </span>
+                            ) : isInstalling ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
+                                <Loader2 size={11} className="animate-spin" /> Installing {progress != null ? `${progress}%` : ''}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                <AlertTriangle size={11} /> Not Installed
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-deck-dim mt-0.5">{emu.description}</p>
+                          <p className="text-[11px] text-deck-accent font-medium mt-0.5">Platforms: {emu.platforms.join(', ')}</p>
+                          {errMsg && <p className="text-xs text-red-400 font-semibold mt-1">{errMsg}</p>}
+                        </div>
+
+                        {!isInstalled && (
+                          <button
+                            data-focusable
+                            disabled={isInstalling}
+                            onClick={() => handleInstallEmulator(emu.flatpakId)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-2 border border-blue-400/30 shadow-md transition-all shrink-0 disabled:opacity-50"
+                          >
+                            {isInstalling ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" />
+                                <span>Installing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Download size={14} />
+                                <span>Install Flatpak</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </Section>
             )}
 
@@ -200,6 +424,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
           </div>
         </div>
       </FocusScope>
+
+      {editingPlatformSlug && (
+        <CoreSelectorModal
+          platformSlug={editingPlatformSlug}
+          config={config}
+          onSelectCore={(coreId) => {
+            const nextPlatformCores = { ...(config.platformCores || {}), [editingPlatformSlug]: coreId };
+            onChange({ platformCores: nextPlatformCores });
+          }}
+          onClose={() => setEditingPlatformSlug(null)}
+        />
+      )}
     </div>
   );
 };

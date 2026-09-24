@@ -49,6 +49,7 @@ export interface RomFileRequest {
   sizeBytes?: number;
   title?: string;
   force?: boolean;
+  emulatorCore?: string;
 }
 
 export interface RomProgressEvent {
@@ -84,6 +85,13 @@ export interface NativeStorage {
   sdUsedBytes: number;
   storageTarget: 'internal' | 'sdcard';
   isRealDeckFs: boolean;
+}
+
+export interface FlatpakProgressEvent {
+  flatpakId: string;
+  status: 'installing' | 'completed' | 'error';
+  progress?: number;
+  message?: string;
 }
 
 export interface AppInfo {
@@ -188,12 +196,15 @@ export interface DeckRommBridge {
     storage(): Promise<NativeStorage>;
     emulationPath(): Promise<string>;
     selectDirectory(): Promise<string | null>;
+    flatpakStatus(flatpakIds?: string[]): Promise<{ flatpakAvailable: boolean; installed: Record<string, boolean> }>;
+    installFlatpak(flatpakId: string): Promise<{ ok: boolean; message?: string }>;
   };
   on(channel: 'auth:required', cb: (info: { status: number; message: string }) => void): Unsubscribe;
   on(channel: 'rom:progress', cb: (ev: RomProgressEvent) => void): Unsubscribe;
   on(channel: 'emulator:state', cb: (ev: EmulatorStateEvent) => void): Unsubscribe;
   on(channel: 'app:shutting-down', cb: (ev: { reason: string }) => void): Unsubscribe;
   on(channel: 'window:focus', cb: (ev: { focused: boolean }) => void): Unsubscribe;
+  on(channel: 'flatpak:progress', cb: (ev: FlatpakProgressEvent) => void): Unsubscribe;
 }
 
 declare global {

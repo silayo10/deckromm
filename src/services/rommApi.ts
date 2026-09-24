@@ -11,8 +11,8 @@
  * the event loop between chunks, keeping input handling at 60 fps even for
  * libraries with thousands of ROMs.
  */
-import { Collection, Game, Platform, RommConfig } from '../types';
-import type { AuthResult, AuthStatus, RommRequest, ServerProbe } from '../env/electron';
+import { Collection, Game, Platform, RommConfig, getActiveCoreForGame } from '../types';
+import type { AuthResult, AuthStatus, RomFileRequest, RommRequest, ServerProbe } from '../env/electron';
 import { DEMO_GAMES, DEMO_PLATFORMS } from './rommData';
 import { assetUrl, bridge, isNativeApp } from './bridge';
 
@@ -25,6 +25,8 @@ export const STREAMABLE_PLATFORM_SLUGS = new Set([
   'snes', 'super-nintendo', 'sfam', 'gba', 'game-boy-advance', 'genesis', 'genesis-slash-megadrive', 'megadrive',
   'nes', 'famicom', 'gb', 'gbc', 'gameboy', 'n64', 'nintendo-64', 'nds', 'nintendo-ds', 'psx', 'ps1', 'playstation',
   'arcade', 'mame', 'mastersystem', 'sms', 'gamegear', 'gg',
+  'saturn', 'sega-saturn', 'dc', 'dreamcast', 'pce', 'turbografx-16', 'ngp', 'ngpc', 'ws', 'wonderswan', 'vb', 'virtualboy',
+  'atari2600', 'atari7800', 'lynx',
 ]);
 
 export const DEFAULT_CONFIG: RommConfig = {
@@ -312,6 +314,19 @@ class RommApiService {
     const ratingRaw = Number(meta.average_rating ?? r.average_rating ?? r.igdb_metadata?.total_rating ?? 0);
     const rating = ratingRaw > 0 && ratingRaw <= 10 ? Math.round(ratingRaw * 10) : Math.round(ratingRaw);
     const id = r.id;
+    const tags: string[] = (r.tags || meta.tags || []).map((t: any) => (typeof t === 'string' ? t : t?.name)).filter(Boolean);
+    const files = Array.isArray(r.files)
+      ? r.files.map((f: any) => ({
+          id: f.id,
+          fileName: f.file_name || f.fs_name || f.name || 'file',
+          fileSizeBytes: Number(f.file_size_bytes || f.fs_size_bytes || 0),
+          path: f.path_file || f.path || '',
+        }))
+      : [];
+
+    const serverFav = Boolean(r.rom_user?.is_favorite || r.is_favorite);
+    if (serverFav) this.favorites.add(String(id));
+
     return {
       id,
       title: r.name || r.fs_name_no_ext || String(r.fs_name || 'Untitled').replace(/\.[^/.]+$/, ''),
@@ -340,7 +355,9 @@ class RommApiService {
       isFavorite: this.favorites.has(String(id)),
       lastPlayed: r.rom_user?.last_played || undefined,
       playableOnline: STREAMABLE_PLATFORM_SLUGS.has(slug),
-      isMultiFile: Boolean(r.multi || (Array.isArray(r.files) && r.files.length > 1)),
+      isMultiFile: Boolean(r.multi || files.length > 1),
+      tags,
+      files,
     };
   }
 
@@ -461,10 +478,70 @@ class RommApiService {
 
   toggleFavorite(gameId: string | number): boolean {
     const key = String(gameId);
-    if (this.favorites.has(key)) this.favorites.delete(key);
-    else this.favorites.add(key);
+    let isFav = false;
+    if (this.favorites.has(key)) {
+      this.favorites.delete(key);
+      isFav = false;
+    } else {
+      this.favorites.add(key);
+      isFav = true;
+    }
     localStorage.setItem(FAVORITES_KEY, JSON.stringify([...this.favorites]));
-    return this.favorites.has(key);
+
+    // Asynchronously push favorite status to RomM server if authenticated
+    if (!this.config.isDemoMode) {
+      void this.request({
+        path: `/api/roms/${encodeURIComponent(String(gameId))}/user`,
+        method: 'PUT',
+        body: JSON.stringify({ is_favorite: isFav }),
+        headers: { 'Content-Type': 'application/json' },
+      }).catch(() => {
+        void this.request({
+          path: `/api/roms/${encodeURIComponent(String(gameId))}/favorite`,
+          method: 'POST',
+          body: JSON.stringify({ favorite: isFav }),
+          headers: { 'Content-Type': 'application/json' },
+        }).catch(() => {});
+      });
+    }
+
+    return isFav;
+  }
+
+  /** Trigger a server-side library scan or metadata refresh on RomM. */
+  async triggerServerScan(type: 'quick' | 'full' | 'unmatched' = 'quick'): Promise<{ success: boolean; message: string }> {
+    if (this.config.isDemoMode) return { success: true, message: 'Simulated scan triggered in Demo Mode.' };
+    try {
+      const path = type === 'full' ? '/api/tasks/rescan' : '/api/tasks/scan';
+      const res = await this.request<any>({
+        path,
+        method: 'POST',
+        body: JSON.stringify({ mode: type, scan_type: type }),
+        headers: { 'Content-Type': 'application/json' },
+      }).catch(async () => {
+        return await this.request<any>({
+          path: '/api/scan',
+          method: 'POST',
+          body: JSON.stringify({ mode: type }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+      });
+      return { success: true, message: res?.message || `RomM server ${type} library scan started.` };
+    } catch (e: any) {
+      return { success: false, message: e?.message || 'Failed to trigger RomM server scan.' };
+    }
+  }
+
+  /** Fetch available server tags. */
+  async getTags(): Promise<string[]> {
+    if (this.config.isDemoMode) return ['Must Play', 'Fan Translation', 'Favorites', 'Multidisc', 'Completed'];
+    try {
+      const data = await this.request<any>({ path: '/api/tags' });
+      const list: any[] = Array.isArray(data) ? data : data?.items || [];
+      return list.map((t) => (typeof t === 'string' ? t : t?.name)).filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 
   // ------------------------------------------------------------------ files & launching
@@ -478,8 +555,17 @@ class RommApiService {
     return `romm-rom://rom/${encodeURIComponent(String(game.id))}/${encodeURIComponent(game.fileName || 'rom.bin')}?${q.toString()}`;
   }
 
-  private fileReq(game: Game, force = false) {
-    return { romId: game.id, platformSlug: game.platformSlug, fileName: game.fileName, sizeBytes: game.fileSizeBytes, title: game.title, force };
+  private fileReq(game: Game, force = false, core?: string): RomFileRequest {
+    const chosenCore = core || getActiveCoreForGame(game, this.config);
+    return {
+      romId: game.id,
+      platformSlug: game.platformSlug,
+      fileName: game.fileName,
+      sizeBytes: game.fileSizeBytes,
+      title: game.title,
+      force,
+      emulatorCore: chosenCore && chosenCore !== 'auto' ? chosenCore : undefined,
+    };
   }
 
   /** Download the ROM into Emulation/roms/<platform>/ (progress via bridge 'rom:progress'). */
@@ -496,9 +582,9 @@ class RommApiService {
   }
 
   /** Download if needed, then launch the matching emulator from the main process. */
-  async launchNative(game: Game): Promise<{ success: boolean; message: string; command?: string }> {
+  async launchNative(game: Game, core?: string): Promise<{ success: boolean; message: string; command?: string }> {
     if (!isNativeApp) return { success: false, message: 'Native launch requires the DeckRomM desktop app' };
-    const r = await bridge.emulator.launch(this.fileReq(game));
+    const r = await bridge.emulator.launch(this.fileReq(game, false, core));
     return { success: r.ok, message: r.ok ? `Launching with ${r.command}` : r.message || 'Launch failed', command: r.command };
   }
 
@@ -507,7 +593,28 @@ class RommApiService {
    * In the desktop app the file is streamed to disk by main first, then read back.
    */
   async downloadRom(game: Game, onProgress?: (pct: number, loadedBytes: number, speedMbps: number) => void): Promise<Blob> {
-    if (!isNativeApp) throw new RommApiError('Browser mode cannot download ROMs', 0);
+    if (!isNativeApp) {
+      if (this.config.isDemoMode) {
+        if (onProgress) {
+          onProgress(25, Math.round((game.fileSizeBytes || 1024) * 0.25), 15.0);
+          await new Promise((r) => setTimeout(r, 100));
+          onProgress(75, Math.round((game.fileSizeBytes || 1024) * 0.75), 20.0);
+          await new Promise((r) => setTimeout(r, 100));
+          onProgress(100, game.fileSizeBytes || 1024, 25.0);
+        }
+        const data = new Uint8Array(Math.min(game.fileSizeBytes || 32768, 65536));
+        new TextEncoder().encodeInto(`DECKROMM_ROM_${game.platformSlug}_${game.id}`, data);
+        return new Blob([data], { type: 'application/octet-stream' });
+      }
+
+      const auth = this.getAuthStatus();
+      if (!auth.baseUrl) throw new RommApiError('Not connected to a RomM server', 401, true);
+      const url = `${auth.baseUrl}/api/roms/${encodeURIComponent(String(game.id))}/content/${encodeURIComponent(game.fileName)}`;
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) throw new RommApiError(`Failed to fetch ROM: HTTP ${res.status}`, res.status);
+      return res.blob();
+    }
+
     const off = bridge.on('rom:progress', (ev) => {
       if (String(ev.romId) !== String(game.id) || !onProgress) return;
       const total = ev.total || game.fileSizeBytes || 1;

@@ -1,5 +1,5 @@
 import React, { memo, useState } from 'react';
-import { CheckCircle2, Star, Gamepad2 } from 'lucide-react';
+import { CheckCircle2, Star, Gamepad2, Disc } from 'lucide-react';
 import { Game, LibraryViewMode } from '../types';
 import { PLATFORM_COLORS } from './PlatformBadge';
 
@@ -53,6 +53,11 @@ const Badges: React.FC<{ game: Game }> = ({ game }) => (
         <Star size={15} className="text-yellow-400 fill-yellow-400" />
       </span>
     )}
+    {game.isMultiFile && (
+      <span className="h-7 w-7 rounded-full bg-black/70 flex items-center justify-center" title="Multi-file / Multi-disc">
+        <Disc size={15} className="text-deck-accent" />
+      </span>
+    )}
     {(game.isInstalled || game.isCached) && (
       <span className="h-7 w-7 rounded-full bg-black/70 flex items-center justify-center" title="Installed on this Deck">
         <CheckCircle2 size={16} className="text-deck-ok" />
@@ -91,7 +96,10 @@ export const GameCard: React.FC<GameCardProps> = memo(({ game, index, viewMode, 
         <Cover game={game} className="h-12 w-9 rounded-md shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="font-bold truncate">{game.title}</div>
-          <div className="text-xs text-deck-dim truncate">{game.platformName}</div>
+          <div className="text-xs text-deck-dim truncate">
+            {game.platformName}
+            {game.genres?.length ? ` \u00b7 ${game.genres.slice(0, 2).join(', ')}` : ''}
+          </div>
         </div>
         <span className="w-16 text-sm text-deck-dim tabular-nums">{game.releaseYear || ''}</span>
         <span className="w-20 text-sm text-deck-dim tabular-nums text-right">{formatBytes(game.fileSizeBytes)}</span>
@@ -123,6 +131,7 @@ export const GameCard: React.FC<GameCardProps> = memo(({ game, index, viewMode, 
         <div className="text-xs text-deck-dim truncate">
           {game.platformName}
           {game.releaseYear ? ` \u00b7 ${game.releaseYear}` : ''}
+          {game.genres && game.genres.length > 0 ? ` \u00b7 ${game.genres[0]}` : ''}
         </div>
       </div>
     </button>

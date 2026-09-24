@@ -1,6 +1,6 @@
 import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Square } from 'lucide-react';
-import { Collection, DownloadItem, FilterTag, Game, LibraryViewMode, NavigationAction, Platform, RommConfig, SortOption } from './types';
+import { Collection, DownloadItem, FilterTag, Game, LibraryViewMode, NavigationAction, Platform, RommConfig, SortOption, matchGameGenre } from './types';
 import { AuthStatus, EmulatorStateEvent, RomProgressEvent } from './env/electron';
 import { rommApi } from './services/rommApi';
 import { bridge, isNativeApp } from './services/bridge';
@@ -14,6 +14,7 @@ import { LibrarySource, PlatformBar, sourceKey } from './components/PlatformBar'
 import { SearchFilterBar, VIEW_MODES } from './components/SearchFilterBar';
 import { GameGrid } from './components/GameGrid';
 import { GameDetailModal } from './components/GameDetailModal';
+import { GenrePickerModal } from './components/GenrePickerModal';
 import { LoginOverlay } from './components/LoginOverlay';
 import { MainMenu } from './components/MainMenu';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -79,6 +80,8 @@ export default function App() {
   const filter: FilterTag = config.filterTag || 'all';
   const sortBy: SortOption = config.sortBy || 'title';
   const viewMode: LibraryViewMode = config.viewMode || 'grid';
+  const [selectedGenre, setSelectedGenre] = useState<string>(config.genreFilter || 'all');
+  const [genrePickerOpen, setGenrePickerOpen] = useState(false);
 
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [playingGame, setPlayingGame] = useState<Game | null>(null);
@@ -251,17 +254,55 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, activeKey, reloadToken, config.hideInfoFiles]);
 
+  const availableGenres = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const g of games) {
+      if (!g.genres || g.genres.length === 0) continue;
+      const seenForGame = new Set<string>();
+      for (const raw of g.genres) {
+        const trimmed = raw.trim();
+        if (!trimmed) continue;
+        const isRpg = trimmed.toLowerCase() === 'rpg' || trimmed.toLowerCase() === 'jrpg' || trimmed.toLowerCase().includes('rpg');
+        if (isRpg) {
+          seenForGame.add('RPG');
+        }
+        seenForGame.add(trimmed);
+      }
+      for (const name of seenForGame) {
+        counts[name] = (counts[name] || 0) + 1;
+      }
+    }
+
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => {
+        if (a.name.toLowerCase() === 'rpg') return -1;
+        if (b.name.toLowerCase() === 'rpg') return 1;
+        return b.count - a.count || a.name.localeCompare(b.name);
+      });
+  }, [games]);
+
   const visibleGames = useMemo(() => {
     const term = deferredSearch.trim().toLowerCase();
     let list = games;
     if (source.kind === 'favorites') list = list.filter((g) => g.isFavorite);
     if (source.kind === 'installed') list = list.filter((g) => g.isInstalled || g.isCached);
-    if (term) list = list.filter((g) => g.title.toLowerCase().includes(term) || g.fileName?.toLowerCase().includes(term));
+    if (term) {
+      list = list.filter(
+        (g) =>
+          g.title.toLowerCase().includes(term) ||
+          g.fileName?.toLowerCase().includes(term) ||
+          g.genres?.some((gen) => gen.toLowerCase().includes(term))
+      );
+    }
     switch (filter) {
       case 'cached': list = list.filter((g) => g.isInstalled || g.isCached); break;
       case 'favorites': list = list.filter((g) => g.isFavorite); break;
       case 'streamable': list = list.filter((g) => g.playableOnline !== false); break;
       case 'multiplayer': list = list.filter((g) => playersOf(g) > 1); break;
+    }
+    if (selectedGenre && selectedGenre !== 'all' && selectedGenre.toLowerCase() !== 'all genres') {
+      list = list.filter((g) => matchGameGenre(g, selectedGenre));
     }
     const sorted = [...list];
     const lp = (g: Game) => (g.lastPlayed ? Date.parse(g.lastPlayed) || 0 : 0);
@@ -281,7 +322,7 @@ export default function App() {
       default: sorted.sort(byTitle);
     }
     return sorted;
-  }, [games, deferredSearch, filter, sortBy, source.kind]);
+  }, [games, deferredSearch, filter, selectedGenre, sortBy, source.kind]);
 
   // Land on the first cover after boot / platform switch.
   useEffect(() => {
@@ -323,6 +364,12 @@ export default function App() {
     if (patch.audioFeedback !== undefined) soundService.enabled = patch.audioFeedback;
     setConfig(rommApi.saveConfig(patch));
   }, []);
+
+  const handleGenreChange = useCallback((g: string) => {
+    soundService.playTick();
+    setSelectedGenre(g);
+    updateConfig({ genreFilter: g });
+  }, [updateConfig]);
 
   const refresh = useCallback(() => {
     toast('Refreshing library');
@@ -406,6 +453,10 @@ export default function App() {
 
   const handleLaunch = async (game: Game) => {
     if (emulator.running) return toast('A game is already running', 'error');
+    if (!isNativeApp) {
+      playInBrowser(game);
+      return;
+    }
     toast(game.isInstalled ? `Starting ${game.title}` : `Downloading ${game.title} before launch`);
     const r = await rommApi.launchNative(game);
     if (r.success) {
@@ -514,6 +565,11 @@ export default function App() {
           setSearch('');
           return true;
         }
+        if (selectedGenre && selectedGenre !== 'all') {
+          handleGenreChange('all');
+          toast('Cleared genre filter');
+          return true;
+        }
         const cur = focusManager.getCurrent();
         if (!cur?.hasAttribute('data-game-id')) focusManager.focusSelector('[data-game-id]');
         else focusManager.focusSelector('[data-focus-memory="platforms"] [data-focusable]');
@@ -579,12 +635,17 @@ export default function App() {
         <SearchFilterBar
           filter={filter}
           onFilterChange={(f) => updateConfig({ filterTag: f })}
+          selectedGenre={selectedGenre}
+          onGenreChange={handleGenreChange}
+          availableGenres={availableGenres}
+          onOpenGenrePicker={() => setGenrePickerOpen(true)}
           sortBy={sortBy}
           onSortChange={(s) => updateConfig({ sortBy: s })}
           viewMode={viewMode}
           onViewModeChange={(v) => updateConfig({ viewMode: v })}
           resultCount={visibleGames.length}
           totalCount={games.length}
+          currentPlatformName={sourceLabel(source)}
           loading={loading}
           onRefresh={refresh}
         />
@@ -594,7 +655,15 @@ export default function App() {
           loading={loading}
           progressById={progressById}
           onOpen={openGame}
-          emptyMessage={loadError ? `Could not load the library: ${loadError}. Press X to retry.` : search ? `No games match "${search}"` : 'No games here yet'}
+          emptyMessage={
+            loadError
+              ? `Could not load the library: ${loadError}. Press X to retry.`
+              : search
+              ? `No games match "${search}"`
+              : selectedGenre && selectedGenre !== 'all'
+              ? `No ${selectedGenre} games found in ${sourceLabel(source)}. Try selecting "All Genres".`
+              : 'No games here yet'
+          }
         />
       </div>
 
@@ -609,6 +678,8 @@ export default function App() {
           isNative={isNativeApp}
           progress={progressById[String(selectedGame.id)]}
           emulatorRunning={emulator.running}
+          config={config}
+          onUpdateConfig={updateConfig}
           onClose={() => setSelectedGame(null)}
           onLaunch={handleLaunch}
           onDownload={(g) => handleDownload(g)}
@@ -617,6 +688,18 @@ export default function App() {
           onPlayInBrowser={playInBrowser}
           onToggleFavorite={handleFavorite}
           onGameUpdated={(g) => patchGame(g.id, { summary: g.summary, screenshots: g.screenshots, isInstalled: g.isInstalled, localPath: g.localPath })}
+          onSelectGenre={handleGenreChange}
+        />
+      )}
+
+      {genrePickerOpen && (
+        <GenrePickerModal
+          selectedGenre={selectedGenre}
+          availableGenres={availableGenres}
+          totalGamesCount={games.length}
+          platformName={sourceLabel(source)}
+          onSelect={handleGenreChange}
+          onClose={() => setGenrePickerOpen(false)}
         />
       )}
 
