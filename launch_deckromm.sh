@@ -61,7 +61,7 @@ if [[ "$APP" == *.AppImage ]] && ! { [[ -e /dev/fuse ]] && command -v fusermount
   log "FUSE unavailable - using extract-and-run"
 fi
 
-ARGS=(--no-sandbox)
+ARGS=(--no-sandbox --disable-virtual-keyboard --disable-ime)
 if [[ -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" || "${SteamGamepadUI:-}" == "1" || "${XDG_CURRENT_DESKTOP:-}" == "gamescope" ]]; then
   # gamescope exposes an Xwayland display; X11 ozone is the reliable path.
   ARGS+=(--gamemode --ozone-platform=x11)

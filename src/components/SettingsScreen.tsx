@@ -482,11 +482,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   value={config.autoCheckUpdates !== false}
                   onChange={(v) => onChange({ autoCheckUpdates: v })}
                 />
-                <div className="flex items-center justify-between p-3 rounded-lg bg-black/30 border border-white/5 text-xs">
-                  <span className="text-deck-dim">Target GitHub Repo:</span>
-                  <span className="font-mono text-white font-bold">{config.githubRepo || 'Auto-detected'} ({config.githubBranch || 'main'})</span>
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-deck-dim mb-1 text-xs font-semibold">Repository (owner/repo):</label>
+                    <input
+                      id="settings-github-repo"
+                      data-focusable
+                      type="text"
+                      value={config.githubRepo || ''}
+                      onChange={(e) => onChange({ githubRepo: e.target.value.trim() || undefined })}
+                      placeholder="e.g. username/deckromm"
+                      data-keyboard-title="GitHub Repository (owner/repo)"
+                      data-keyboard-mode="text"
+                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-deck-dim mb-1 text-xs font-semibold">Branch:</label>
+                    <input
+                      id="settings-github-branch"
+                      data-focusable
+                      type="text"
+                      value={config.githubBranch || ''}
+                      onChange={(e) => onChange({ githubBranch: e.target.value.trim() || undefined })}
+                      placeholder="main"
+                      data-keyboard-title="GitHub Branch"
+                      data-keyboard-mode="text"
+                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs"
+                    />
+                  </div>
                 </div>
-                <div className="pt-1">
+                <div className="pt-2">
                   {onOpenUpdateModal && (
                     <button
                       data-focusable

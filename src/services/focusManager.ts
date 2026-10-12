@@ -108,18 +108,65 @@ class FocusManager {
     if (this.initialized || typeof window === 'undefined') return;
     this.initialized = true;
     gamepadService.addListener((action, meta) => this.handle(action, meta), -100);
+
+    // Suppress native OS virtual keyboard (Steam OSK) across all inputs so that
+    // SteamOS Game Mode / gamescope does not summon the Steam overlay keyboard.
+    const suppressNativeOSK = () => {
+      document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea').forEach((el) => {
+        if (isTextInput(el)) {
+          if (el.getAttribute('inputmode') !== 'none') {
+            el.setAttribute('inputmode', 'none');
+          }
+          (el as any).virtualKeyboardPolicy = 'manual';
+        }
+      });
+    };
+    suppressNativeOSK();
+
     // Touch / mouse keep the focus ring in sync so switching input methods is seamless.
     window.addEventListener(
       'pointerdown',
       (e) => {
         const target = (e.target as HTMLElement)?.closest?.(FOCUSABLE_SELECTOR) as HTMLElement | null;
         const scope = this.top();
-        if (target && scope && scope.el.contains(target)) this.focus(target, { scroll: false });
+        if (target && scope && scope.el.contains(target)) {
+          this.focus(target, { scroll: false });
+          if (isTextInput(target)) {
+            // Prevent browser default editable focus which summons the Steam OSK;
+            // route into our built-in virtual keyboard instead.
+            suppressNativeOSK();
+            e.preventDefault();
+            this.activate(target);
+          }
+        }
       },
       true
     );
+
+    // Prevent any rogue native focus on editable text inputs from triggering the Steam OSK
+    window.addEventListener(
+      'focusin',
+      (e) => {
+        const target = e.target as HTMLElement | null;
+        if (isTextInput(target)) {
+          if (target.getAttribute('inputmode') !== 'none') {
+            target.setAttribute('inputmode', 'none');
+          }
+          (target as any).virtualKeyboardPolicy = 'manual';
+          if (!target.hasAttribute('data-virtual-keyboard-input')) {
+            target.blur();
+            if (this.onEditRequest) {
+              this.onEditRequest(target);
+            }
+          }
+        }
+      },
+      true
+    );
+
     // DOM changes (list reloads, conditional sections) can remove the focused element.
     const mo = new MutationObserver(() => {
+      suppressNativeOSK();
       if (this.current && !this.current.isConnected) {
         this.current = null;
         requestAnimationFrame(() => this.ensureFocus());

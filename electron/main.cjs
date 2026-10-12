@@ -68,7 +68,13 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 // Keep gamepad polling + animations alive when gamescope reports the window occluded.
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,HardwareMediaKeyHandling');
+// Prevent Chromium from invoking host/SteamOS virtual keyboard or IME protocols
+app.commandLine.appendSwitch('disable-virtual-keyboard');
+app.commandLine.appendSwitch('disable-ime');
+app.commandLine.appendSwitch(
+  'disable-features',
+  'CalculateNativeWinOcclusion,HardwareMediaKeyHandling,VirtualKeyboard,TouchVirtualKeyboard'
+);
 
 app.setName('DeckRomM');
 if (process.env.DECKROMM_USER_DATA) app.setPath('userData', process.env.DECKROMM_USER_DATA);

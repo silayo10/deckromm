@@ -5,7 +5,7 @@
  * Checks GitHub for newer commits/versions and performs in-place upgrades:
  *  - If running in a git clone: `git fetch`, `git reset --hard`, `npm install`, `npm run build`.
  *  - If running as an AppImage: fetches latest release asset, writes .new and atomically swaps.
- *  - If running as standalone files: pulls GitHub tarball, updates in-place, and builds.
+ *  - If running as standalone files or source: clones/updates and rebuilds AppImage.
  *
  * Reports live progress over the `app:update-progress` event and triggers clean relaunch.
  */
@@ -18,16 +18,54 @@ const { app } = require('electron');
 
 const HOME = process.env.HOME || '/home/deck';
 
+/**
+ * Validates and returns a real, existing directory on disk.
+ * If given a file path (or an .asar archive path), returns its parent directory.
+ */
+function getValidDir(candidate) {
+  if (!candidate || typeof candidate !== 'string') return null;
+  try {
+    let p = candidate;
+    if (p.endsWith('.asar')) {
+      p = path.dirname(p);
+    }
+    if (fs.existsSync(p)) {
+      const stat = fs.statSync(p);
+      if (stat.isDirectory()) return p;
+      if (stat.isFile()) return path.dirname(p);
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Safe execFile wrapper with timeout and guaranteed directory cwd.
+ * Never throws synchronously or rejects with spawn ENOTDIR.
+ */
 function execP(cmd, args, opts = {}) {
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: 30000, ...opts }, (err, stdout, stderr) => {
-      resolve({
-        ok: !err,
-        stdout: String(stdout || '').trim(),
-        stderr: String(stderr || '').trim(),
-        code: err ? err.code : 0,
+    let cleanCwd = opts.cwd ? getValidDir(opts.cwd) : null;
+    if (!cleanCwd) {
+      cleanCwd = getValidDir(process.cwd()) || HOME;
+    }
+    const cleanOpts = { timeout: 30000, ...opts, cwd: cleanCwd };
+    try {
+      execFile(cmd, args, cleanOpts, (err, stdout, stderr) => {
+        resolve({
+          ok: !err,
+          stdout: String(stdout || '').trim(),
+          stderr: String(stderr || '').trim(),
+          code: err ? (err.code || 1) : 0,
+        });
       });
-    });
+    } catch (err) {
+      resolve({
+        ok: false,
+        stdout: '',
+        stderr: err.message || String(err),
+        code: -1,
+      });
+    }
   });
 }
 
@@ -79,7 +117,6 @@ class AppUpdater {
     this.log = log || console.log;
     this.configStore = configStore;
     this.isUpdating = false;
-    this.appDir = app ? app.getAppPath() : process.cwd();
   }
 
   /**
@@ -90,44 +127,118 @@ class AppUpdater {
     const clean = String(urlOrSlug).trim().replace(/\.git$/i, '');
     const githubMatch = clean.match(/github\.com[:/]([^/]+)\/([^/]+)/i);
     if (githubMatch) return `${githubMatch[1]}/${githubMatch[2]}`;
-    const simpleMatch = clean.match(/^([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)$/);
+    const simpleMatch = clean.match(/^([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/);
     if (simpleMatch) return clean;
     return null;
   }
 
   /**
-   * Auto-detect the GitHub repo and current git commit hash.
+   * Search for a valid local git worktree on the Steam Deck.
+   */
+  findGitDirectory() {
+    const candidates = [
+      app && !app.isPackaged ? app.getAppPath() : null,
+      process.cwd(),
+      path.join(HOME, 'deckromm'),
+      path.join(HOME, 'DeckRomM'),
+      path.join(HOME, 'Applications/DeckRomM/source'),
+      path.join(HOME, 'Applications/DeckRomM/src'),
+      path.join(HOME, 'Desktop/deckromm'),
+    ].filter(Boolean);
+
+    for (const dir of candidates) {
+      const validDir = getValidDir(dir);
+      if (!validDir) continue;
+      try {
+        const gitDir = path.join(validDir, '.git');
+        if (fs.existsSync(gitDir)) {
+          return validDir;
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  /**
+   * Auto-detect the GitHub repo and current git commit hash safely.
+   * If running packaged as an AppImage with no git clone, returns build info.
    */
   async detectGitInfo() {
-    const isGit = await execP('git', ['rev-parse', '--is-inside-work-tree'], { cwd: this.appDir });
-    if (!isGit.ok) {
-      // Check .build-info.json if present
-      try {
-        const infoPath = path.join(this.appDir, '.build-info.json');
-        const raw = await fsp.readFile(infoPath, 'utf8');
-        const parsed = JSON.parse(raw);
-        return { isGit: false, commit: parsed.commit || '', repo: parsed.repo || '' };
-      } catch {
-        return { isGit: false, commit: '', repo: '' };
+    const gitDir = this.findGitDirectory();
+    if (gitDir) {
+      const [insideRes, commitRes, remoteRes, branchRes] = await Promise.all([
+        execP('git', ['rev-parse', '--is-inside-work-tree'], { cwd: gitDir }),
+        execP('git', ['rev-parse', 'HEAD'], { cwd: gitDir }),
+        execP('git', ['config', '--get', 'remote.origin.url'], { cwd: gitDir }),
+        execP('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: gitDir }),
+      ]);
+
+      if (insideRes.ok && commitRes.ok) {
+        const repo = remoteRes.ok ? this.parseRepo(remoteRes.stdout) : null;
+        const branch = branchRes.ok && branchRes.stdout !== 'HEAD' ? branchRes.stdout : 'main';
+        return {
+          isGit: true,
+          gitDir,
+          commit: commitRes.stdout,
+          repo: repo || '',
+          branch,
+        };
       }
     }
 
-    const [commitRes, remoteRes, branchRes] = await Promise.all([
-      execP('git', ['rev-parse', 'HEAD'], { cwd: this.appDir }),
-      execP('git', ['config', '--get', 'remote.origin.url'], { cwd: this.appDir }),
-      execP('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: this.appDir }),
-    ]);
+    // Check .build-info.json in known locations
+    const buildInfoCandidates = [
+      path.join(HOME, 'Applications/DeckRomM/.build-info.json'),
+      path.join(HOME, '.config/DeckRomM/.build-info.json'),
+      path.join(app ? app.getAppPath() : '', '.build-info.json'),
+      path.join(app ? app.getAppPath() : '', 'dist/.build-info.json'),
+    ];
 
-    const currentCommit = commitRes.ok ? commitRes.stdout : '';
-    const repo = remoteRes.ok ? this.parseRepo(remoteRes.stdout) : null;
-    const branch = branchRes.ok && branchRes.stdout !== 'HEAD' ? branchRes.stdout : 'main';
+    for (const infoPath of buildInfoCandidates) {
+      try {
+        if (fs.existsSync(infoPath)) {
+          const raw = fs.readFileSync(infoPath, 'utf8');
+          const parsed = JSON.parse(raw);
+          if (parsed && (parsed.commit || parsed.repo)) {
+            return {
+              isGit: false,
+              gitDir: null,
+              commit: parsed.commit || '',
+              repo: parsed.repo || '',
+              branch: parsed.branch || 'main',
+            };
+          }
+        }
+      } catch {}
+    }
 
+    const version = app ? app.getVersion() : '1.3.0';
     return {
-      isGit: true,
-      commit: currentCommit,
-      repo: repo || '',
-      branch,
+      isGit: false,
+      gitDir: null,
+      commit: version ? `v${version}` : '',
+      repo: '',
+      branch: 'main',
     };
+  }
+
+  /**
+   * Persist build/version info to disk so subsequent launches know the current commit.
+   */
+  recordBuildInfo({ commit, repo }) {
+    try {
+      const data = JSON.stringify({ commit, repo, updatedAt: new Date().toISOString() }, null, 2);
+      const paths = [
+        path.join(HOME, 'Applications/DeckRomM/.build-info.json'),
+        path.join(HOME, '.config/DeckRomM/.build-info.json'),
+      ];
+      for (const p of paths) {
+        try {
+          fs.mkdirSync(path.dirname(p), { recursive: true });
+          fs.writeFileSync(p, data);
+        } catch {}
+      }
+    } catch {}
   }
 
   /**
@@ -137,14 +248,15 @@ class AppUpdater {
     try {
       const gitInfo = await this.detectGitInfo();
       const config = this.configStore ? this.configStore.get() : {};
-      const targetRepo = config.githubRepo ? this.parseRepo(config.githubRepo) : gitInfo.repo || 'deckromm/deckromm';
+      const targetRepo = config.githubRepo ? this.parseRepo(config.githubRepo) : gitInfo.repo;
       const targetBranch = config.githubBranch || gitInfo.branch || 'main';
 
       if (!targetRepo) {
         return {
           hasUpdate: false,
-          error: 'No GitHub repository specified. Set repository in Settings > App Updates.',
+          error: 'Please configure your GitHub Repository (e.g. yourname/deckromm) in Settings > App Updates.',
           currentCommit: gitInfo.commit.slice(0, 7),
+          branch: targetBranch,
         };
       }
 
@@ -161,7 +273,7 @@ class AppUpdater {
       if (data && data.rateLimited) {
         return {
           hasUpdate: false,
-          error: 'GitHub API rate limit reached. Please wait or set a GitHub Personal Token in Settings.',
+          error: 'GitHub API rate limit reached. Please wait a few minutes or add a GitHub Personal Token in Settings.',
           currentCommit: gitInfo.commit.slice(0, 7),
           repo: targetRepo,
           branch: targetBranch,
@@ -171,7 +283,7 @@ class AppUpdater {
       if (!data || !data.sha) {
         return {
           hasUpdate: false,
-          error: data?.notFound ? `Repository ${targetRepo} or branch ${targetBranch} not found on GitHub` : 'Unable to parse GitHub response',
+          error: data?.notFound ? `Repository ${targetRepo} or branch ${targetBranch} not found on GitHub. Check repository name.` : 'Unable to parse GitHub response',
           currentCommit: gitInfo.commit.slice(0, 7),
           repo: targetRepo,
           branch: targetBranch,
@@ -181,12 +293,14 @@ class AppUpdater {
       const latestSha = data.sha;
       const currentSha = gitInfo.commit || '';
       const commitMsg = data.commit?.message || 'New commit on GitHub';
-      const author = data.commit?.author?.name || data.author?.login || 'DeckRomM';
+      const author = data.commit?.author?.name || data.author?.login || 'GitHub';
       const date = data.commit?.author?.date || '';
 
-      const isDifferent = Boolean(currentSha && latestSha && !latestSha.startsWith(currentSha) && !currentSha.startsWith(latestSha));
+      const isDifferent = Boolean(
+        !currentSha ||
+        (latestSha && !latestSha.startsWith(currentSha) && !currentSha.startsWith(latestSha))
+      );
 
-      // Also check release assets if AppImage is running
       const isAppImage = Boolean(process.env.APPIMAGE || (app && app.isPackaged));
 
       return {
@@ -216,11 +330,20 @@ class AppUpdater {
 
   /**
    * Run command with live output streaming to updater progress.
+   * Ensures cwd is always a valid directory.
    */
   runSpawn(cmd, args, cwd, stage, basePercent, maxPercent) {
     return new Promise((resolve, reject) => {
-      this.log(`[updater] ${cmd} ${args.join(' ')} (cwd: ${cwd})`);
-      const proc = spawn(cmd, args, { cwd, env: { ...process.env, CI: 'true' } });
+      const safeCwd = getValidDir(cwd) || HOME;
+      this.log(`[updater] ${cmd} ${args.join(' ')} (cwd: ${safeCwd})`);
+      
+      let proc;
+      try {
+        proc = spawn(cmd, args, { cwd: safeCwd, env: { ...process.env, CI: 'true' } });
+      } catch (err) {
+        return reject(err);
+      }
+
       let output = '';
 
       proc.stdout.on('data', (d) => {
@@ -271,6 +394,10 @@ class AppUpdater {
       const targetRepo = options.repo || config.githubRepo || gitInfo.repo;
       const targetBranch = options.branch || config.githubBranch || gitInfo.branch || 'main';
 
+      if (!targetRepo) {
+        return { ok: false, message: 'No target GitHub repository specified' };
+      }
+
       this.emit('app:update-progress', {
         stage: 'starting',
         percent: 5,
@@ -278,27 +405,19 @@ class AppUpdater {
       });
 
       // -------------------------------------------------------------
-      // PATH 1: Git-based in-place upgrade (standard Steam Deck clone)
+      // PATH 1: Git-based in-place upgrade
       // -------------------------------------------------------------
-      if (gitInfo.isGit) {
+      if (gitInfo.isGit && gitInfo.gitDir) {
+        const gitDir = gitInfo.gitDir;
         this.emit('app:update-progress', {
           stage: 'pulling',
           percent: 20,
           message: `Fetching latest code from ${targetBranch}...`,
         });
 
-        // 1. Fetch latest
-        await this.runSpawn('git', ['fetch', 'origin', targetBranch], this.appDir, 'fetching', 25, 40);
+        await this.runSpawn('git', ['fetch', 'origin', targetBranch], gitDir, 'fetching', 25, 40);
+        await this.runSpawn('git', ['reset', '--hard', `origin/${targetBranch}`], gitDir, 'resetting', 45, 55);
 
-        // 2. Reset hard to origin/branch to ensure clean update
-        this.emit('app:update-progress', {
-          stage: 'updating_files',
-          percent: 45,
-          message: 'Applying latest file changes...',
-        });
-        await this.runSpawn('git', ['reset', '--hard', `origin/${targetBranch}`], this.appDir, 'resetting', 45, 55);
-
-        // 3. Package manager dependencies install
         this.emit('app:update-progress', {
           stage: 'installing_deps',
           percent: 60,
@@ -307,12 +426,11 @@ class AppUpdater {
 
         const hasBun = (await execP('which', ['bun'])).ok;
         if (hasBun) {
-          await this.runSpawn('bun', ['install'], this.appDir, 'installing', 65, 75);
+          await this.runSpawn('bun', ['install'], gitDir, 'installing', 65, 75);
         } else {
-          await this.runSpawn('npm', ['install', '--no-audit', '--no-fund'], this.appDir, 'installing', 65, 75);
+          await this.runSpawn('npm', ['install', '--no-audit', '--no-fund'], gitDir, 'installing', 65, 75);
         }
 
-        // 4. Build Vite & TypeScript bundle in-place
         this.emit('app:update-progress', {
           stage: 'building',
           percent: 80,
@@ -320,17 +438,28 @@ class AppUpdater {
         });
 
         if (hasBun) {
-          await this.runSpawn('bun', ['run', 'build'], this.appDir, 'building', 85, 95);
+          await this.runSpawn('bun', ['run', 'build'], gitDir, 'building', 80, 90);
         } else {
-          await this.runSpawn('npm', ['run', 'build'], this.appDir, 'building', 85, 95);
+          await this.runSpawn('npm', ['run', 'build'], gitDir, 'building', 80, 90);
         }
 
-        // Save build info
-        const newCommit = (await execP('git', ['rev-parse', 'HEAD'], { cwd: this.appDir })).stdout;
-        await fsp.writeFile(
-          path.join(this.appDir, '.build-info.json'),
-          JSON.stringify({ commit: newCommit, repo: targetRepo, updatedAt: new Date().toISOString() }, null, 2)
-        ).catch(() => {});
+        // Package new AppImage and install if scripts exist
+        const buildScript = path.join(gitDir, 'build-appimage.sh');
+        if (fs.existsSync(buildScript)) {
+          this.emit('app:update-progress', {
+            stage: 'packaging',
+            percent: 92,
+            message: 'Packaging AppImage for SteamOS...',
+          });
+          await this.runSpawn('bash', [buildScript], gitDir, 'packaging', 92, 98);
+          const installScript = path.join(gitDir, 'installer.sh');
+          if (fs.existsSync(installScript)) {
+            await this.runSpawn('bash', [installScript], gitDir, 'installing', 98, 99);
+          }
+        }
+
+        const newCommit = (await execP('git', ['rev-parse', 'HEAD'], { cwd: gitDir })).stdout;
+        this.recordBuildInfo({ commit: newCommit, repo: targetRepo });
 
         this.emit('app:update-progress', {
           stage: 'complete',
@@ -346,79 +475,102 @@ class AppUpdater {
       }
 
       // -------------------------------------------------------------
-      // PATH 2: AppImage in-place upgrade (Steam Deck ~/Applications)
+      // PATH 2: AppImage in-place upgrade via GitHub Release
       // -------------------------------------------------------------
       const appImagePath = process.env.APPIMAGE || path.join(HOME, 'Applications/DeckRomM/DeckRomM.AppImage');
-      if (fs.existsSync(appImagePath)) {
+
+      this.emit('app:update-progress', {
+        stage: 'checking_releases',
+        percent: 20,
+        message: 'Checking for release AppImage...',
+      });
+
+      const release = await fetchJson(`https://api.github.com/repos/${targetRepo}/releases/latest`, config.githubToken);
+      const asset = release?.assets?.find((a) => a.name.endsWith('.AppImage'));
+
+      if (asset && asset.browser_download_url) {
         this.emit('app:update-progress', {
           stage: 'downloading',
-          percent: 30,
-          message: 'Checking for release AppImage...',
+          percent: 40,
+          message: `Downloading new AppImage (${(asset.size / 1e6).toFixed(1)} MB)...`,
         });
 
-        const release = await fetchJson(`https://api.github.com/repos/${targetRepo}/releases/latest`, config.githubToken);
-        const asset = release?.assets?.find((a) => a.name.endsWith('.AppImage'));
+        const tmpDest = `${appImagePath}.new-${Date.now()}`;
+        await this.downloadFile(asset.browser_download_url, tmpDest);
+        await fsp.chmod(tmpDest, 0o755);
+        await fsp.rename(tmpDest, appImagePath);
 
-        if (asset && asset.browser_download_url) {
-          this.emit('app:update-progress', {
-            stage: 'downloading',
-            percent: 50,
-            message: `Downloading new AppImage (${(asset.size / 1e6).toFixed(1)} MB)...`,
-          });
+        this.recordBuildInfo({ commit: release.tag_name || asset.name, repo: targetRepo });
 
-          const tmpDest = `${appImagePath}.new-${Date.now()}`;
-          await this.downloadFile(asset.browser_download_url, tmpDest);
-          await fsp.chmod(tmpDest, 0o755);
-          await fsp.rename(tmpDest, appImagePath);
+        this.emit('app:update-progress', {
+          stage: 'complete',
+          percent: 100,
+          message: 'AppImage upgraded successfully! Ready to restart.',
+        });
 
-          this.emit('app:update-progress', {
-            stage: 'complete',
-            percent: 100,
-            message: 'AppImage upgraded successfully! Ready to restart.',
-          });
+        return { ok: true, message: 'AppImage upgraded successfully. Relaunch to start the new version.' };
+      }
 
-          return { ok: true, message: 'AppImage upgraded successfully. Relaunch to start the new version.' };
+      // -------------------------------------------------------------
+      // PATH 3: Source clone & build on Steam Deck
+      // -------------------------------------------------------------
+      const buildDir = path.join(HOME, 'deckromm');
+      fs.mkdirSync(buildDir, { recursive: true });
+
+      const hasGit = (await execP('which', ['git'])).ok;
+      if (hasGit) {
+        this.emit('app:update-progress', {
+          stage: 'fetching_source',
+          percent: 25,
+          message: `Updating repository source from GitHub (${targetBranch})...`,
+        });
+
+        const gitDir = path.join(buildDir, '.git');
+        if (fs.existsSync(gitDir)) {
+          await this.runSpawn('git', ['fetch', 'origin', targetBranch], buildDir, 'fetching', 25, 40);
+          await this.runSpawn('git', ['reset', '--hard', `origin/${targetBranch}`], buildDir, 'resetting', 40, 50);
+        } else {
+          await this.runSpawn('git', ['clone', '--depth', '1', '-b', targetBranch, `https://github.com/${targetRepo}.git`, '.'], buildDir, 'cloning', 25, 50);
+        }
+      } else {
+        // Tarball fallback
+        this.emit('app:update-progress', {
+          stage: 'downloading',
+          percent: 25,
+          message: `Downloading repository archive from GitHub (${targetBranch})...`,
+        });
+        const tmpTar = path.join(HOME, `.deckromm-update-${Date.now()}.tar.gz`);
+        await this.downloadFile(`https://api.github.com/repos/${targetRepo}/tarball/${targetBranch}`, tmpTar, config.githubToken);
+        await this.runSpawn('tar', ['-xzf', tmpTar, '--strip-components=1', '-C', buildDir], buildDir, 'extracting', 40, 50);
+        await fsp.unlink(tmpTar).catch(() => {});
+      }
+
+      this.emit('app:update-progress', {
+        stage: 'building',
+        percent: 60,
+        message: 'Building updated AppImage...',
+      });
+
+      const buildScript = path.join(buildDir, 'build-appimage.sh');
+      if (fs.existsSync(buildScript)) {
+        await this.runSpawn('bash', [buildScript], buildDir, 'building', 60, 90);
+        const installScript = path.join(buildDir, 'installer.sh');
+        if (fs.existsSync(installScript)) {
+          await this.runSpawn('bash', [installScript], buildDir, 'installing', 90, 98);
+        }
+      } else {
+        const hasBun = (await execP('which', ['bun'])).ok;
+        if (hasBun) {
+          await this.runSpawn('bun', ['install'], buildDir, 'installing', 60, 75);
+          await this.runSpawn('bun', ['run', 'build'], buildDir, 'building', 75, 95);
+        } else {
+          await this.runSpawn('npm', ['install', '--no-audit', '--no-fund'], buildDir, 'installing', 60, 75);
+          await this.runSpawn('npm', ['run', 'build'], buildDir, 'building', 75, 95);
         }
       }
 
-      // -------------------------------------------------------------
-      // PATH 3: Tarball download & in-place overwrite
-      // -------------------------------------------------------------
-      this.emit('app:update-progress', {
-        stage: 'downloading',
-        percent: 25,
-        message: `Downloading repository archive from GitHub (${targetBranch})...`,
-      });
-
-      const archiveUrl = `https://api.github.com/repos/${targetRepo}/tarball/${targetBranch}`;
-      const tmpTar = path.join(this.appDir, `.update-${Date.now()}.tar.gz`);
-
-      await this.downloadFile(archiveUrl, tmpTar, config.githubToken);
-
-      this.emit('app:update-progress', {
-        stage: 'extracting',
-        percent: 55,
-        message: 'Extracting update files in place...',
-      });
-
-      await this.runSpawn('tar', ['-xzf', tmpTar, '--strip-components=1', '-C', this.appDir], this.appDir, 'extracting', 55, 65);
-      await fsp.unlink(tmpTar).catch(() => {});
-
-      // Build in-place
-      this.emit('app:update-progress', {
-        stage: 'building',
-        percent: 75,
-        message: 'Building updated app bundle...',
-      });
-
-      const hasBun = (await execP('which', ['bun'])).ok;
-      if (hasBun) {
-        await this.runSpawn('bun', ['install'], this.appDir, 'installing', 75, 85);
-        await this.runSpawn('bun', ['run', 'build'], this.appDir, 'building', 85, 95);
-      } else {
-        await this.runSpawn('npm', ['install', '--no-audit', '--no-fund'], this.appDir, 'installing', 75, 85);
-        await this.runSpawn('npm', ['run', 'build'], this.appDir, 'building', 85, 95);
-      }
+      const latestCommit = (await execP('git', ['rev-parse', 'HEAD'], { cwd: buildDir })).stdout || 'latest';
+      this.recordBuildInfo({ commit: latestCommit, repo: targetRepo });
 
       this.emit('app:update-progress', {
         stage: 'complete',
@@ -428,6 +580,7 @@ class AppUpdater {
 
       return {
         ok: true,
+        commit: latestCommit.slice(0, 7),
         message: 'DeckRomM upgraded in place successfully. Restart to run the latest version.',
       };
     } catch (e) {
@@ -472,7 +625,12 @@ class AppUpdater {
   relaunch() {
     this.log('[updater] Relaunching application...');
     if (app) {
-      app.relaunch();
+      const launcherPath = path.join(HOME, 'Applications/DeckRomM/launch_deckromm.sh');
+      if (fs.existsSync(launcherPath)) {
+        app.relaunch({ execPath: launcherPath });
+      } else {
+        app.relaunch();
+      }
       app.exit(0);
     }
   }

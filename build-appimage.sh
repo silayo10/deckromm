@@ -36,6 +36,13 @@ fi
 echo "==> [3/4] Type-checking and building the UI (dist/)"
 $RUN build
 
+# Record build metadata so packaged AppImage knows its commit hash
+COMMIT="$(git rev-parse HEAD 2>/dev/null || echo '')"
+REPO="$(git config --get remote.origin.url 2>/dev/null || echo '')"
+mkdir -p dist
+echo "{\"commit\": \"$COMMIT\", \"repo\": \"$REPO\", \"builtAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > dist/.build-info.json
+cp dist/.build-info.json .build-info.json 2>/dev/null || true
+
 echo "==> [4/4] Packaging with electron-builder ($TARGET)"
 $X electron-builder --config electron-builder.json --linux "$TARGET" --x64 --publish never
 

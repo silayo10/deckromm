@@ -197,22 +197,28 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
                   <div>
                     <label className="block text-deck-dim mb-1 font-semibold">Repository (owner/repo):</label>
                     <input
+                      id="update-repo-input"
                       data-focusable
                       type="text"
                       value={repoInput}
                       onChange={(e) => setRepoInput(e.target.value)}
                       placeholder="e.g. yourname/deckromm"
+                      data-keyboard-title="GitHub Repository (owner/repo)"
+                      data-keyboard-mode="text"
                       className="w-full px-3 py-2 rounded-lg bg-deck-bg border border-deck-line text-white font-mono"
                     />
                   </div>
                   <div>
                     <label className="block text-deck-dim mb-1 font-semibold">Branch:</label>
                     <input
+                      id="update-branch-input"
                       data-focusable
                       type="text"
                       value={branchInput}
                       onChange={(e) => setBranchInput(e.target.value)}
                       placeholder="main"
+                      data-keyboard-title="GitHub Branch"
+                      data-keyboard-mode="text"
                       className="w-full px-3 py-2 rounded-lg bg-deck-bg border border-deck-line text-white font-mono"
                     />
                   </div>

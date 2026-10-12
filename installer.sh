@@ -24,6 +24,11 @@ mkdir -p "$DEST" "$APPS_DIR" "$ICON_DIR" "$HOME/Emulation/roms"
 
 install -m 755 "$SRC" "$DEST/DeckRomM.AppImage"
 install -m 755 "$SCRIPT_DIR/launch_deckromm.sh" "$DEST/launch_deckromm.sh"
+if [[ -f "$SCRIPT_DIR/dist/.build-info.json" ]]; then
+  install -m 644 "$SCRIPT_DIR/dist/.build-info.json" "$DEST/.build-info.json"
+elif [[ -f "$SCRIPT_DIR/.build-info.json" ]]; then
+  install -m 644 "$SCRIPT_DIR/.build-info.json" "$DEST/.build-info.json"
+fi
 if [[ -f "$SCRIPT_DIR/build/icon.png" ]]; then
   install -m 644 "$SCRIPT_DIR/build/icon.png" "$ICON_DIR/deckromm.png"
 fi

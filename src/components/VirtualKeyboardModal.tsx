@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowBigUp, CornerDownLeft, Delete, Eye, EyeOff, Space, X } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { soundService } from '../services/soundService';
@@ -56,7 +56,6 @@ export const VirtualKeyboardModal: React.FC<VirtualKeyboardModalProps> = ({
   const [shift, setShift] = useState(false);
   const [symbols, setSymbols] = useState(false);
   const [reveal, setReveal] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -64,21 +63,13 @@ export const VirtualKeyboardModal: React.FC<VirtualKeyboardModalProps> = ({
       setShift(false);
       setSymbols(false);
       setReveal(false);
-      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     }
   }, [isOpen, initialValue]);
-
-  if (!isOpen) return null;
-
-  const rows = mode === 'code' ? CODE_ROWS : symbols ? SYMBOL_ROWS : LETTER_ROWS;
-  const presets =
-    mode === 'ip_address' ? ['http://', 'https://', '192.168.1.', '192.168.0.', '10.0.0.', ':8080', ':3000', '.local'] : [];
 
   const type = (s: string) => {
     soundService.playTick();
     setText((t) => t + (shift && s.length === 1 ? s.toUpperCase() : s));
     if (shift) setShift(false);
-    inputRef.current?.focus({ preventScroll: true });
   };
   const backspace = () => {
     soundService.playTick();
@@ -88,6 +79,80 @@ export const VirtualKeyboardModal: React.FC<VirtualKeyboardModalProps> = ({
     soundService.playSuccess();
     onSubmit(mode === 'ip_address' ? text.trim() : text);
   };
+
+  // Support typing from physical keyboards (SteamLink, USB/Bluetooth keyboard)
+  // without focusing a native text input that summons Steam's native virtual keyboard.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if modifying with Alt or Meta
+      if (e.metaKey || e.altKey) return;
+
+      // Handle Ctrl+V paste
+      if (e.ctrlKey && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        navigator.clipboard?.readText?.().then((clip) => {
+          if (clip) {
+            soundService.playTick();
+            setText((t) => t + clip);
+          }
+        }).catch(() => {});
+        return;
+      }
+      if (e.ctrlKey) return;
+
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        backspace();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        submit();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        onClose();
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return;
+      }
+
+      // Normal printable character
+      if (e.key.length === 1) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        soundService.playTick();
+        setText((t) => t + e.key);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [isOpen, text, mode, shift]);
+
+  if (!isOpen) return null;
+
+  const rows = mode === 'code' ? CODE_ROWS : symbols ? SYMBOL_ROWS : LETTER_ROWS;
+  const presets =
+    mode === 'ip_address' ? ['http://', 'https://', '192.168.1.', '192.168.0.', '10.0.0.', ':8080', ':3000', '.local'] : [];
 
   const onAction = (action: NavigationAction, meta: ActionMeta) => {
     switch (action) {
@@ -125,7 +190,7 @@ export const VirtualKeyboardModal: React.FC<VirtualKeyboardModalProps> = ({
     'deck-key flex items-center justify-center rounded-lg bg-deck-panel-2 border border-deck-line text-lg font-semibold text-deck-text h-12 transition-transform';
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/70 backdrop-blur-sm deck-enter">
+    <div className="fixed inset-0 z-[600] flex items-end justify-center bg-black/70 backdrop-blur-sm deck-enter">
       <FocusScope
         name="keyboard"
         onBack={onClose}
@@ -148,16 +213,20 @@ export const VirtualKeyboardModal: React.FC<VirtualKeyboardModalProps> = ({
 
         <div className="flex items-center gap-3 mb-4">
           <input
-            ref={inputRef}
             data-focus-skip
-            value={text}
+            data-virtual-keyboard-input="true"
+            readOnly
+            tabIndex={-1}
+            inputMode="none"
+            // @ts-expect-error Chromium virtualKeyboardPolicy attribute
+            virtualKeyboardPolicy="manual"
+            value={masked ? '•'.repeat(text.length) : text}
             placeholder={placeholder}
-            onChange={(e) => setText(e.target.value)}
-            type={masked ? 'password' : 'text'}
+            type="text"
             spellCheck={false}
             autoCapitalize="off"
             autoComplete="off"
-            className="flex-1 h-14 rounded-xl bg-[#0a0e15] border-2 border-deck-accent px-4 text-2xl font-mono text-white placeholder:text-deck-dim/60 caret-deck-accent"
+            className="flex-1 h-14 rounded-xl bg-[#0a0e15] border-2 border-deck-accent px-4 text-2xl font-mono text-white placeholder:text-deck-dim/60 select-none cursor-default"
           />
           {mode === 'password' && (
             <button data-focusable onClick={() => setReveal((r) => !r)} className={`${keyCls} w-14`} aria-label={reveal ? 'Hide' : 'Show'}>
