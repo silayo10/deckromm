@@ -1,7 +1,8 @@
 import React from 'react';
-import { ArrowDownAZ, LayoutGrid, List, GalleryHorizontal, RefreshCw, Filter, X, ChevronDown } from 'lucide-react';
+import { ArrowDownAZ, LayoutGrid, List, GalleryHorizontal, RefreshCw, Filter, X, ChevronDown, Globe } from 'lucide-react';
 import { FilterTag, LibraryViewMode, SortOption } from '../types';
 import { getGenreIcon } from './GenrePickerModal';
+import { LanguageCountOption } from './LanguagePickerModal';
 
 export interface GenreOption {
   name: string;
@@ -15,6 +16,11 @@ interface SearchFilterBarProps {
   onGenreChange: (g: string) => void;
   availableGenres: GenreOption[];
   onOpenGenrePicker: () => void;
+  selectedLanguage: string;
+  onLanguageChange: (lang: string) => void;
+  japaneseCount: number;
+  availableLanguages: LanguageCountOption[];
+  onOpenLanguagePicker: () => void;
   sortBy: SortOption;
   onSortChange: (s: SortOption) => void;
   viewMode: LibraryViewMode;
@@ -51,6 +57,11 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   onGenreChange,
   availableGenres,
   onOpenGenrePicker,
+  selectedLanguage,
+  onLanguageChange,
+  japaneseCount,
+  availableLanguages,
+  onOpenLanguagePicker,
   sortBy,
   onSortChange,
   viewMode,
@@ -69,6 +80,9 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   const ViewIcon = viewMode === 'grid' ? LayoutGrid : viewMode === 'hero' ? GalleryHorizontal : List;
 
   const isGenreActive = Boolean(selectedGenre && selectedGenre !== 'all' && selectedGenre.toLowerCase() !== 'all genres');
+  const isLangActive = Boolean(selectedLanguage && selectedLanguage !== 'all');
+  const currentLangObj = availableLanguages.find((l) => l.id === selectedLanguage);
+  const currentLangLabel = currentLangObj ? currentLangObj.shortLabel : selectedLanguage === 'no-ja' ? 'No JP' : 'All';
 
   // Featured quick genres to show as fast-access chips in the bar
   // RPG is always prioritized first
@@ -122,6 +136,12 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             ) : (
               `${resultCount} of ${totalCount}`
             )}
+            {selectedLanguage === 'no-ja' && (
+              <span className="text-amber-400 font-bold ml-1.5 text-xs">(JP hidden)</span>
+            )}
+            {isLangActive && selectedLanguage !== 'no-ja' && (
+              <span className="text-deck-accent font-semibold ml-1.5 text-xs">({currentLangLabel})</span>
+            )}
           </span>
           <button
             data-focusable
@@ -150,8 +170,55 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
         </div>
       </div>
 
-      {/* Genre Filter Row */}
+      {/* Genre & Language Filter Row */}
       <div data-focus-memory="genres" className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+        {/* Language Filter Button */}
+        <button
+          data-focusable
+          id="lang-picker-trigger"
+          onClick={onOpenLanguagePicker}
+          className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
+            isLangActive
+              ? 'bg-deck-accent/30 border-deck-accent text-white'
+              : 'bg-deck-panel-2 border-deck-line text-deck-dim hover:text-white'
+          }`}
+          title="Open Language Filter Picker"
+        >
+          <Globe size={13} className={isLangActive ? 'text-deck-accent' : ''} />
+          <span>Lang:</span>
+          <span className="font-extrabold text-white">
+            {currentLangLabel}
+          </span>
+          <ChevronDown size={13} className="opacity-70" />
+        </button>
+
+        {/* Quick Hide JP Toggle Chip */}
+        <button
+          data-focusable
+          id="lang-hide-ja-toggle"
+          onClick={() => onLanguageChange(selectedLanguage === 'no-ja' ? 'all' : 'no-ja')}
+          className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all ${
+            selectedLanguage === 'no-ja'
+              ? 'bg-amber-500/25 border-amber-500 text-amber-300 font-extrabold shadow-sm'
+              : 'bg-deck-panel/60 border-deck-line text-deck-dim hover:text-deck-text hover:border-deck-dim/50'
+          }`}
+          title="Filter out Japanese ROMs"
+        >
+          <span>🇯🇵 Hide JP</span>
+          {japaneseCount > 0 && (
+            <span
+              className={`text-[10px] tabular-nums ${
+                selectedLanguage === 'no-ja' ? 'text-amber-300/90 font-bold' : 'text-deck-dim'
+              }`}
+            >
+              ({japaneseCount})
+            </span>
+          )}
+        </button>
+
+        <div className="h-4 w-px bg-deck-line/80 shrink-0 mx-0.5" />
+
+        {/* Genre Picker Trigger */}
         <button
           data-focusable
           id="genre-picker-trigger"
@@ -234,12 +301,15 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
         )}
 
         {/* Clear Filter Button if active */}
-        {isGenreActive && (
+        {(isGenreActive || isLangActive) && (
           <button
             data-focusable
-            onClick={() => onGenreChange('all')}
+            onClick={() => {
+              onGenreChange('all');
+              onLanguageChange('all');
+            }}
             className="deck-chip shrink-0 h-8 px-2.5 rounded-lg border border-red-900/50 bg-red-950/20 text-xs font-bold text-red-300 hover:bg-red-900/30 flex items-center gap-1 ml-1"
-            title="Clear genre filter"
+            title="Clear active filters"
           >
             <X size={13} />
             <span>Clear</span>

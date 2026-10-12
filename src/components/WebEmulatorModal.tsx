@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Game, SaveState, OverlayButtonCombo, EmulatorAspectRatio } from '../types';
+import { Game, SaveState, OverlayButtonCombo, EmulatorAspectRatio, ControllerConfig } from '../types';
 import {
   X,
   Play,
@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { gamepadService } from '../services/gamepadService';
 import { soundService } from '../services/soundService';
+import { focusManager } from '../services/focusManager';
 import { InGameOverlayMenu } from './InGameOverlayMenu';
 import { cacheStorage } from '../services/cacheStorage';
 import { rommApi, getEmulatorCore } from '../services/rommApi';
@@ -142,6 +143,31 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
   const [buttonCombo, setButtonCombo] = useState<OverlayButtonCombo>('select_start');
   const [showComboToast, setShowComboToast] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // In-Game Controller & Button Remapping Configuration
+  const [controllerConfig, setControllerConfig] = useState<ControllerConfig>(() => {
+    try {
+      const saved = localStorage.getItem('deckromm_controls');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      layoutPreset: 'nintendo',
+      swapAB: false,
+      swapXY: false,
+      leftStickAsDpad: true,
+      deadzone: 0.25,
+      turboTrigger: 'rt',
+    };
+  });
+
+  const handleUpdateControllerConfig = useCallback((cfg: ControllerConfig) => {
+    setControllerConfig(cfg);
+    try {
+      localStorage.setItem('deckromm_controls', JSON.stringify(cfg));
+    } catch {}
+    setToastMessage('Controls updated');
+    setTimeout(() => setToastMessage(null), 2000);
+  }, []);
 
   // Auto-hiding Floating HUD
   const [isHudVisible, setIsHudVisible] = useState<boolean>(true);
@@ -369,14 +395,22 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
     }
   }, [loadStatus, isOverlayOpen, focusIframe]);
 
-  // Sync with Gamepad Service Emulation Mode
+  // Sync with Gamepad Service Emulation Mode & Focus Management
   useEffect(() => {
     gamepadService.setEmulationMode(true, isOverlayOpen);
     gamepadService.setOverlayCombo(buttonCombo);
+    // When playing in browser and overlay is closed, disable library focusManager
+    // so no DOM elements take focus rings or borders during streaming
+    if (loadStatus === 'ready' && !isOverlayOpen) {
+      focusManager.setEnabled(false);
+    } else {
+      focusManager.setEnabled(true);
+    }
     return () => {
       gamepadService.setEmulationMode(false, false);
+      focusManager.setEnabled(true);
     };
-  }, [isOverlayOpen, buttonCombo]);
+  }, [loadStatus, isOverlayOpen, buttonCombo]);
 
   // Listen for Overlay Toggle Action & sync controller state to the iframe at 60Hz
   useEffect(() => {
@@ -397,7 +431,11 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
     const sendSync = () => {
       if (iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage(
-          { type: 'SYNC_GAMEPAD', state: gamepadService.currentState },
+          {
+            type: 'SYNC_GAMEPAD',
+            state: gamepadService.currentState,
+            controls: controllerConfig,
+          },
           '*'
         );
       }
@@ -416,7 +454,7 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
       unsubState();
       window.clearInterval(syncInterval);
     };
-  }, [focusIframe]);
+  }, [focusIframe, controllerConfig]);
 
 
   // ---- In-game save (SRAM) sync with RomM ----------------------------------
@@ -790,7 +828,18 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${game.title.replace(/[<>&"]/g, '')}</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *:focus, *:focus-visible, *:active {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      outline: none !important;
+      outline-width: 0 !important;
+      outline-color: transparent !important;
+      -webkit-focus-ring-color: transparent !important;
+      -webkit-tap-highlight-color: transparent !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
     html, body {
       width: 100%;
       height: 100%;
@@ -800,13 +849,30 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
       align-items: center;
       justify-content: center;
       user-select: none;
+      outline: none !important;
+      border: none !important;
+      box-shadow: none !important;
     }
-    #game {
+    #game, #box, canvas, div, iframe {
       width: 100%;
       height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
+      outline: none !important;
+      outline-width: 0 !important;
+      outline-color: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      -webkit-tap-highlight-color: transparent !important;
+    }
+    canvas {
+      outline: none !important;
+      outline-width: 0 !important;
+      outline-color: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      -webkit-tap-highlight-color: transparent !important;
     }
     /* Hide EmulatorJS on-screen touch virtual controllers and keyboard prompts */
     .ejs_virtual_gamepad, .ejs_touch_controller, .ejs_controls_btn, .ejs_settings_controls {
@@ -815,6 +881,7 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
   </style>
   <script>
     let injectedGamepadState = null;
+    let injectedControlsConfig = null;
     let prevMappedState = {};
     let gamepadConnectedDispatched = false;
 
@@ -859,17 +926,43 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
       } catch (err) {}
     }
 
-    function createSyntheticGamepad(s) {
+    function createSyntheticGamepad(s, cfg) {
       if (!s) return null;
+      const ctrl = cfg || {};
+      const deadzone = typeof ctrl.deadzone === 'number' ? ctrl.deadzone : 0.25;
+
       const btn = (pressed) => ({
         pressed: Boolean(pressed),
         touched: Boolean(pressed),
         value: pressed ? 1.0 : 0.0
       });
-      const stickLeft = Boolean(s.axes && s.axes[0] < -0.32);
-      const stickRight = Boolean(s.axes && s.axes[0] > 0.32);
-      const stickUp = Boolean(s.axes && s.axes[1] < -0.32);
-      const stickDown = Boolean(s.axes && s.axes[1] > 0.32);
+
+      const stickLeft = Boolean(s.axes && s.axes[0] < -deadzone);
+      const stickRight = Boolean(s.axes && s.axes[0] > deadzone);
+      const stickUp = Boolean(s.axes && s.axes[1] < -deadzone);
+      const stickDown = Boolean(s.axes && s.axes[1] > deadzone);
+
+      const mapStick = ctrl.leftStickAsDpad !== false;
+
+      // Handle face button layout remappings
+      let mappedA = s.a;
+      let mappedB = s.b;
+      let mappedX = s.x;
+      let mappedY = s.y;
+
+      if (ctrl.swapAB) {
+        const tmp = mappedA; mappedA = mappedB; mappedB = tmp;
+      }
+      if (ctrl.swapXY) {
+        const tmp = mappedX; mappedX = mappedY; mappedY = tmp;
+      }
+      if (ctrl.layoutPreset === 'standard') {
+        // Standard Xbox / Steam Deck layout: South button is primary action
+        const tmp = mappedA; mappedA = mappedB; mappedB = tmp;
+      } else if (ctrl.layoutPreset === 'arcade') {
+        const t1 = mappedA; mappedA = mappedX; mappedX = t1;
+        const t2 = mappedB; mappedB = mappedY; mappedY = t2;
+      }
 
       return {
         id: 'Steam Deck Controller (STANDARD GAMEPAD)',
@@ -884,23 +977,23 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
           s.axes && s.axes[3] !== undefined ? s.axes[3] : 0,
         ],
         buttons: [
-          btn(s.a),                           // 0: A
-          btn(s.b),                           // 1: B
-          btn(s.x),                           // 2: X
-          btn(s.y),                           // 3: Y
-          btn(s.lb),                          // 4: L1
-          btn(s.rb),                          // 5: R1
-          btn(s.lt),                          // 6: L2
-          btn(s.rt),                          // 7: R2
-          btn(s.select),                      // 8: Select
-          btn(s.start),                       // 9: Start
-          btn(s.l3),                          // 10: L3
-          btn(s.r3),                          // 11: R3
-          btn(s.dpadUp || stickUp),           // 12: D-Pad Up
-          btn(s.dpadDown || stickDown),       // 13: D-Pad Down
-          btn(s.dpadLeft || stickLeft),       // 14: D-Pad Left
-          btn(s.dpadRight || stickRight),     // 15: D-Pad Right
-          btn(false)                          // 16: Guide
+          btn(mappedA),                                         // 0: A
+          btn(mappedB),                                         // 1: B
+          btn(mappedX),                                         // 2: X
+          btn(mappedY),                                         // 3: Y
+          btn(s.lb),                                            // 4: L1
+          btn(s.rb),                                            // 5: R1
+          btn(s.lt),                                            // 6: L2
+          btn(s.rt),                                            // 7: R2
+          btn(s.select),                                        // 8: Select
+          btn(s.start),                                         // 9: Start
+          btn(s.l3),                                            // 10: L3
+          btn(s.r3),                                            // 11: R3
+          btn(s.dpadUp || (mapStick && stickUp)),               // 12: D-Pad Up
+          btn(s.dpadDown || (mapStick && stickDown)),           // 13: D-Pad Down
+          btn(s.dpadLeft || (mapStick && stickLeft)),           // 14: D-Pad Left
+          btn(s.dpadRight || (mapStick && stickRight)),         // 15: D-Pad Right
+          btn(false)                                            // 16: Guide
         ]
       };
     }
@@ -921,7 +1014,7 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
     const origGetGamepads = navigator.getGamepads ? navigator.getGamepads.bind(navigator) : () => [];
     navigator.getGamepads = function() {
       if (injectedGamepadState) {
-        return [createSyntheticGamepad(injectedGamepadState), null, null, null];
+        return [createSyntheticGamepad(injectedGamepadState, injectedControlsConfig), null, null, null];
       }
       const real = origGetGamepads();
       if (real && real[0]) {
@@ -933,30 +1026,73 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
     window.addEventListener('message', (e) => {
       if (!e.data || e.data.type !== 'SYNC_GAMEPAD') return;
       const s = e.data.state;
+      const ctrl = e.data.controls || injectedControlsConfig || {};
       injectedGamepadState = s;
+      injectedControlsConfig = ctrl;
 
       if (!s) return;
 
       if (!gamepadConnectedDispatched) {
         gamepadConnectedDispatched = true;
-        dispatchGamepadConnected(createSyntheticGamepad(s));
+        dispatchGamepadConnected(createSyntheticGamepad(s, ctrl));
       }
 
-      // Convert Left Analog Stick axes to directional inputs with 0.32 deadzone
-      const stickLeft = Boolean(s.axes && s.axes[0] < -0.32);
-      const stickRight = Boolean(s.axes && s.axes[0] > 0.32);
-      const stickUp = Boolean(s.axes && s.axes[1] < -0.32);
-      const stickDown = Boolean(s.axes && s.axes[1] > 0.32);
+      const deadzone = typeof ctrl.deadzone === 'number' ? ctrl.deadzone : 0.25;
+      const stickLeft = Boolean(s.axes && s.axes[0] < -deadzone);
+      const stickRight = Boolean(s.axes && s.axes[0] > deadzone);
+      const stickUp = Boolean(s.axes && s.axes[1] < -deadzone);
+      const stickDown = Boolean(s.axes && s.axes[1] > deadzone);
+      const mapStick = ctrl.leftStickAsDpad !== false;
+
+      let keyA = s.a;
+      let keyB = s.b;
+      let keyX = s.x;
+      let keyY = s.y;
+
+      if (ctrl.swapAB) {
+        const tmp = keyA; keyA = keyB; keyB = tmp;
+      }
+      if (ctrl.swapXY) {
+        const tmp = keyX; keyX = keyY; keyY = tmp;
+      }
+      if (ctrl.layoutPreset === 'standard') {
+        const tmp = keyA; keyA = keyB; keyB = tmp;
+      } else if (ctrl.layoutPreset === 'arcade') {
+        const t1 = keyA; keyA = keyX; keyX = t1;
+        const t2 = keyB; keyB = keyY; keyY = t2;
+      }
+
+      // Handle Turbo button if configured
+      if (ctrl.turboTrigger && ctrl.turboTrigger !== 'none') {
+        const turboPressed = Boolean(
+          (ctrl.turboTrigger === 'rt' && s.rt) ||
+          (ctrl.turboTrigger === 'rb' && s.rb) ||
+          (ctrl.turboTrigger === 'lt' && s.lt)
+        );
+        try {
+          const E = window.EJS_emulator;
+          const m = E && E.gameManager;
+          if (m && m.setFastForwardRatio) {
+            if (turboPressed) {
+              m.setFastForwardRatio(2.5);
+              if (m.toggleFastForward) m.toggleFastForward(1);
+            } else if (prevMappedState._turboActive) {
+              if (m.toggleFastForward) m.toggleFastForward(0);
+            }
+          }
+        } catch(e) {}
+        prevMappedState._turboActive = turboPressed;
+      }
 
       const currentMapped = {
-        dpadUp: Boolean(s.dpadUp || stickUp),
-        dpadDown: Boolean(s.dpadDown || stickDown),
-        dpadLeft: Boolean(s.dpadLeft || stickLeft),
-        dpadRight: Boolean(s.dpadRight || stickRight),
-        a: Boolean(s.a),
-        b: Boolean(s.b),
-        x: Boolean(s.x),
-        y: Boolean(s.y),
+        dpadUp: Boolean(s.dpadUp || (mapStick && stickUp)),
+        dpadDown: Boolean(s.dpadDown || (mapStick && stickDown)),
+        dpadLeft: Boolean(s.dpadLeft || (mapStick && stickLeft)),
+        dpadRight: Boolean(s.dpadRight || (mapStick && stickRight)),
+        a: Boolean(keyA),
+        b: Boolean(keyB),
+        x: Boolean(keyX),
+        y: Boolean(keyY),
         lb: Boolean(s.lb),
         rb: Boolean(s.rb),
         lt: Boolean(s.lt),
@@ -1244,7 +1380,8 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
         id="emulator-canvas-viewport"
         onClick={focusIframe}
         onPointerDown={focusIframe}
-        className={`relative h-full max-h-screen max-w-full flex items-center justify-center bg-black overflow-hidden shadow-2xl transition-all duration-200 ${activeAspectClass}`}
+        style={{ outline: 'none', border: 'none', boxShadow: 'none' }}
+        className={`relative h-full max-h-screen max-w-full flex items-center justify-center bg-black overflow-hidden shadow-2xl transition-all duration-200 outline-none ring-0 border-0 ${activeAspectClass}`}
       >
         {/* State A: Loading / Downloading ROM */}
         {(loadStatus === 'checking' || loadStatus === 'downloading') && (
@@ -1345,11 +1482,12 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
             ref={iframeRef}
             srcDoc={emulatorSrcDoc}
             title={game.title}
-            tabIndex={0}
+            tabIndex={-1}
             autoFocus
             onLoad={focusIframe}
             allow="gamepad; autoplay; fullscreen"
-            className="w-full h-full border-0 bg-black block outline-none"
+            style={{ outline: 'none', border: 'none', boxShadow: 'none' }}
+            className="w-full h-full border-0 bg-black block outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none"
           />
         )}
 
@@ -1394,6 +1532,18 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
           onToggleMute={() => setIsMuted(!isMuted)}
           buttonCombo={buttonCombo}
           onChangeButtonCombo={setButtonCombo}
+          controllerConfig={controllerConfig}
+          onChangeControllerConfig={handleUpdateControllerConfig}
+          onLaunchStandaloneSettings={(flatpakId, name) => {
+            soundService.playSelect();
+            callEmu('PAUSE').catch(() => {});
+            rommApi.launchStandaloneEmulator(flatpakId, name).then((res) => {
+              triggerToast(res.message);
+              if (res.success) {
+                setIsOverlayOpen(false);
+              }
+            });
+          }}
           fps={fps}
           showFps={showFps}
           onToggleShowFps={() => setShowFps(!showFps)}

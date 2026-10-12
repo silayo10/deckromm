@@ -716,6 +716,87 @@ class EmulatorManager {
     return { ok: true, command: resolved.label, pid: child.pid };
   }
 
+  /**
+   * Launch a standalone emulator directly (no game ROM) so users can update
+   * controller button bindings, audio, graphics, BIOS, or general settings.
+   */
+  async launchStandalone({ flatpakId, name }) {
+    if (this.current) return { ok: false, message: `${this.current.title} is already running` };
+    if (!flatpakId) return { ok: false, message: 'No emulator specified' };
+
+    let cmd = 'flatpak';
+    let args = ['run', flatpakId];
+    let label = name || flatpakId;
+
+    if (flatpakId === 'org.libretro.RetroArch') {
+      const ra = await findRetroArch();
+      if (ra) {
+        cmd = ra.cmd;
+        args = [...ra.pre];
+        label = 'RetroArch';
+      }
+    } else {
+      const flatpaks = await installedFlatpaks();
+      if (!flatpaks.has(flatpakId)) {
+        const binaryName = flatpakId.split('.').pop()?.toLowerCase();
+        const sysBin = binaryName ? which(binaryName) : null;
+        if (sysBin) {
+          cmd = sysBin;
+          args = [];
+        } else {
+          return { ok: false, message: `${label} (${flatpakId}) is not installed on this Steam Deck. Install it first from Settings.` };
+        }
+      }
+    }
+
+    fs.mkdirSync(this.logDir, { recursive: true });
+    const logFile = path.join(this.logDir, 'emulator.log');
+    const out = fs.openSync(logFile, 'a');
+    fs.writeSync(out, `\n=== ${new Date().toISOString()} Standalone GUI: ${cmd} ${args.join(' ')}\n`);
+
+    let child;
+    try {
+      child = spawn(cmd, args, {
+        cwd: HOME,
+        env: childEnv(),
+        detached: true,
+        stdio: ['ignore', out, out],
+      });
+    } catch (e) {
+      fs.closeSync(out);
+      return { ok: false, message: `Failed to start ${label}: ${e.message}` };
+    }
+
+    const startedAt = Date.now();
+    this.current = {
+      child,
+      pgid: child.pid,
+      romId: null,
+      title: `${label} (Settings)`,
+      startedAt,
+      command: label,
+      flatpakId,
+    };
+
+    const finish = (code, signal, error) => {
+      if (!this.current || this.current.child !== child) return;
+      try {
+        fs.closeSync(out);
+      } catch {}
+      const info = { running: false, romId: null, code, signal, error: error ? error.message : null, playedMs: Date.now() - startedAt };
+      this.current = null;
+      this.log(`[launch] standalone emulator GUI exited code=${code} signal=${signal}`);
+      this.emit('emulator:state', info);
+      this.onGameEnd(info);
+    };
+    child.once('exit', (code, signal) => finish(code, signal, null));
+    child.once('error', (err) => finish(null, null, err));
+
+    this.emit('emulator:state', { running: true, romId: null, title: this.current.title, command: label });
+    this.onGameStart(this.current);
+    return { ok: true, command: label, pid: child.pid };
+  }
+
   /** SIGTERM the process group, escalate to SIGKILL after `graceMs`. */
   async kill(graceMs = 3000) {
     const cur = this.current;

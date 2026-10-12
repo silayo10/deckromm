@@ -61,6 +61,21 @@ a[href] {
   outline: none;
 }
 
+/* Prevent any browser focus ring / outline on emulator viewport, iframes, and stream containers */
+iframe,
+iframe:focus,
+iframe:focus-visible,
+#deck-web-emulator-modal,
+#deck-web-emulator-modal *,
+#emulator-canvas-viewport,
+#emulator-canvas-viewport * {
+  outline: none !important;
+  outline-color: transparent !important;
+  outline-width: 0 !important;
+  border-color: transparent !important;
+  -webkit-focus-ring-color: transparent !important;
+}
+
 /* The single source of truth for "what is selected". Set by focusManager. */
 [data-focused="true"] {
   position: relative;

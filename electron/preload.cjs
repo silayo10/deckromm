@@ -8,7 +8,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const invoke = (channel) => (...args) => ipcRenderer.invoke(channel, ...args);
 
-const EVENTS = new Set(['auth:required', 'rom:progress', 'emulator:state', 'app:shutting-down', 'window:focus', 'flatpak:progress']);
+const EVENTS = new Set([
+  'auth:required',
+  'rom:progress',
+  'emulator:state',
+  'app:shutting-down',
+  'window:focus',
+  'flatpak:progress',
+  'bios:progress',
+  'app:update-progress',
+  'app:update-available',
+]);
 
 function on(channel, listener) {
   if (!EVENTS.has(channel)) throw new Error(`Unknown event channel ${channel}`);
@@ -58,6 +68,7 @@ const api = {
   },
   emulator: {
     launch: invoke('emulator:launch'),
+    launchStandalone: invoke('emulator:launch-standalone'),
     kill: invoke('emulator:kill'),
     status: invoke('emulator:status'),
   },
@@ -67,6 +78,18 @@ const api = {
     selectDirectory: invoke('system:select-directory'),
     flatpakStatus: invoke('system:flatpak-status'),
     installFlatpak: invoke('system:install-flatpak'),
+  },
+  bios: {
+    list: invoke('bios:list'),
+    status: invoke('bios:status'),
+    download: invoke('bios:download'),
+    cancel: invoke('bios:cancel'),
+    openFolder: invoke('bios:open-folder'),
+  },
+  updater: {
+    check: invoke('app:check-update'),
+    perform: invoke('app:perform-update'),
+    relaunch: invoke('app:relaunch'),
   },
   on,
 };

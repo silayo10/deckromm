@@ -189,6 +189,7 @@ export interface DeckRommBridge {
   };
   emulator: {
     launch(req: RomFileRequest): Promise<{ ok: boolean; command?: string; pid?: number; message?: string; authRequired?: boolean }>;
+    launchStandalone(req: { flatpakId: string; name?: string }): Promise<{ ok: boolean; command?: string; pid?: number; message?: string }>;
     kill(): Promise<{ ok: boolean; forced?: boolean }>;
     status(): Promise<EmulatorStateEvent>;
   };
@@ -199,12 +200,27 @@ export interface DeckRommBridge {
     flatpakStatus(flatpakIds?: string[]): Promise<{ flatpakAvailable: boolean; installed: Record<string, boolean> }>;
     installFlatpak(flatpakId: string): Promise<{ ok: boolean; message?: string }>;
   };
+  bios: {
+    list(): Promise<Array<{ fileName: string; relativePath: string; fullPath: string; sizeBytes: number; mtime: number }>>;
+    status(list: any[]): Promise<Record<string, { exists: boolean; path: string; size: number }>>;
+    download(req: { firmwareId: number | string; fileName: string; platformSlug?: string; fileSizeBytes?: number }): Promise<{ ok: boolean; path?: string; size?: number; copiedTo?: string[]; message?: string }>;
+    cancel(firmwareId: number | string): Promise<{ ok: boolean }>;
+    openFolder(): Promise<{ ok: boolean; path?: string }>;
+  };
+  updater: {
+    check(): Promise<any>;
+    perform(opts?: { repo?: string; branch?: string }): Promise<{ ok: boolean; message?: string; commit?: string }>;
+    relaunch(): Promise<void>;
+  };
   on(channel: 'auth:required', cb: (info: { status: number; message: string }) => void): Unsubscribe;
   on(channel: 'rom:progress', cb: (ev: RomProgressEvent) => void): Unsubscribe;
   on(channel: 'emulator:state', cb: (ev: EmulatorStateEvent) => void): Unsubscribe;
   on(channel: 'app:shutting-down', cb: (ev: { reason: string }) => void): Unsubscribe;
   on(channel: 'window:focus', cb: (ev: { focused: boolean }) => void): Unsubscribe;
   on(channel: 'flatpak:progress', cb: (ev: FlatpakProgressEvent) => void): Unsubscribe;
+  on(channel: 'bios:progress', cb: (ev: any) => void): Unsubscribe;
+  on(channel: 'app:update-progress', cb: (ev: any) => void): Unsubscribe;
+  on(channel: 'app:update-available', cb: (ev: any) => void): Unsubscribe;
 }
 
 declare global {

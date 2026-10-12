@@ -85,6 +85,8 @@ export interface RommConfig {
   sortBy?: SortOption;
   filterTag?: FilterTag;
   genreFilter?: string;
+  languageFilter?: string;
+  hideJapanese?: boolean;
   launcherMode?: 'auto' | 'retroarch' | 'custom';
   /** Template with {rom} {core} {platform} {romdir} placeholders. */
   customLaunchCommand?: string;
@@ -94,6 +96,11 @@ export interface RommConfig {
   /** Selected emulator core override per game ID */
   gameCores?: Record<string, string>;
   retroarchFullscreen?: boolean;
+  // Updates & GitHub in-place upgrade
+  githubRepo?: string;
+  githubBranch?: string;
+  autoCheckUpdates?: boolean;
+  githubToken?: string;
   /** @deprecated v1 plaintext secrets - now kept encrypted by the main process. Never persisted. */
   apiToken?: string;
   /** @deprecated see apiToken */
@@ -252,6 +259,31 @@ export interface StandaloneEmulatorInfo {
   description: string;
 }
 
+export interface ControllerConfig {
+  layoutPreset: 'nintendo' | 'standard' | 'arcade';
+  swapAB: boolean;
+  swapXY: boolean;
+  leftStickAsDpad: boolean;
+  deadzone: number;
+  turboTrigger: 'none' | 'rt' | 'lt' | 'rb';
+  customMap?: Record<string, string>;
+}
+
+export function getStandaloneEmulatorForPlatform(platformSlug?: string): StandaloneEmulatorInfo | null {
+  if (!platformSlug) return null;
+  const slug = platformSlug.toLowerCase().trim();
+  if (['psx', 'ps1', 'playstation'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'duckstation') || null;
+  if (['ps2', 'playstation-2', 'playstation2'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'pcsx2') || null;
+  if (['gc', 'ngc', 'gamecube', 'wii'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'dolphin') || null;
+  if (['psp', 'playstation-portable'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'ppsspp') || null;
+  if (['ps3', 'playstation-3'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'rpcs3') || null;
+  if (['3ds', 'n3ds', 'nintendo-3ds'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'lime3ds') || null;
+  if (['wiiu', 'wii-u'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'cemu') || null;
+  if (['switch', 'nintendo-switch'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'ryujinx') || null;
+  if (['dc', 'dreamcast', 'naomi', 'atomiswave'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'flycast') || null;
+  return null;
+}
+
 export const SUPPORTED_STANDALONE_EMULATORS: StandaloneEmulatorInfo[] = [
   { id: 'duckstation', flatpakId: 'org.duckstation.DuckStation', name: 'DuckStation', platforms: ['PlayStation (PS1)'], description: 'High performance PS1 emulator with hardware resolution scaling & rendering fixes' },
   { id: 'pcsx2', flatpakId: 'net.pcsx2.PCSX2', name: 'PCSX2', platforms: ['PlayStation 2'], description: 'Full-speed PlayStation 2 emulator with widescreen & HD patches' },
@@ -362,4 +394,67 @@ export function getActiveCoreForGame(game: Game, config: RommConfig): string {
   }
   return 'auto';
 }
+
+// ---------------------------------------------------------------------------
+// BIOS and Firmware types
+// ---------------------------------------------------------------------------
+export interface RommFirmwareItem {
+  id: number;
+  fileName: string;
+  filePath?: string;
+  fileSizeBytes: number;
+  platformId: number;
+  platformSlug: string;
+  platformName?: string;
+  isVerified?: boolean;
+  md5Hash?: string;
+  sha1Hash?: string;
+  crcHash?: string;
+  missingFromFs?: boolean;
+  isInstalled?: boolean;
+  localPath?: string;
+  localSizeBytes?: number;
+  description?: string;
+  requiredForEmulators?: string[];
+}
+
+export interface BiosProgressEvent {
+  firmwareId: number | string;
+  fileName: string;
+  loaded: number;
+  total: number;
+  percent: number;
+  status: 'downloading' | 'completed' | 'error';
+  path?: string;
+  copiedTo?: string[];
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
+// In-place App Update types
+// ---------------------------------------------------------------------------
+export interface AppUpdateInfo {
+  hasUpdate: boolean;
+  currentCommit: string;
+  latestCommit: string;
+  fullSha?: string;
+  message: string;
+  fullMessage?: string;
+  author: string;
+  date: string;
+  repo: string;
+  branch: string;
+  isGit?: boolean;
+  isAppImage?: boolean;
+  releaseUrl?: string;
+  error?: string;
+}
+
+export interface AppUpdateProgressEvent {
+  stage: string;
+  percent: number;
+  message: string;
+  log?: string;
+}
+
 

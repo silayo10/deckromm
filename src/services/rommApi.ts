@@ -11,10 +11,104 @@
  * the event loop between chunks, keeping input handling at 60 fps even for
  * libraries with thousands of ROMs.
  */
-import { Collection, Game, Platform, RommConfig, getActiveCoreForGame } from '../types';
+import { Collection, Game, Platform, RommConfig, getActiveCoreForGame, RommFirmwareItem } from '../types';
 import type { AuthResult, AuthStatus, RomFileRequest, RommRequest, ServerProbe } from '../env/electron';
 import { DEMO_GAMES, DEMO_PLATFORMS } from './rommData';
 import { assetUrl, bridge, isNativeApp } from './bridge';
+import { parseRomFileName } from '../utils/languageUtils';
+
+export const DEMO_FIRMWARE: RommFirmwareItem[] = [
+  {
+    id: 101,
+    fileName: 'scph39001.bin',
+    fileSizeBytes: 4194304,
+    platformId: 10,
+    platformSlug: 'ps2',
+    platformName: 'PlayStation 2',
+    isVerified: true,
+    md5Hash: 'd5ce2c7d1108ab2e2978ff72210fbcf6',
+    description: 'PlayStation 2 NTSC-U BIOS (v01.60) - Required for PCSX2 standalone emulator',
+    requiredForEmulators: ['pcsx2'],
+  },
+  {
+    id: 102,
+    fileName: 'scph70012.bin',
+    fileSizeBytes: 4194304,
+    platformId: 10,
+    platformSlug: 'ps2',
+    platformName: 'PlayStation 2',
+    isVerified: true,
+    description: 'PlayStation 2 Slim NTSC-U BIOS (v02.00) - High compatibility for PCSX2',
+    requiredForEmulators: ['pcsx2'],
+  },
+  {
+    id: 103,
+    fileName: 'scph10000.bin',
+    fileSizeBytes: 4194304,
+    platformId: 10,
+    platformSlug: 'ps2',
+    platformName: 'PlayStation 2',
+    isVerified: true,
+    description: 'PlayStation 2 NTSC-J BIOS (v01.00) - For Japanese PS2 releases in PCSX2',
+    requiredForEmulators: ['pcsx2'],
+  },
+  {
+    id: 201,
+    fileName: 'scph5501.bin',
+    fileSizeBytes: 524288,
+    platformId: 9,
+    platformSlug: 'psx',
+    platformName: 'PlayStation (PS1)',
+    isVerified: true,
+    md5Hash: '924e392ed05558ffdb115408c163d70e',
+    description: 'PlayStation 1 NTSC-U BIOS (v3.0) - DuckStation & RetroArch',
+    requiredForEmulators: ['duckstation', 'retroarch'],
+  },
+  {
+    id: 202,
+    fileName: 'scph5500.bin',
+    fileSizeBytes: 524288,
+    platformId: 9,
+    platformSlug: 'psx',
+    platformName: 'PlayStation (PS1)',
+    isVerified: true,
+    description: 'PlayStation 1 NTSC-J BIOS - DuckStation & RetroArch',
+    requiredForEmulators: ['duckstation'],
+  },
+  {
+    id: 301,
+    fileName: 'dc_boot.bin',
+    fileSizeBytes: 2097152,
+    platformId: 13,
+    platformSlug: 'dc',
+    platformName: 'Sega Dreamcast',
+    isVerified: true,
+    description: 'Dreamcast Boot ROM - Required for Flycast emulator',
+    requiredForEmulators: ['flycast'],
+  },
+  {
+    id: 302,
+    fileName: 'dc_flash.bin',
+    fileSizeBytes: 131072,
+    platformId: 13,
+    platformSlug: 'dc',
+    platformName: 'Sega Dreamcast',
+    isVerified: true,
+    description: 'Dreamcast NVRAM / Flash settings storage',
+    requiredForEmulators: ['flycast'],
+  },
+  {
+    id: 401,
+    fileName: 'gba_bios.bin',
+    fileSizeBytes: 16384,
+    platformId: 3,
+    platformSlug: 'gba',
+    platformName: 'Game Boy Advance',
+    isVerified: true,
+    description: 'Official GBA Boot ROM for authentic boot animation & sound in mGBA',
+    requiredForEmulators: ['retroarch'],
+  },
+];
 
 const LEGACY_CONFIG_KEY = 'deckromm_config_v1';
 const FAVORITES_KEY = 'deckromm_favorites_v2';
@@ -327,6 +421,15 @@ class RommApiService {
     const serverFav = Boolean(r.rom_user?.is_favorite || r.is_favorite);
     if (serverFav) this.favorites.add(String(id));
 
+    const fileName = r.fs_name || r.file_name || `${r.name || 'rom'}.bin`;
+    const parsedFileMeta = parseRomFileName(fileName);
+    const rawLanguages = r.languages || meta.languages || [];
+    const normalizedLangs = Array.isArray(rawLanguages)
+      ? rawLanguages.map((l: any) => (typeof l === 'string' ? l : l?.name || l?.code)).filter(Boolean)
+      : [];
+    const languages = normalizedLangs.length > 0 ? normalizedLangs : parsedFileMeta.languages;
+    const region = (r.regions && r.regions[0]) || r.region || meta.region || parsedFileMeta.region || '';
+
     return {
       id,
       title: r.name || r.fs_name_no_ext || String(r.fs_name || 'Untitled').replace(/\.[^/.]+$/, ''),
@@ -342,13 +445,13 @@ class RommApiService {
       coverUrl: assetUrl(cover, base),
       backdropUrl: screenshots[0] || assetUrl(cover, base),
       screenshots,
-      fileName: r.fs_name || r.file_name || `${r.name || 'rom'}.bin`,
+      fileName,
       fileSizeBytes: Number(r.fs_size_bytes || r.file_size_bytes || 0),
       crc: r.crc_hash || '',
       md5: r.md5_hash || '',
       sha1: r.sha1_hash || '',
-      region: (r.regions && r.regions[0]) || '',
-      languages: r.languages || [],
+      region,
+      languages,
       players: meta.player_count || r.player_count || '',
       igdbId: r.igdb_id,
       mobyId: r.moby_id,
@@ -544,6 +647,103 @@ class RommApiService {
     }
   }
 
+  // ------------------------------------------------------------------ firmware & bios
+  /**
+   * Fetch firmware and BIOS files from RomM or demo data, enriched with local status.
+   */
+  async getFirmware(platformId?: number): Promise<RommFirmwareItem[]> {
+    let items: RommFirmwareItem[] = [];
+
+    if (!this.config.isDemoMode) {
+      try {
+        const query: Record<string, any> = {};
+        if (platformId) query.platform_id = platformId;
+        const res = await this.request<any[]>({ path: '/api/firmware', query });
+        if (Array.isArray(res) && res.length > 0) {
+          const platforms = await this.getPlatforms().catch(() => []);
+          const platformMap = new Map<number, Platform>();
+          platforms.forEach((p) => {
+            if (p.id) platformMap.set(Number(p.id), p);
+          });
+
+          items = res.map((f: any) => {
+            const plat = platformMap.get(Number(f.platform_id));
+            const slug = plat?.slug || String(f.platform_slug || '').toLowerCase();
+            const emus: string[] = [];
+            if (['ps2', 'playstation-2', 'playstation2'].includes(slug)) emus.push('pcsx2');
+            if (['psx', 'ps1', 'playstation'].includes(slug)) emus.push('duckstation', 'retroarch');
+            if (['dc', 'dreamcast'].includes(slug)) emus.push('flycast');
+            if (['psp'].includes(slug)) emus.push('ppsspp');
+
+            return {
+              id: Number(f.id),
+              fileName: f.file_name || f.fileName,
+              filePath: f.file_path,
+              fileSizeBytes: Number(f.file_size_bytes || 0),
+              platformId: Number(f.platform_id),
+              platformSlug: slug,
+              platformName: plat?.name || f.platform_name || slug,
+              isVerified: Boolean(f.is_verified),
+              md5Hash: f.md5_hash,
+              sha1Hash: f.sha1_hash,
+              crcHash: f.crc_hash,
+              missingFromFs: Boolean(f.missing_from_fs),
+              requiredForEmulators: emus,
+            };
+          });
+        }
+      } catch (e: any) {
+        // Fall back to demo list if /api/firmware is not available or empty
+      }
+    }
+
+    if (items.length === 0) {
+      items = [...DEMO_FIRMWARE];
+      if (platformId) {
+        items = items.filter((f) => f.platformId === platformId);
+      }
+    }
+
+    // Check local status on Steam Deck filesystem
+    try {
+      const statusMap = await bridge.bios.status(items);
+      items = items.map((f) => {
+        const st = statusMap[String(f.id)];
+        return {
+          ...f,
+          isInstalled: Boolean(st?.exists),
+          localPath: st?.path,
+          localSizeBytes: st?.size,
+        };
+      });
+    } catch {
+      /* ignore */
+    }
+
+    return items;
+  }
+
+  /**
+   * Download a firmware/BIOS file from RomM to local Emulation/bios and standalone emulator paths.
+   */
+  async downloadFirmware(item: RommFirmwareItem): Promise<{ ok: boolean; path?: string; message?: string }> {
+    if (this.config.isDemoMode) {
+      await new Promise((r) => setTimeout(r, 600));
+      return {
+        ok: true,
+        path: `/home/deck/Emulation/bios/${item.fileName}`,
+        message: `[Demo] Successfully downloaded ${item.fileName} into ~/Emulation/bios and emulator folders.`,
+      };
+    }
+    const r = await bridge.bios.download({
+      firmwareId: item.id,
+      fileName: item.fileName,
+      platformSlug: item.platformSlug,
+      fileSizeBytes: item.fileSizeBytes,
+    });
+    return r;
+  }
+
   // ------------------------------------------------------------------ files & launching
   /**
    * URL the in-app EmulatorJS player loads the ROM from. The main process
@@ -586,6 +786,30 @@ class RommApiService {
     if (!isNativeApp) return { success: false, message: 'Native launch requires the DeckRomM desktop app' };
     const r = await bridge.emulator.launch(this.fileReq(game, false, core));
     return { success: r.ok, message: r.ok ? `Launching with ${r.command}` : r.message || 'Launch failed', command: r.command };
+  }
+
+  /**
+   * Launch a standalone emulator directly without a game so the user can configure
+   * controller buttons, graphics, audio, memory cards, or bios settings.
+   */
+  async launchStandaloneEmulator(flatpakId: string, name?: string): Promise<{ success: boolean; message: string }> {
+    if (!isNativeApp) {
+      if (this.config.isDemoMode) {
+        return {
+          success: true,
+          message: `[Demo] Opened ${name || flatpakId} configuration GUI. On Steam Deck, this opens the emulator's settings window directly.`,
+        };
+      }
+      return {
+        success: false,
+        message: `Standalone emulator launch requires the native Steam Deck app. In desktop mode: 'flatpak run ${flatpakId}'.`,
+      };
+    }
+    const r = await bridge.emulator.launchStandalone({ flatpakId, name });
+    return {
+      success: r.ok,
+      message: r.ok ? `Launching ${name || flatpakId} settings...` : r.message || 'Launch failed',
+    };
   }
 
   /**

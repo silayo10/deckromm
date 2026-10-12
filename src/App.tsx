@@ -15,6 +15,8 @@ import { SearchFilterBar, VIEW_MODES } from './components/SearchFilterBar';
 import { GameGrid } from './components/GameGrid';
 import { GameDetailModal } from './components/GameDetailModal';
 import { GenrePickerModal } from './components/GenrePickerModal';
+import { LanguagePickerModal, LanguageCountOption } from './components/LanguagePickerModal';
+import { isJapaneseGame, isEnglishGame, matchGameLanguage } from './utils/languageUtils';
 import { LoginOverlay } from './components/LoginOverlay';
 import { MainMenu } from './components/MainMenu';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -23,6 +25,8 @@ import { KeyboardMode, VirtualKeyboardModal } from './components/VirtualKeyboard
 import { ControllerHUD, HudHint } from './components/ControllerHUD';
 import { FocusScope } from './components/FocusScope';
 import { WebEmulatorModal } from './components/WebEmulatorModal';
+import { RomPatcherModal } from './components/RomPatcherModal';
+import { StandaloneEmulatorsModal } from './components/StandaloneEmulatorsModal';
 
 interface KeyboardRequest {
   input: HTMLInputElement | HTMLTextAreaElement;
@@ -82,12 +86,18 @@ export default function App() {
   const viewMode: LibraryViewMode = config.viewMode || 'grid';
   const [selectedGenre, setSelectedGenre] = useState<string>(config.genreFilter || 'all');
   const [genrePickerOpen, setGenrePickerOpen] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(
+    config.languageFilter || (config.hideJapanese ? 'no-ja' : 'all')
+  );
+  const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
 
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [playingGame, setPlayingGame] = useState<Game | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const [patcherModalOpen, setPatcherModalOpen] = useState(false);
+  const [standaloneEmulatorsModalOpen, setStandaloneEmulatorsModalOpen] = useState(false);
   const [keyboard, setKeyboard] = useState<KeyboardRequest | null>(null);
   const [downloads, setDownloads] = useState<Record<string, DownloadItem>>({});
   const [emulator, setEmulator] = useState<EmulatorStateEvent>({ running: false });
@@ -282,6 +292,38 @@ export default function App() {
       });
   }, [games]);
 
+  const { availableLanguages, japaneseCount } = useMemo(() => {
+    let ja = 0;
+    let en = 0;
+    let fr = 0;
+    let de = 0;
+    let es = 0;
+    let it = 0;
+
+    for (const g of games) {
+      if (isJapaneseGame(g)) ja++;
+      if (isEnglishGame(g)) en++;
+      if (matchGameLanguage(g, 'fr')) fr++;
+      if (matchGameLanguage(g, 'de')) de++;
+      if (matchGameLanguage(g, 'es')) es++;
+      if (matchGameLanguage(g, 'it')) it++;
+    }
+
+    const options: LanguageCountOption[] = [
+      { id: 'all', label: 'All Languages', shortLabel: 'All', flag: '🌐', count: games.length, description: 'Show all releases in this library' },
+      { id: 'no-ja', label: 'Hide Japanese', shortLabel: 'No JP', flag: '🇯🇵', count: Math.max(0, games.length - ja), description: 'Exclude Japanese imports (keep English & translations)' },
+      { id: 'en', label: 'English Only', shortLabel: 'EN', flag: '🇺🇸', count: en, description: 'Only North American, European, & English releases' },
+      { id: 'ja', label: 'Japanese Only', shortLabel: 'JA', flag: '🇯🇵', count: ja, description: 'Only Japanese region & untranslated imports' },
+    ];
+
+    if (fr > 0) options.push({ id: 'fr', label: 'French Only', shortLabel: 'FR', flag: '🇫🇷', count: fr });
+    if (de > 0) options.push({ id: 'de', label: 'German Only', shortLabel: 'DE', flag: '🇩🇪', count: de });
+    if (es > 0) options.push({ id: 'es', label: 'Spanish Only', shortLabel: 'ES', flag: '🇪🇸', count: es });
+    if (it > 0) options.push({ id: 'it', label: 'Italian Only', shortLabel: 'IT', flag: '🇮🇹', count: it });
+
+    return { availableLanguages: options, japaneseCount: ja };
+  }, [games]);
+
   const visibleGames = useMemo(() => {
     const term = deferredSearch.trim().toLowerCase();
     let list = games;
@@ -304,6 +346,9 @@ export default function App() {
     if (selectedGenre && selectedGenre !== 'all' && selectedGenre.toLowerCase() !== 'all genres') {
       list = list.filter((g) => matchGameGenre(g, selectedGenre));
     }
+    if (selectedLanguage && selectedLanguage !== 'all') {
+      list = list.filter((g) => matchGameLanguage(g, selectedLanguage));
+    }
     const sorted = [...list];
     const lp = (g: Game) => (g.lastPlayed ? Date.parse(g.lastPlayed) || 0 : 0);
     // Recently Played keeps its own order (newest first) regardless of the sort setting.
@@ -322,7 +367,7 @@ export default function App() {
       default: sorted.sort(byTitle);
     }
     return sorted;
-  }, [games, deferredSearch, filter, selectedGenre, sortBy, source.kind]);
+  }, [games, deferredSearch, filter, selectedGenre, selectedLanguage, sortBy, source.kind]);
 
   // Land on the first cover after boot / platform switch.
   useEffect(() => {
@@ -370,6 +415,14 @@ export default function App() {
     setSelectedGenre(g);
     updateConfig({ genreFilter: g });
   }, [updateConfig]);
+
+  const handleLanguageChange = useCallback((lang: string) => {
+    soundService.playTick();
+    setSelectedLanguage(lang);
+    updateConfig({ languageFilter: lang, hideJapanese: lang === 'no-ja' });
+  }, [updateConfig]);
+
+  const listKey = `${activeKey}|${filter}|${selectedGenre}|${selectedLanguage}|${sortBy}|${deferredSearch}`;
 
   const refresh = useCallback(() => {
     toast('Refreshing library');
@@ -639,6 +692,11 @@ export default function App() {
           onGenreChange={handleGenreChange}
           availableGenres={availableGenres}
           onOpenGenrePicker={() => setGenrePickerOpen(true)}
+          selectedLanguage={selectedLanguage}
+          onLanguageChange={handleLanguageChange}
+          japaneseCount={japaneseCount}
+          availableLanguages={availableLanguages}
+          onOpenLanguagePicker={() => setLanguagePickerOpen(true)}
           sortBy={sortBy}
           onSortChange={(s) => updateConfig({ sortBy: s })}
           viewMode={viewMode}
@@ -655,11 +713,17 @@ export default function App() {
           loading={loading}
           progressById={progressById}
           onOpen={openGame}
+          listKey={listKey}
+          selectedGameId={selectedGame ? String(selectedGame.id) : null}
           emptyMessage={
             loadError
               ? `Could not load the library: ${loadError}. Press X to retry.`
               : search
               ? `No games match "${search}"`
+              : selectedLanguage === 'no-ja' && selectedGenre && selectedGenre !== 'all'
+              ? `No non-Japanese ${selectedGenre} games found. Try clearing filters.`
+              : selectedLanguage === 'no-ja'
+              ? `No non-Japanese games found in ${sourceLabel(source)}.`
               : selectedGenre && selectedGenre !== 'all'
               ? `No ${selectedGenre} games found in ${sourceLabel(source)}. Try selecting "All Genres".`
               : 'No games here yet'
@@ -703,6 +767,17 @@ export default function App() {
         />
       )}
 
+      {languagePickerOpen && (
+        <LanguagePickerModal
+          selectedLanguage={selectedLanguage}
+          availableLanguages={availableLanguages}
+          totalGamesCount={games.length}
+          platformName={sourceLabel(source)}
+          onSelect={handleLanguageChange}
+          onClose={() => setLanguagePickerOpen(false)}
+        />
+      )}
+
       {settingsOpen && (
         <SettingsScreen
           config={config}
@@ -711,6 +786,10 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           onSignIn={() => setLogin({ open: true })}
           onLogout={logout}
+          onOpenEmulatorsModal={() => {
+            setSettingsOpen(false);
+            setStandaloneEmulatorsModalOpen(true);
+          }}
         />
       )}
 
@@ -746,6 +825,14 @@ export default function App() {
             setMenuOpen(false);
             setSettingsOpen(true);
           }}
+          onPatcher={() => {
+            setMenuOpen(false);
+            setPatcherModalOpen(true);
+          }}
+          onEmulators={() => {
+            setMenuOpen(false);
+            setStandaloneEmulatorsModalOpen(true);
+          }}
           onSignIn={() => {
             setMenuOpen(false);
             setLogin({ open: true });
@@ -765,6 +852,41 @@ export default function App() {
           onCancel={() => setLogin({ open: false })}
           onLoggedIn={onLoggedIn}
           onDemo={onDemo}
+        />
+      )}
+
+      {patcherModalOpen && (
+        <RomPatcherModal
+          game={
+            selectedGame ||
+            games[0] || {
+              id: 'community-library',
+              title: 'Community ROM Library',
+              platformSlug: 'snes',
+              platformName: 'Multi-System',
+              fileName: 'game.bin',
+              fileSizeBytes: 0,
+              releaseYear: 0,
+              developer: '',
+              publisher: '',
+              genres: [],
+              rating: 0,
+              summary: 'Browse and search community patches across retro platforms.',
+              coverUrl: '',
+            }
+          }
+          onClose={() => setPatcherModalOpen(false)}
+          onSuccess={() => {
+            refresh();
+          }}
+        />
+      )}
+
+      {standaloneEmulatorsModalOpen && (
+        <StandaloneEmulatorsModal
+          isOpen={standaloneEmulatorsModalOpen}
+          onClose={() => setStandaloneEmulatorsModalOpen(false)}
+          onToast={(text, tone) => toast(text, tone || 'info')}
         />
       )}
 

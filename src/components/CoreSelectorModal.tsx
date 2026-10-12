@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Check, Cpu, Sparkles, X, Info, Layers, RefreshCw, Download, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Check, Cpu, Sparkles, X, Info, Layers, RefreshCw, Download, CheckCircle2, Loader2, AlertTriangle, Sliders } from 'lucide-react';
 import { CoreOption, Game, PLATFORM_AVAILABLE_CORES, RommConfig, getActiveCoreForGame } from '../types';
 import { FocusScope } from './FocusScope';
 import { PlatformBadge } from './PlatformBadge';
 import { soundService } from '../services/soundService';
 import { bridge, isNativeApp } from '../services/bridge';
+import { rommApi } from '../services/rommApi';
 
 interface CoreSelectorModalProps {
   game?: Game | null;
@@ -236,6 +237,22 @@ export const CoreSelectorModal: React.FC<CoreSelectorModalProps> = ({
                     <p className="mt-1 text-xs text-red-400 font-semibold">{errMessage}</p>
                   )}
                 </div>
+
+                {hasFlatpak && isNativeApp && isInstalled && (
+                  <button
+                    data-focusable
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      soundService.playSelect();
+                      await rommApi.launchStandaloneEmulator(core.flatpakId!, core.name);
+                    }}
+                    className="ml-auto px-3 py-1.5 rounded-lg text-xs font-extrabold bg-sky-600/30 hover:bg-sky-600/50 border border-sky-400/40 text-sky-200 flex items-center gap-1.5 transition-all shrink-0 active:scale-95"
+                    title={`Launch ${core.name} GUI without running a game to update settings`}
+                  >
+                    <Sliders size={13} className="text-sky-300" />
+                    <span>Launch Settings</span>
+                  </button>
+                )}
 
                 {hasFlatpak && isNativeApp && !isInstalled && !isInstalling && (
                   <button

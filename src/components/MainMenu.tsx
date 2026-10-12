@@ -1,5 +1,5 @@
 import React from 'react';
-import { Library, Search, RefreshCw, Download, Settings, LogIn, LogOut, Maximize, Power } from 'lucide-react';
+import { Library, Search, RefreshCw, Download, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { isNativeApp } from '../services/bridge';
 
@@ -13,6 +13,8 @@ interface MainMenuProps {
   onRefresh: () => void;
   onDownloads: () => void;
   onSettings: () => void;
+  onPatcher?: () => void;
+  onEmulators?: () => void;
   onSignIn: () => void;
   onLogout: () => void;
   onToggleFullscreen: () => void;
@@ -22,7 +24,7 @@ interface MainMenuProps {
 /** Start-button side menu (Steam-style). "Exit to Steam" is always last and red. */
 export const MainMenu: React.FC<MainMenuProps> = (p) => {
   const item = 'deck-row w-full h-14 px-5 rounded-xl flex items-center gap-4 text-lg font-semibold text-left';
-  const Item = ({ icon, label, onClick, id }: { icon: React.ReactNode; label: string; onClick: () => void; id?: string }) => (
+  const Item = ({ icon, label, onClick, id }: { icon: React.ReactNode; label: string; onClick?: () => void; id?: string }) => (
     <button id={id} data-focusable onClick={onClick} className={item}>
       {icon}
       {label}
@@ -51,6 +53,8 @@ export const MainMenu: React.FC<MainMenuProps> = (p) => {
         <Item id="menu-library" icon={<Library size={22} />} label="Library" onClick={p.onLibrary} />
         <Item icon={<Search size={22} />} label="Search" onClick={p.onSearch} />
         <Item icon={<RefreshCw size={22} />} label="Refresh library" onClick={p.onRefresh} />
+        {p.onPatcher && <Item icon={<Wand2 size={22} />} label="ROM Hacks & Patches" onClick={p.onPatcher} />}
+        {p.onEmulators && <Item icon={<Sliders size={22} />} label="Standalone Emulators" onClick={p.onEmulators} />}
         {isNativeApp && <Item icon={<Download size={22} />} label="Downloads" onClick={p.onDownloads} />}
         <Item icon={<Settings size={22} />} label="Server & settings" onClick={p.onSettings} />
         {p.authenticated ? (

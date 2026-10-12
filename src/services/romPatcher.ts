@@ -17,34 +17,70 @@ export interface PatchOption {
 
 /** Featured community patch presets for popular games. */
 export const FEATURED_COMMUNITY_PATCHES: PatchOption[] = [
+  // GBA
   {
     id: 'mother3_en',
     title: 'Mother 3 (GBA) - English Fan Translation v1.3',
     description: 'The acclaimed full English translation by Tomato and Clyde Mandelin.',
     platformSlug: 'gba',
-    gameTitleKeywords: ['mother 3', 'mother3'],
+    gameTitleKeywords: ['mother 3', 'mother3', 'earthbound 2', 'earthbound2'],
     patchUrl: 'https://raw.githubusercontent.com/tomatotranslations/mother3-patch/main/mother3_english.ips',
     patchType: 'ips',
     author: 'Tomato / Clyde Mandelin',
     category: 'Translation',
   },
   {
-    id: 'pokemon_red_dx',
-    title: 'Pokémon Red (GB) - Full Color DX Patch',
-    description: 'Upgrades original Game Boy Pokémon Red with full GBC color palette & sprites.',
-    platformSlug: 'gb',
-    gameTitleKeywords: ['pokemon red', 'pokémon red'],
-    patchUrl: 'https://raw.githubusercontent.com/romhacks/pokemon-red-color/main/pokemon_red_dx.ips',
+    id: 'pokemon_emerald_qol',
+    title: 'Pokémon Emerald (GBA) - National Dex & Modern QoL',
+    description: 'Enables National Dex from start, re-usable TMs, physical/special split, and running indoors.',
+    platformSlug: 'gba',
+    gameTitleKeywords: ['pokemon emerald', 'pokémon emerald', 'emerald'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/pokemon-emerald-qol/main/emerald_qol.ips',
     patchType: 'ips',
-    author: 'eikei / Community',
+    author: 'DizzyEgg / Community',
+    category: 'QoL',
+  },
+  {
+    id: 'castlevania_aria_recolored',
+    title: 'Castlevania: Aria of Sorrow (GBA) - Uncensored & Color Restored',
+    description: 'Restores original Japanese dark color palette, uncensors blood and cross graphics.',
+    platformSlug: 'gba',
+    gameTitleKeywords: ['aria of sorrow', 'castlevania'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/gba-patches/main/castlevania_aria_recolored.ips',
+    patchType: 'ips',
+    author: 'Pate',
     category: 'Colorization',
+  },
+  {
+    id: 'zelda_minish_dpad',
+    title: 'Legend of Zelda: The Minish Cap (GBA) - D-Pad Quick Item Switch',
+    description: 'Assigns shield and Pegasus boots to dedicated buttons for smoother gameplay.',
+    platformSlug: 'gba',
+    gameTitleKeywords: ['minish cap', 'zelda'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/gba-patches/main/zelda_minish_qol.ips',
+    patchType: 'ips',
+    author: 'm4a',
+    category: 'QoL',
+  },
+
+  // SNES
+  {
+    id: 'smw_widescreen',
+    title: 'Super Mario World (SNES) - Widescreen 16:9 Patch',
+    description: 'Expands the rendering viewport for 16:9 widescreen display in supported emulators.',
+    platformSlug: 'snes',
+    gameTitleKeywords: ['super mario world', 'mario world', 'smw'],
+    patchUrl: 'https://raw.githubusercontent.com/VitorVilela/SMW-Widescreen/master/smw_widescreen.bps',
+    patchType: 'bps',
+    author: 'Vitor Vilela',
+    category: 'Widescreen',
   },
   {
     id: 'ct_uncensored',
     title: 'Chrono Trigger (SNES) - Retranslation & Uncensored',
     description: 'Restores original Japanese script nuances, uncensors sprites and names.',
     platformSlug: 'snes',
-    gameTitleKeywords: ['chrono trigger'],
+    gameTitleKeywords: ['chrono trigger', 'chrono'],
     patchUrl: 'https://raw.githubusercontent.com/romhacks/snes-patches/main/chrono_trigger_uncensored.ips',
     patchType: 'ips',
     author: 'Kain Stryder',
@@ -55,24 +91,254 @@ export const FEATURED_COMMUNITY_PATCHES: PatchOption[] = [
     title: 'Final Fantasy VI (SNES) - Woolsey Uncensored Edition',
     description: 'Cleans up dialogue, fixes bugged stats (evasion bug), and restores censored art.',
     platformSlug: 'snes',
-    gameTitleKeywords: ['final fantasy iii', 'final fantasy 3', 'final fantasy vi', 'final fantasy 6'],
+    gameTitleKeywords: ['final fantasy iii', 'final fantasy 3', 'final fantasy vi', 'final fantasy 6', 'ff3', 'ff6'],
     patchUrl: 'https://raw.githubusercontent.com/romhacks/snes-patches/main/ff6_woolsey_uncensored.ips',
     patchType: 'ips',
     author: 'Rodimus Primal',
     category: 'QoL',
   },
   {
-    id: 'smw_widescreen',
-    title: 'Super Mario World (SNES) - Widescreen 16:9 Patch',
-    description: 'Expands the rendering viewport for 16:9 widescreen display in supported emulators.',
+    id: 'super_metroid_redux',
+    title: 'Super Metroid (SNES) - Redux & Modern Controls',
+    description: 'Adds fast weapon cycling, GBA-style missile toggles, map markers, and physics tweaks.',
     platformSlug: 'snes',
-    gameTitleKeywords: ['super mario world'],
-    patchUrl: 'https://raw.githubusercontent.com/VitorVilela/SMW-Widescreen/master/smw_widescreen.bps',
+    gameTitleKeywords: ['super metroid', 'metroid 3', 'metroid iii'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/snes-patches/main/super_metroid_redux.ips',
+    patchType: 'ips',
+    author: 'ShadowOne333',
+    category: 'QoL',
+  },
+  {
+    id: 'zelda_alttp_redux',
+    title: 'Legend of Zelda: A Link to the Past (SNES) - Redux & Quick Items',
+    description: 'Adds L/R item swapping, fast text, widescreen support, and heart warning sound mute.',
+    platformSlug: 'snes',
+    gameTitleKeywords: ['link to the past', 'alttp', 'zelda 3', 'zelda iii'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/snes-patches/main/zelda_alttp_redux.ips',
+    patchType: 'ips',
+    author: 'ShadowOne333',
+    category: 'QoL',
+  },
+  {
+    id: 'dragon_quest_5_en',
+    title: 'Dragon Quest V (SNES) - English Fan Translation',
+    description: 'Full English translation of the classic SNES Dragon Quest V.',
+    platformSlug: 'snes',
+    gameTitleKeywords: ['dragon quest 5', 'dragon quest v', 'dragon warrior 5'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/snes-patches/main/dragon_quest_5_en.ips',
+    patchType: 'ips',
+    author: 'DeJap',
+    category: 'Translation',
+  },
+  {
+    id: 'seiken_3_en',
+    title: 'Trials of Mana / Seiken Densetsu 3 (SNES) - English Translation',
+    description: 'Complete English localization for the legendary 3-character action RPG.',
+    platformSlug: 'snes',
+    gameTitleKeywords: ['seiken densetsu 3', 'trials of mana', 'secret of mana 2'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/snes-patches/main/sd3_english.ips',
+    patchType: 'ips',
+    author: 'LNF Translations',
+    category: 'Translation',
+  },
+
+  // GB / GBC
+  {
+    id: 'pokemon_red_dx',
+    title: 'Pokémon Red (GB) - Full Color DX Patch',
+    description: 'Upgrades original Game Boy Pokémon Red with full GBC color palette & sprites.',
+    platformSlug: 'gb',
+    gameTitleKeywords: ['pokemon red', 'pokémon red', 'pokemon'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/pokemon-red-color/main/pokemon_red_dx.ips',
+    patchType: 'ips',
+    author: 'eikei / Community',
+    category: 'Colorization',
+  },
+  {
+    id: 'sml2_dx',
+    title: 'Super Mario Land 2 (GB) - DX Full Color Patch',
+    description: 'Colorizes Super Mario Land 2: 6 Golden Coins with full Game Boy Color palettes & Luigi playability.',
+    platformSlug: 'gb',
+    gameTitleKeywords: ['super mario land 2', 'mario land 2', '6 golden coins'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/gb-patches/main/sml2_dx.ips',
+    patchType: 'ips',
+    author: 'toruzz',
+    category: 'Colorization',
+  },
+  {
+    id: 'metroid2_dx',
+    title: 'Metroid II: Return of Samus (GB) - Colorization DX',
+    description: 'Full color conversion for Metroid II on Game Boy with updated Samus suit sprites.',
+    platformSlug: 'gb',
+    gameTitleKeywords: ['metroid ii', 'metroid 2', 'return of samus'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/gb-patches/main/metroid2_dx.ips',
+    patchType: 'ips',
+    author: 'EJRTQ',
+    category: 'Colorization',
+  },
+  {
+    id: 'tetris_rosy',
+    title: 'Tetris (GB) - Rosy Retrospection QoL & Hard Drop',
+    description: 'Adds modern Tetris features: Hard drop, ghost piece, hold piece, and NES music.',
+    platformSlug: 'gb',
+    gameTitleKeywords: ['tetris'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/gb-patches/main/tetris_rosy.ips',
+    patchType: 'ips',
+    author: 'Onett',
+    category: 'QoL',
+  },
+
+  // NES
+  {
+    id: 'smb_snes_palette',
+    title: 'Super Mario Bros. (NES) - SNES Enhanced Color Palette',
+    description: 'Updates NES Super Mario Bros. colors to match Super Mario All-Stars SNES palette.',
+    platformSlug: 'nes',
+    gameTitleKeywords: ['super mario bros', 'mario bros', 'smb1'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/nes-patches/main/smb1_snes_palette.ips',
+    patchType: 'ips',
+    author: 'DarkSamus',
+    category: 'Colorization',
+  },
+  {
+    id: 'metroid_map_nes',
+    title: 'Metroid (NES) - In-Game Minimap & Battery Save System',
+    description: 'Adds an on-screen map HUD, battery save (no password needed), and beam stacking.',
+    platformSlug: 'nes',
+    gameTitleKeywords: ['metroid'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/nes-patches/main/metroid_map.ips',
+    patchType: 'ips',
+    author: 'Snarfblam',
+    category: 'QoL',
+  },
+  {
+    id: 'castlevania3_vrc6',
+    title: 'Castlevania III (NES) - Japanese VRC6 Audio & Uncensored',
+    description: 'Restores Japanese expanded VRC6 audio channels, uncensored crosses, and Grant attack style.',
+    platformSlug: 'nes',
+    gameTitleKeywords: ['castlevania iii', 'castlevania 3', 'dracula\'s curse'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/nes-patches/main/cv3_vrc6.ips',
+    patchType: 'ips',
+    author: 'Inu',
+    category: 'QoL',
+  },
+  {
+    id: 'ff1_restored',
+    title: 'Final Fantasy I (NES) - Restored Script & Bug Fixes',
+    description: 'Fixes broken spell bugs (TMPR/SABR), restores Japanese enemy art and expanded item names.',
+    platformSlug: 'nes',
+    gameTitleKeywords: ['final fantasy', 'ff1', 'final fantasy 1'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/nes-patches/main/ff1_restored.ips',
+    patchType: 'ips',
+    author: 'Astral',
+    category: 'QoL',
+  },
+
+  // N64
+  {
+    id: 'sm64_60fps',
+    title: 'Super Mario 64 (N64) - 60 FPS & 16:9 Widescreen',
+    description: 'Patches Super Mario 64 engine for smooth 60 FPS animation and native 16:9 display.',
+    platformSlug: 'n64',
+    gameTitleKeywords: ['super mario 64', 'mario 64', 'sm64'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/n64-patches/main/sm64_60fps.bps',
     patchType: 'bps',
-    author: 'Vitor Vilela',
+    author: 'Kaze Emanuar',
     category: 'Widescreen',
   },
+  {
+    id: 'oot_dpad_items',
+    title: 'Zelda: Ocarina of Time (N64) - D-Pad Quick Items & Fast Text',
+    description: 'Assigns 4 extra item slots to the D-Pad, speeds up text boxes and climb speeds.',
+    platformSlug: 'n64',
+    gameTitleKeywords: ['ocarina of time', 'zelda 64', 'oot'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/n64-patches/main/oot_dpad.bps',
+    patchType: 'bps',
+    author: 'KinstA',
+    category: 'QoL',
+  },
+
+  // Genesis / Mega Drive
+  {
+    id: 'sonic2_knuckles_dx',
+    title: 'Sonic the Hedgehog 2 (Genesis) - Knuckles in Sonic 2 DX',
+    description: 'Play as Knuckles with gliding and wall climbing across all Sonic 2 stages.',
+    platformSlug: 'genesis',
+    gameTitleKeywords: ['sonic the hedgehog 2', 'sonic 2'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/genesis-patches/main/sonic2_knuckles.ips',
+    patchType: 'ips',
+    author: 'SEGA / Stealth',
+    category: 'Hack',
+  },
+  {
+    id: 'bare_knuckle_3_en',
+    title: 'Streets of Rage 3 (Genesis) - Bare Knuckle III Restoration & English',
+    description: 'Restores uncensored Japanese Bare Knuckle III graphics, lower difficulty, and original colors.',
+    platformSlug: 'genesis',
+    gameTitleKeywords: ['streets of rage 3', 'bare knuckle 3', 'sor3'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/genesis-patches/main/bk3_restoration.ips',
+    patchType: 'ips',
+    author: 'Czar',
+    category: 'Translation',
+  },
+
+  // PS1
+  {
+    id: 'ff7_beacause',
+    title: 'Final Fantasy VII (PS1) - Beacause English Retranslation',
+    description: 'Replaces flawed original localization with an accurate, nuanced English retranslation.',
+    platformSlug: 'psx',
+    gameTitleKeywords: ['final fantasy vii', 'final fantasy 7', 'ff7'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/psx-patches/main/ff7_beacause.ips',
+    patchType: 'ips',
+    author: 'DLPB',
+    category: 'Translation',
+  },
+  {
+    id: 'persona2_is_en',
+    title: 'Persona 2: Innocent Sin (PS1) - English Fan Translation',
+    description: 'Full English translation for the original PS1 release of Persona 2: Innocent Sin.',
+    platformSlug: 'psx',
+    gameTitleKeywords: ['persona 2', 'innocent sin'],
+    patchUrl: 'https://raw.githubusercontent.com/romhacks/psx-patches/main/p2is_english.ips',
+    patchType: 'ips',
+    author: 'Gemini / Maya',
+    category: 'Translation',
+  },
 ];
+
+/** Search and filter community patches by query, category, or platform. */
+export function searchCommunityPatches(
+  query = '',
+  category = 'all',
+  platformSlug?: string
+): PatchOption[] {
+  const q = query.trim().toLowerCase();
+
+  return FEATURED_COMMUNITY_PATCHES.filter((patch) => {
+    // Category match
+    if (category !== 'all' && patch.category.toLowerCase() !== category.toLowerCase()) {
+      return false;
+    }
+
+    // Platform match (optional)
+    if (platformSlug && platformSlug !== 'all' && patch.platformSlug !== platformSlug) {
+      // If user typed a search query, search across all platforms even if platform mismatch
+      if (!q) return false;
+    }
+
+    // Query match
+    if (!q) return true;
+
+    return (
+      patch.title.toLowerCase().includes(q) ||
+      patch.description.toLowerCase().includes(q) ||
+      patch.platformSlug.toLowerCase().includes(q) ||
+      (patch.author && patch.author.toLowerCase().includes(q)) ||
+      patch.gameTitleKeywords.some((kw) => kw.toLowerCase().includes(q))
+    );
+  });
+}
 
 /** CRC32 computation utility. */
 export function calculateCrc32(data: Uint8Array): number {

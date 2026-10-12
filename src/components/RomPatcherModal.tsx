@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Wand2, Download, Upload, Link, Check, AlertCircle, Loader2, Sparkles, FileCode, CheckCircle2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ArrowLeft, Wand2, Download, Upload, Link, Check, AlertCircle, Loader2, Sparkles, FileCode, CheckCircle2, Search, X, Filter } from 'lucide-react';
 import { Game } from '../types';
 import { FocusScope } from './FocusScope';
-import { FEATURED_COMMUNITY_PATCHES, PatchOption, applyRomPatch, calculateCrc32 } from '../services/romPatcher';
+import { FEATURED_COMMUNITY_PATCHES, PatchOption, applyRomPatch, calculateCrc32, searchCommunityPatches } from '../services/romPatcher';
 import { rommApi } from '../services/rommApi';
 import { bridge, isNativeApp } from '../services/bridge';
 import { soundService } from '../services/soundService';
@@ -13,8 +13,15 @@ interface RomPatcherModalProps {
   onSuccess?: (patchedFileName: string) => void;
 }
 
+const CATEGORIES = ['All', 'Translation', 'Colorization', 'Widescreen', 'QoL', 'Hack'];
+const SUGGESTIONS = ['Mario', 'Zelda', 'Pokemon', 'Metroid', 'Final Fantasy', 'Castlevania'];
+
 export const RomPatcherModal: React.FC<RomPatcherModalProps> = ({ game, onClose, onSuccess }) => {
   const [activeTab, setActiveTab] = useState<'presets' | 'url' | 'file'>('presets');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [showAllSystems, setShowAllSystems] = useState(false);
+
   const [customUrl, setCustomUrl] = useState('');
   const [uploadedPatch, setUploadedPatch] = useState<{ name: string; bytes: Uint8Array } | null>(null);
   
@@ -23,12 +30,40 @@ export const RomPatcherModal: React.FC<RomPatcherModalProps> = ({ game, onClose,
   const [errorMsg, setErrorMsg] = useState('');
   const [completedFileName, setCompletedFileName] = useState<string | null>(null);
 
-  // Filter relevant community patches for this game
-  const matchingPresets = FEATURED_COMMUNITY_PATCHES.filter(
-    (p) =>
-      p.platformSlug === game.platformSlug ||
-      p.gameTitleKeywords.some((kw) => game.title.toLowerCase().includes(kw))
-  );
+  // Compute filtered preset patches based on search, category, and game platform
+  const displayedPresets = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let list = FEATURED_COMMUNITY_PATCHES;
+
+    // Filter by category
+    if (selectedCategory !== 'All') {
+      list = list.filter((p) => p.category.toLowerCase() === selectedCategory.toLowerCase());
+    }
+
+    // Filter by query if typed
+    if (q) {
+      return list.filter(
+        (p) =>
+          p.title.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          p.platformSlug.toLowerCase().includes(q) ||
+          (p.author && p.author.toLowerCase().includes(q)) ||
+          p.gameTitleKeywords.some((kw) => kw.toLowerCase().includes(q))
+      );
+    }
+
+    // If no query typed, show platform matches first unless "showAllSystems" is true
+    if (!showAllSystems) {
+      const platformMatches = list.filter(
+        (p) =>
+          p.platformSlug === game.platformSlug ||
+          p.gameTitleKeywords.some((kw) => game.title.toLowerCase().includes(kw))
+      );
+      if (platformMatches.length > 0) return platformMatches;
+    }
+
+    return list;
+  }, [searchQuery, selectedCategory, showAllSystems, game]);
 
   const handleApplyPreset = async (preset: PatchOption) => {
     soundService.playTick();
@@ -205,7 +240,7 @@ export const RomPatcherModal: React.FC<RomPatcherModalProps> = ({ game, onClose,
                 : 'bg-deck-panel-2 text-deck-dim hover:text-white'
             }`}
           >
-            <Sparkles size={14} /> Community Presets ({matchingPresets.length})
+            <Sparkles size={14} /> Community Presets ({displayedPresets.length})
           </button>
           <button
             data-focusable
@@ -257,43 +292,130 @@ export const RomPatcherModal: React.FC<RomPatcherModalProps> = ({ game, onClose,
             <>
               {/* Presets View */}
               {activeTab === 'presets' && (
-                <div className="flex flex-col gap-3">
-                  {matchingPresets.length === 0 ? (
-                    <div className="p-6 rounded-xl bg-deck-panel/50 border border-deck-line text-center text-deck-dim text-sm">
-                      No featured presets automatically matched for this title. You can paste a direct patch URL or upload an .ips/.bps patch file.
-                    </div>
-                  ) : (
-                    matchingPresets.map((preset) => (
-                      <div
-                        key={preset.id}
-                        className="p-4 rounded-xl bg-deck-panel/70 border border-deck-line flex items-center justify-between gap-4"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-extrabold text-sm text-white">{preset.title}</span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-deck-accent/20 text-deck-accent border border-deck-accent/30">
-                              {preset.category}
-                            </span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-deck-panel-2 text-deck-dim border border-deck-line">
-                              {preset.patchType}
-                            </span>
-                          </div>
-                          <p className="text-xs text-deck-dim mt-1">{preset.description}</p>
-                          {preset.author && <p className="text-[11px] text-deck-dim/70 mt-0.5">Author: {preset.author}</p>}
-                        </div>
-
-                        <button
+                <div className="flex flex-col gap-4">
+                  {/* Search Bar & Controls */}
+                  <div className="flex flex-col gap-2.5 bg-deck-panel/40 p-3.5 rounded-xl border border-deck-line">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-deck-dim" />
+                        <input
                           data-focusable
-                          disabled={patching}
-                          onClick={() => handleApplyPreset(preset)}
-                          className="px-4 py-2 rounded-xl text-xs font-bold bg-deck-accent hover:bg-deck-accent/80 text-white flex items-center gap-2 border border-deck-accent/40 shadow-md transition-all shrink-0 disabled:opacity-50"
-                        >
-                          {patching ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-                          <span>Apply Patch</span>
-                        </button>
+                          data-keyboard-title="Search Community Patches"
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Search patches (e.g. Mario, Zelda, Translation, 60fps...)"
+                          className="w-full h-10 pl-10 pr-9 rounded-lg bg-[#0a0e15] border border-deck-line text-xs font-semibold text-white placeholder:text-deck-dim/60 focus:border-deck-accent focus:outline-none"
+                        />
+                        {searchQuery && (
+                          <button
+                            data-focusable
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-deck-dim hover:text-white"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
                       </div>
-                    ))
-                  )}
+
+                      <button
+                        data-focusable
+                        onClick={() => setShowAllSystems((prev) => !prev)}
+                        className={`h-10 px-3 rounded-lg text-xs font-bold border transition-colors flex items-center gap-1.5 shrink-0 ${
+                          showAllSystems
+                            ? 'bg-deck-accent/20 text-deck-accent border-deck-accent/40'
+                            : 'bg-deck-panel-2 text-deck-dim border-deck-line hover:text-white'
+                        }`}
+                        title="Toggle between game-matched presets and all system presets"
+                      >
+                        <Filter size={14} />
+                        {showAllSystems ? 'All Systems' : 'Auto Matched'}
+                      </button>
+                    </div>
+
+                    {/* Category Filter Chips */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                      <span className="text-[11px] font-bold text-deck-dim mr-1 shrink-0">Category:</span>
+                      {CATEGORIES.map((cat) => (
+                        <button
+                          key={cat}
+                          data-focusable
+                          onClick={() => setSelectedCategory(cat)}
+                          className={`px-3 py-1 rounded-md text-[11px] font-bold border transition-all shrink-0 ${
+                            selectedCategory === cat
+                              ? 'bg-deck-accent text-white border-deck-accent shadow-sm'
+                              : 'bg-deck-panel-2 border-deck-line text-deck-dim hover:text-deck-text'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Quick Suggestion Chips */}
+                    {!searchQuery && (
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+                        <span className="text-[11px] font-bold text-deck-dim mr-1 shrink-0">Try searching:</span>
+                        {SUGGESTIONS.map((sug) => (
+                          <button
+                            key={sug}
+                            data-focusable
+                            onClick={() => {
+                              setSearchQuery(sug);
+                              setShowAllSystems(true);
+                            }}
+                            className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-deck-bg/60 border border-deck-line/80 text-deck-dim hover:text-white hover:border-deck-accent/50 transition-colors"
+                          >
+                            {sug}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Preset Items List */}
+                  <div className="flex flex-col gap-3">
+                    {displayedPresets.length === 0 ? (
+                      <div className="p-8 rounded-xl bg-deck-panel/50 border border-deck-line text-center flex flex-col items-center gap-2 text-deck-dim">
+                        <Search size={24} className="text-deck-dim/60" />
+                        <p className="text-sm font-semibold text-white">No patches matched your search</p>
+                        <p className="text-xs text-deck-dim max-w-sm">
+                          Try adjusting your search query, selecting &quot;All Systems&quot;, or pasting a direct patch URL.
+                        </p>
+                      </div>
+                    ) : (
+                      displayedPresets.map((preset) => (
+                        <div
+                          key={preset.id}
+                          className="p-4 rounded-xl bg-deck-panel/70 border border-deck-line flex items-center justify-between gap-4"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-extrabold text-sm text-white">{preset.title}</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-deck-accent/20 text-deck-accent border border-deck-accent/30">
+                                {preset.category}
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-deck-panel-2 text-deck-dim border border-deck-line">
+                                {preset.patchType}
+                              </span>
+                            </div>
+                            <p className="text-xs text-deck-dim mt-1">{preset.description}</p>
+                            {preset.author && <p className="text-[11px] text-deck-dim/70 mt-0.5">Author: {preset.author}</p>}
+                          </div>
+
+                          <button
+                            data-focusable
+                            disabled={patching}
+                            onClick={() => handleApplyPreset(preset)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold bg-deck-accent hover:bg-deck-accent/80 text-white flex items-center gap-2 border border-deck-accent/40 shadow-md transition-all shrink-0 disabled:opacity-50"
+                          >
+                            {patching ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                            <span>Apply Patch</span>
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
 

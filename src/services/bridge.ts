@@ -163,6 +163,9 @@ function createBrowserFallback(): DeckRommBridge {
     },
     emulator: {
       launch: unsupported as any,
+      launchStandalone: async (req: { flatpakId: string; name?: string }) => {
+        return { ok: true, message: `Simulated launch for ${req.name || req.flatpakId} (GUI / Settings mode)` };
+      },
       kill: async () => ({ ok: true }),
       status: async (): Promise<EmulatorStateEvent> => ({ running: false }),
     },
@@ -175,6 +178,27 @@ function createBrowserFallback(): DeckRommBridge {
       selectDirectory: async () => null,
       flatpakStatus: async () => ({ flatpakAvailable: false, installed: {} }),
       installFlatpak: async () => ({ ok: false, message: 'Only available in desktop app' }),
+    },
+    bios: {
+      list: async () => [],
+      status: async (list: any[]) => Object.fromEntries(list.map((i) => [String(i.id), { exists: false, path: '', size: 0 }])),
+      download: async (req: any) => ({ ok: true, message: `Simulated BIOS download for ${req.fileName}` }),
+      cancel: async () => ({ ok: true }),
+      openFolder: async () => ({ ok: false, message: 'Only available in desktop app' }),
+    },
+    updater: {
+      check: async () => ({
+        hasUpdate: false,
+        currentCommit: 'a1b2c3d',
+        latestCommit: 'a1b2c3d',
+        message: 'Running latest version',
+        author: 'DeckRomM',
+        date: new Date().toISOString(),
+        repo: 'deckromm/deckromm',
+        branch: 'main',
+      }),
+      perform: async () => ({ ok: true, message: 'Simulated upgrade complete' }),
+      relaunch: async () => {},
     },
     on: ((channel: string, cb: Listener) => {
       if (!listeners.has(channel)) listeners.set(channel, new Set());

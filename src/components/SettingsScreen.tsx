@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Play, Sliders, ArrowUpCircle } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { PLATFORM_AVAILABLE_CORES, RommConfig, SUPPORTED_STANDALONE_EMULATORS } from '../types';
 import { AppInfo, AuthStatus, NativeStorage } from '../env/electron';
@@ -16,6 +16,9 @@ interface SettingsScreenProps {
   onClose: () => void;
   onSignIn: () => void;
   onLogout: () => void;
+  onOpenEmulatorsModal?: () => void;
+  onOpenBiosModal?: () => void;
+  onOpenUpdateModal?: () => void;
 }
 
 const CONFIGURABLE_PLATFORMS = [
@@ -60,7 +63,7 @@ const Section: React.FC<{ icon: React.ReactNode; title: string; children: React.
 );
 
 /** Server / emulation / library settings. Opened with Select (View) or from the main menu. */
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, onChange, onClose, onSignIn, onLogout }) => {
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, onChange, onClose, onSignIn, onLogout, onOpenEmulatorsModal }) => {
   const [storage, setStorage] = useState<NativeStorage | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [emuPath, setEmuPath] = useState(config.emulationPath || '');
@@ -149,6 +152,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
         delete next[flatpakId];
         return next;
       });
+    }
+  };
+
+  const [launchMessage, setLaunchMessage] = useState<string | null>(null);
+
+  const handleLaunchStandalone = async (flatpakId: string, name?: string) => {
+    soundService.playSelect();
+    try {
+      const res = await rommApi.launchStandaloneEmulator(flatpakId, name);
+      soundService.playSuccess();
+      setLaunchMessage(res.message);
+      setTimeout(() => setLaunchMessage(null), 4000);
+    } catch (e: any) {
+      soundService.playBack();
+      setLaunchMessage(e.message || 'Launch error');
+      setTimeout(() => setLaunchMessage(null), 4000);
     }
   };
 
@@ -319,7 +338,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
             </Section>
 
             {isNativeApp && (
-              <Section icon={<Download size={16} />} title="Standalone Emulators (Flatpaks)">
+              <Section
+                icon={<Download size={16} />}
+                title="Standalone Emulators (Flatpaks)"
+              >
+                {launchMessage && (
+                  <div className="mb-2 p-3 rounded-xl bg-sky-950/60 border border-sky-400/40 text-sky-200 text-xs font-mono font-bold animate-in fade-in flex items-center justify-between">
+                    <span>{launchMessage}</span>
+                  </div>
+                )}
+                {onOpenEmulatorsModal && (
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      data-focusable
+                      onClick={onOpenEmulatorsModal}
+                      className="px-4 py-2 rounded-xl text-xs font-extrabold bg-sky-600/30 hover:bg-sky-600/50 border border-sky-400/40 text-sky-200 flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                    >
+                      <Sliders size={14} className="text-sky-300" />
+                      <span>Open Standalone Emulators Manager</span>
+                    </button>
+                  </div>
+                )}
                 <div className="flex flex-col gap-2">
                   {SUPPORTED_STANDALONE_EMULATORS.map((emu) => {
                     const isInstalled = Boolean(installedFlatpaks[emu.flatpakId]);
@@ -355,7 +394,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
                           {errMsg && <p className="text-xs text-red-400 font-semibold mt-1">{errMsg}</p>}
                         </div>
 
-                        {!isInstalled && (
+                        {isInstalled ? (
+                          <button
+                            data-focusable
+                            onClick={() => handleLaunchStandalone(emu.flatpakId, emu.name)}
+                            className="px-4 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white flex items-center gap-2 border border-sky-400/40 shadow-md transition-all shrink-0 active:scale-95 cursor-pointer"
+                            title={`Launch ${emu.name} without a game running to update settings`}
+                          >
+                            <Play size={13} className="fill-white" />
+                            <span>Launch Settings / GUI</span>
+                          </button>
+                        ) : (
                           <button
                             data-focusable
                             disabled={isInstalling}
@@ -383,6 +432,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
             )}
 
             <Section icon={<SlidersHorizontal size={16} />} title="Library">
+              <Toggle
+                label="Hide Japanese ROMs by default"
+                hint="Exclude untranslated Japanese releases from library lists"
+                value={Boolean(config.hideJapanese || config.languageFilter === 'no-ja')}
+                onChange={(v) => onChange({ hideJapanese: v, languageFilter: v ? 'no-ja' : 'all' })}
+              />
               <Toggle label="Hide BIOS / info files" hint="Skip .txt, .nfo, .jpg and similar entries" value={config.hideInfoFiles !== false} onChange={(v) => onChange({ hideInfoFiles: v })} />
               <Toggle label="Navigation sounds" value={config.audioFeedback !== false} onChange={(v) => onChange({ audioFeedback: v })} />
             </Section>

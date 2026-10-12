@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, ChevronDown, AlertTriangle, Tag, Disc, Wand2 } from 'lucide-react';
-import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, getActiveCoreForGame } from '../types';
+import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders } from 'lucide-react';
+import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, getActiveCoreForGame, getStandaloneEmulatorForPlatform } from '../types';
 import { FocusScope } from './FocusScope';
 import { PlatformBadge } from './PlatformBadge';
 import { formatBytes } from './GameCard';
@@ -134,6 +134,28 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
       soundService.playBack();
       setFlatpakError(res.message || 'Installation failed');
       setFlatpakInstalling(false);
+    }
+  };
+
+  const standaloneEmu = getStandaloneEmulatorForPlatform(game.platformSlug);
+  const [standaloneLaunchMessage, setStandaloneLaunchMessage] = useState<string | null>(null);
+
+  const handleLaunchStandaloneConfig = async () => {
+    if (!standaloneEmu) return;
+    soundService.playSelect();
+    try {
+      const res = await rommApi.launchStandaloneEmulator(standaloneEmu.flatpakId, standaloneEmu.name);
+      setStandaloneLaunchMessage(res.message);
+      if (res.success) {
+        soundService.playSuccess();
+      } else {
+        soundService.playBack();
+      }
+      setTimeout(() => setStandaloneLaunchMessage(null), 3500);
+    } catch (e: any) {
+      soundService.playBack();
+      setStandaloneLaunchMessage(e.message || 'Launch error');
+      setTimeout(() => setStandaloneLaunchMessage(null), 3500);
     }
   };
 
@@ -321,6 +343,19 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               <Wand2 size={20} /> Patch ROM
             </button>
 
+            {/* Configure Standalone Emulator Directly */}
+            {standaloneEmu && (
+              <button
+                data-focusable
+                onClick={handleLaunchStandaloneConfig}
+                className={`${btn} bg-deck-panel-2 border-deck-line text-sky-300 hover:border-sky-400/60 flex items-center gap-2`}
+                title={`Launch ${standaloneEmu.name} emulator directly to update settings and buttons`}
+              >
+                <Sliders size={18} className="text-sky-400" />
+                <span>Configure {standaloneEmu.name}</span>
+              </button>
+            )}
+
             {/* Favorite Button */}
             <button
               data-focusable
@@ -342,6 +377,13 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               </button>
             )}
           </div>
+
+          {standaloneLaunchMessage && (
+            <div className="mt-3 p-3.5 rounded-xl bg-sky-950/70 border border-sky-400/50 text-sky-200 text-xs font-mono font-bold animate-in fade-in flex items-center gap-2.5">
+              <Sliders size={16} className="text-sky-400 shrink-0" />
+              <span>{standaloneLaunchMessage}</span>
+            </div>
+          )}
 
           {downloading && (
             <div className="mt-4 flex flex-col gap-1.5">

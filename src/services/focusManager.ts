@@ -176,11 +176,23 @@ class FocusManager {
     const restore = scope.restoreFocus !== false ? scope.previous : null;
     requestAnimationFrame(() => {
       if (!next) return;
-      const target =
-        (restore && restore.isConnected && next.el.contains(restore) && restore) ||
-        (next.lastFocused && next.lastFocused.isConnected && next.lastFocused) ||
-        this.candidates(next)[0] ||
-        null;
+      let target: HTMLElement | null = null;
+      if (restore && restore.isConnected && next.el.contains(restore)) {
+        target = restore;
+      } else if (restore) {
+        const gameId = restore.getAttribute?.('data-game-id');
+        if (gameId) {
+          target = next.el.querySelector<HTMLElement>(`[data-game-id="${gameId}"]`);
+        } else if (restore.id) {
+          target = next.el.querySelector<HTMLElement>(`#${restore.id}`);
+        }
+      }
+      if (!target && next.lastFocused && next.lastFocused.isConnected && next.el.contains(next.lastFocused)) {
+        target = next.lastFocused;
+      }
+      if (!target) {
+        target = this.candidates(next)[0] || null;
+      }
       this.focus(target, { scroll: true, instant: true });
     });
   }

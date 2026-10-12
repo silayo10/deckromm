@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Game, SaveState, OverlayButtonCombo, NavigationAction, EmulatorAspectRatio } from '../types';
+import { Game, SaveState, OverlayButtonCombo, NavigationAction, EmulatorAspectRatio, ControllerConfig, getStandaloneEmulatorForPlatform, StandaloneEmulatorInfo } from '../types';
 import {
   Play,
   RotateCcw,
@@ -20,6 +20,8 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  Sliders,
+  Sparkles,
 } from 'lucide-react';
 import { gamepadService } from '../services/gamepadService';
 import { soundService } from '../services/soundService';
@@ -55,6 +57,9 @@ interface InGameOverlayMenuProps {
   onToggleMute: () => void;
   buttonCombo: OverlayButtonCombo;
   onChangeButtonCombo: (combo: OverlayButtonCombo) => void;
+  controllerConfig?: ControllerConfig;
+  onChangeControllerConfig?: (cfg: ControllerConfig) => void;
+  onLaunchStandaloneSettings?: (flatpakId: string, name: string) => void;
   fps: number;
   showFps: boolean;
   onToggleShowFps: () => void;
@@ -62,7 +67,7 @@ interface InGameOverlayMenuProps {
   busy?: boolean;
 }
 
-type TabType = 'quick' | 'states' | 'video' | 'audio' | 'controls';
+type TabType = 'quick' | 'states' | 'controls' | 'video' | 'audio';
 
 /** One row in the single-column menu. Every tab is a flat list navigated with Up/Down only. */
 interface MenuItem {
@@ -83,9 +88,9 @@ const SLOT_COUNT = 5;
 const TABS: Array<{ id: TabType; label: string; icon: React.ReactNode }> = [
   { id: 'quick', label: 'Quick Menu', icon: <Zap className="w-4 h-4" /> },
   { id: 'states', label: 'Save States', icon: <Save className="w-4 h-4" /> },
+  { id: 'controls', label: 'Controls & Buttons', icon: <Gamepad2 className="w-4 h-4" /> },
   { id: 'video', label: 'Display', icon: <Monitor className="w-4 h-4" /> },
   { id: 'audio', label: 'Audio & Speed', icon: <Volume2 className="w-4 h-4" /> },
-  { id: 'controls', label: 'Hotkeys', icon: <Gamepad2 className="w-4 h-4" /> },
 ];
 
 const CRT_MODES: Array<{ id: 'off' | 'subtle' | 'arcade' | 'phosphor'; label: string; desc: string }> = [
@@ -157,10 +162,17 @@ export const InGameOverlayMenu: React.FC<InGameOverlayMenuProps> = (props) => {
     onToggleMute,
     buttonCombo,
     onChangeButtonCombo,
+    controllerConfig,
+    onChangeControllerConfig,
+    onLaunchStandaloneSettings,
     showFps,
     onToggleShowFps,
     busy,
   } = props;
+
+  const standaloneEmulator = useMemo(() => {
+    return getStandaloneEmulatorForPlatform(game.platformSlug);
+  }, [game.platformSlug]);
 
   const [activeTab, setActiveTab] = useState<TabType>('quick');
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -359,21 +371,174 @@ export const InGameOverlayMenu: React.FC<InGameOverlayMenuProps> = (props) => {
             onActivate: () => onChangeTurboSpeed(t.speed),
           })),
         ];
-      case 'controls':
-        return COMBOS.map((c) => ({
-          id: `combo-${c.id}`,
-          label: `Overlay Shortcut: ${c.label}`,
-          desc: c.desc,
-          checked: buttonCombo === c.id,
-          icon: <Gamepad2 className="w-4 h-4 text-sky-400" />,
-          onActivate: () => {
-            onChangeButtonCombo(c.id);
-            gamepadService.setOverlayCombo(c.id);
+      case 'controls': {
+        const cfg: ControllerConfig = controllerConfig || {
+          layoutPreset: 'nintendo',
+          swapAB: false,
+          swapXY: false,
+          leftStickAsDpad: true,
+          deadzone: 0.25,
+          turboTrigger: 'rt',
+        };
+
+        const updateCfg = (patch: Partial<ControllerConfig>) => {
+          onChangeControllerConfig?.({ ...cfg, ...patch });
+        };
+
+        const controlItems: MenuItem[] = [
+          // 1. Layout Preset
+          {
+            id: 'ctrl-layout',
+            label: 'Button Layout Preset',
+            desc:
+              cfg.layoutPreset === 'nintendo'
+                ? 'Nintendo Classic (A=Right, B=Bottom, X=Top, Y=Left)'
+                : cfg.layoutPreset === 'standard'
+                ? 'Steam Deck / Xbox Standard (A=Bottom, B=Right, X=Left, Y=Top)'
+                : 'Arcade Layout (Swapped Face Buttons)',
+            value:
+              cfg.layoutPreset === 'nintendo'
+                ? 'Nintendo (A=Right)'
+                : cfg.layoutPreset === 'standard'
+                ? 'Xbox / Deck (A=Bottom)'
+                : 'Arcade',
+            icon: <Sliders className="w-4 h-4 text-sky-400" />,
+            onActivate: () => {
+              const next =
+                cfg.layoutPreset === 'nintendo' ? 'standard' : cfg.layoutPreset === 'standard' ? 'arcade' : 'nintendo';
+              updateCfg({ layoutPreset: next });
+            },
           },
-        }));
+          // 2. Swap A/B Buttons
+          {
+            id: 'ctrl-swap-ab',
+            label: 'Swap A & B Buttons',
+            desc: 'Invert South and East face buttons (swaps primary confirm/cancel and jump/action)',
+            value: cfg.swapAB ? 'Swapped (A=Bottom, B=Right)' : 'Standard',
+            checked: cfg.swapAB,
+            icon: <Gamepad2 className="w-4 h-4 text-indigo-400" />,
+            onActivate: () => updateCfg({ swapAB: !cfg.swapAB }),
+          },
+          // 3. Swap X/Y Buttons
+          {
+            id: 'ctrl-swap-xy',
+            label: 'Swap X & Y Buttons',
+            desc: 'Invert North and West face buttons',
+            value: cfg.swapXY ? 'Swapped' : 'Standard',
+            checked: cfg.swapXY,
+            icon: <Gamepad2 className="w-4 h-4 text-purple-400" />,
+            onActivate: () => updateCfg({ swapXY: !cfg.swapXY }),
+          },
+          // 4. Left Stick as D-Pad
+          {
+            id: 'ctrl-stick-dpad',
+            label: 'Left Stick as D-Pad',
+            desc: 'Mirror analog thumbstick to directional D-Pad (essential for retro 2D games)',
+            value: cfg.leftStickAsDpad ? 'Enabled' : 'Disabled',
+            checked: cfg.leftStickAsDpad,
+            icon: <Activity className="w-4 h-4 text-emerald-400" />,
+            onActivate: () => updateCfg({ leftStickAsDpad: !cfg.leftStickAsDpad }),
+          },
+          // 5. Analog Stick Deadzone
+          {
+            id: 'ctrl-deadzone',
+            label: 'Analog Stick Deadzone',
+            desc: 'Adjust joystick deadband to eliminate stick drift on handhelds',
+            value: `${Math.round(cfg.deadzone * 100)}%`,
+            icon: <Sliders className="w-4 h-4 text-amber-400" />,
+            onActivate: () => {
+              const next = cfg.deadzone <= 0.18 ? 0.25 : cfg.deadzone <= 0.28 ? 0.35 : 0.15;
+              updateCfg({ deadzone: next });
+            },
+          },
+          // 6. Fast-Forward / Turbo Trigger
+          {
+            id: 'ctrl-turbo',
+            label: 'Fast-Forward / Turbo Button',
+            desc: 'Hold this controller button to accelerate emulation speed',
+            value:
+              cfg.turboTrigger === 'rt'
+                ? 'R2 Trigger (RT)'
+                : cfg.turboTrigger === 'rb'
+                ? 'R1 Bumper (RB)'
+                : cfg.turboTrigger === 'lt'
+                ? 'L2 Trigger (LT)'
+                : 'Disabled',
+            icon: <FastForward className="w-4 h-4 text-orange-400" />,
+            onActivate: () => {
+              const next =
+                cfg.turboTrigger === 'rt' ? 'rb' : cfg.turboTrigger === 'rb' ? 'lt' : cfg.turboTrigger === 'lt' ? 'none' : 'rt';
+              updateCfg({ turboTrigger: next });
+            },
+          },
+          // 7. Overlay Hotkey Combos
+          ...COMBOS.map((c) => ({
+            id: `combo-${c.id}`,
+            label: `Overlay Menu Shortcut: ${c.label}`,
+            desc: c.desc,
+            checked: buttonCombo === c.id,
+            icon: <Gamepad2 className="w-4 h-4 text-sky-400" />,
+            onActivate: () => {
+              onChangeButtonCombo(c.id);
+              gamepadService.setOverlayCombo(c.id);
+            },
+          })),
+          // 8. Standalone Emulator Settings Launch (if applicable)
+          ...(standaloneEmulator
+            ? [
+                {
+                  id: 'ctrl-standalone-gui',
+                  label: `Launch ${standaloneEmulator.name} Controller Settings`,
+                  desc: `Open ${standaloneEmulator.name}'s native GUI to configure gamepad profiles, stick calibration, and hotkeys.`,
+                  value: 'Open GUI',
+                  icon: <Play className="w-4 h-4 text-emerald-400" />,
+                  onActivate: () => {
+                    onLaunchStandaloneSettings?.(standaloneEmulator.flatpakId, standaloneEmulator.name);
+                  },
+                } as MenuItem,
+              ]
+            : []),
+          // 9. Reset to Defaults
+          {
+            id: 'ctrl-reset',
+            label: 'Reset Controls to Defaults',
+            desc: 'Restore standard Nintendo layout, 25% deadzone, and R2 turbo trigger',
+            icon: <RotateCcw className="w-4 h-4 text-rose-400" />,
+            onActivate: () => {
+              updateCfg({
+                layoutPreset: 'nintendo',
+                swapAB: false,
+                swapXY: false,
+                leftStickAsDpad: true,
+                deadzone: 0.25,
+                turboTrigger: 'rt',
+                customMap: {},
+              });
+            },
+          },
+        ];
+
+        return controlItems;
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, selectedSlot, saveStates, cloudExtras, cloudStatus, sramStatus, crtFilterMode, aspectRatio, showFps, volume, isMuted, turboSpeed, buttonCombo]);
+  }, [
+    activeTab,
+    selectedSlot,
+    saveStates,
+    cloudExtras,
+    cloudStatus,
+    sramStatus,
+    crtFilterMode,
+    aspectRatio,
+    showFps,
+    volume,
+    isMuted,
+    turboSpeed,
+    buttonCombo,
+    controllerConfig,
+    standaloneEmulator,
+  ]);
 
   // Keep the active slot in sync with the focused row on the Save States tab
   useEffect(() => {

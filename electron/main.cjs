@@ -37,6 +37,8 @@ const { ConfigStore } = require('./lib/configStore.cjs');
 const { RommClient, normalizeBaseUrl } = require('./lib/rommClient.cjs');
 const { detectEmulationRoot, storageStats, DownloadManager, EmulatorManager, getFlatpakStatus, installFlatpak } = require('./lib/emulation.cjs');
 const { CloudSync } = require('./lib/cloudSync.cjs');
+const { BiosManager } = require('./lib/biosManager.cjs');
+const { AppUpdater } = require('./lib/appUpdater.cjs');
 
 // ---------------------------------------------------------------------------
 // Environment / Chromium switches (must run before `app.ready`)
@@ -161,6 +163,19 @@ const emulators = new EmulatorManager({
     else mainWindow.minimize();
   },
   onGameEnd: () => restoreWindow(),
+});
+
+const bios = new BiosManager({
+  romm,
+  getRoot: getEmulationRoot,
+  emit,
+  log,
+});
+
+const updater = new AppUpdater({
+  emit,
+  log,
+  configStore,
 });
 
 function updatePowerBlocker() {
@@ -335,6 +350,21 @@ function createWindow() {
     mainWindow.show();
     mainWindow.focus();
     applyZoom();
+
+    // Auto-check for updates after initial render settles (non-blocking)
+    setTimeout(async () => {
+      try {
+        const cfg = configStore.get();
+        if (cfg.autoCheckUpdates !== false) {
+          const info = await updater.checkForUpdates();
+          if (info && info.hasUpdate && mainWindow && !mainWindow.isDestroyed()) {
+            emit('app:update-available', info);
+          }
+        }
+      } catch (e) {
+        log('[updater] auto-check error', e && e.message);
+      }
+    }, 2500);
   });
   mainWindow.on('resize', applyZoom);
   mainWindow.on('enter-full-screen', applyZoom);
@@ -462,6 +492,7 @@ function registerIpc() {
     }
     return emulators.launch({ ...req, romPath: local.path });
   });
+  handle('emulator:launch-standalone', (req) => emulators.launchStandalone(req || {}));
   handle('emulator:kill', () => emulators.kill());
   handle('emulator:status', () => emulators.running());
 
@@ -474,6 +505,18 @@ function registerIpc() {
   });
   handle('system:flatpak-status', (flatpakIds) => getFlatpakStatus(flatpakIds));
   handle('system:install-flatpak', (flatpakId) => installFlatpak(flatpakId, (ev) => emit('flatpak:progress', ev)));
+
+  // BIOS & Firmware
+  handle('bios:list', () => bios.listLocalBios());
+  handle('bios:status', (list) => bios.checkStatus(list));
+  handle('bios:download', (req) => bios.download(req));
+  handle('bios:cancel', (id) => bios.cancel(id));
+  handle('bios:open-folder', () => bios.openFolder());
+
+  // App Updater & GitHub in-place upgrade
+  handle('app:check-update', () => updater.checkForUpdates());
+  handle('app:perform-update', (opts) => updater.performUpdate(opts));
+  handle('app:relaunch', () => updater.relaunch());
 
   // ---- v1.0 compatibility channels -------------------------------------
   handle('deckromm:is-electron', () => true);
