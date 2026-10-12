@@ -1,5 +1,5 @@
 import React from 'react';
-import { Library, Search, RefreshCw, Download, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders } from 'lucide-react';
+import { Library, Search, RefreshCw, Download, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders, Cpu, ArrowUpCircle } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { isNativeApp } from '../services/bridge';
 
@@ -15,6 +15,8 @@ interface MainMenuProps {
   onSettings: () => void;
   onPatcher?: () => void;
   onEmulators?: () => void;
+  onBios?: () => void;
+  onUpdate?: () => void;
   onSignIn: () => void;
   onLogout: () => void;
   onToggleFullscreen: () => void;
@@ -55,6 +57,8 @@ export const MainMenu: React.FC<MainMenuProps> = (p) => {
         <Item icon={<RefreshCw size={22} />} label="Refresh library" onClick={p.onRefresh} />
         {p.onPatcher && <Item icon={<Wand2 size={22} />} label="ROM Hacks & Patches" onClick={p.onPatcher} />}
         {p.onEmulators && <Item icon={<Sliders size={22} />} label="Standalone Emulators" onClick={p.onEmulators} />}
+        {p.onBios && <Item icon={<Cpu size={22} />} label="BIOS & Firmware" onClick={p.onBios} />}
+        {p.onUpdate && <Item icon={<ArrowUpCircle size={22} />} label="Check for Updates" onClick={p.onUpdate} />}
         {isNativeApp && <Item icon={<Download size={22} />} label="Downloads" onClick={p.onDownloads} />}
         <Item icon={<Settings size={22} />} label="Server & settings" onClick={p.onSettings} />
         {p.authenticated ? (

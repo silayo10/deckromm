@@ -12,6 +12,7 @@ import {
   Search,
   Gamepad2,
   Settings,
+  Cpu,
 } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { SUPPORTED_STANDALONE_EMULATORS, StandaloneEmulatorInfo } from '../types';
@@ -24,6 +25,7 @@ interface StandaloneEmulatorsModalProps {
   onClose: () => void;
   onToast: (text: string, tone?: 'ok' | 'error' | 'info') => void;
   initialSelectedId?: string;
+  onOpenBiosModal?: (platformSlug?: string) => void;
 }
 
 export const StandaloneEmulatorsModal: React.FC<StandaloneEmulatorsModalProps> = ({
@@ -31,6 +33,7 @@ export const StandaloneEmulatorsModal: React.FC<StandaloneEmulatorsModalProps> =
   onClose,
   onToast,
   initialSelectedId,
+  onOpenBiosModal,
 }) => {
   const [installedMap, setInstalledMap] = useState<Record<string, boolean>>({});
   const [installingMap, setInstallingMap] = useState<Record<string, { progress?: number; message?: string }>>({});
@@ -246,6 +249,39 @@ export const StandaloneEmulatorsModal: React.FC<StandaloneEmulatorsModalProps> =
                         </span>
                       ))}
                     </div>
+
+                    {emu.id === 'pcsx2' && (
+                      <div className="mt-2.5 flex items-center gap-2 flex-wrap text-xs">
+                        <span className="px-2.5 py-1 rounded-lg bg-purple-950/70 border border-purple-500/30 text-purple-300 font-semibold flex items-center gap-1.5 text-[11px]">
+                          <Cpu size={12} />
+                          <span>Requires PS2 BIOS (e.g. SCPH-39001, SCPH-70012)</span>
+                        </span>
+                        {onOpenBiosModal && (
+                          <button
+                            data-focusable
+                            onClick={() => onOpenBiosModal('ps2')}
+                            className="text-[11px] text-sky-400 hover:text-white underline font-bold cursor-pointer transition-colors"
+                          >
+                            Pull PS2 BIOS
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {emu.id === 'duckstation' && onOpenBiosModal && (
+                      <div className="mt-2 flex items-center gap-2 text-xs">
+                        <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                          <Cpu size={11} className="text-purple-400" />
+                          <span>PS1 BIOS (SCPH-5501):</span>
+                        </span>
+                        <button
+                          data-focusable
+                          onClick={() => onOpenBiosModal('psx')}
+                          className="text-[11px] text-sky-400 hover:text-white underline font-bold cursor-pointer"
+                        >
+                          Manage PS1 BIOS
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}

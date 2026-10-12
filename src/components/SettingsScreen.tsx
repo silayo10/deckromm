@@ -63,7 +63,17 @@ const Section: React.FC<{ icon: React.ReactNode; title: string; children: React.
 );
 
 /** Server / emulation / library settings. Opened with Select (View) or from the main menu. */
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, onChange, onClose, onSignIn, onLogout, onOpenEmulatorsModal }) => {
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({
+  config,
+  auth,
+  onChange,
+  onClose,
+  onSignIn,
+  onLogout,
+  onOpenEmulatorsModal,
+  onOpenBiosModal,
+  onOpenUpdateModal,
+}) => {
   const [storage, setStorage] = useState<NativeStorage | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [emuPath, setEmuPath] = useState(config.emulationPath || '');
@@ -430,6 +440,66 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ config, auth, on
                 </div>
               </Section>
             )}
+
+            <Section icon={<Cpu size={16} />} title="BIOS & Firmware">
+              <div className="rounded-xl bg-deck-panel/70 p-4 border border-deck-line space-y-3">
+                <div className="text-sm text-deck-dim leading-relaxed">
+                  Standalone emulators like <strong className="text-white">PCSX2 (PlayStation 2)</strong>, <strong className="text-white">DuckStation (PS1)</strong>, and <strong className="text-white">Flycast (Dreamcast)</strong> require system BIOS files to boot games. DeckRomM pulls them down directly from your RomM server into <code className="text-deck-accent font-mono">~/Emulation/bios</code> and auto-syncs them to Flatpak emulator directories.
+                </div>
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  {onOpenBiosModal && (
+                    <button
+                      data-focusable
+                      onClick={onOpenBiosModal}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-deck-accent hover:bg-deck-accent-hover text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Cpu size={15} />
+                      <span>Open BIOS & Firmware Manager</span>
+                    </button>
+                  )}
+                  {isNativeApp && (
+                    <button
+                      data-focusable
+                      onClick={() => bridge.bios.openFolder()}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-white flex items-center gap-2 transition-all cursor-pointer"
+                    >
+                      <FolderOpen size={15} />
+                      <span>Open BIOS Directory</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </Section>
+
+            <Section icon={<ArrowUpCircle size={16} />} title="App Updates & GitHub">
+              <div className="rounded-xl bg-deck-panel/70 p-4 border border-deck-line space-y-3">
+                <div className="text-sm text-deck-dim">
+                  DeckRomM can check GitHub on launch for newer commits and upgrade the application in place.
+                </div>
+                <Toggle
+                  label="Check for updates on launch"
+                  hint="Automatically check GitHub for new commits when DeckRomM starts"
+                  value={config.autoCheckUpdates !== false}
+                  onChange={(v) => onChange({ autoCheckUpdates: v })}
+                />
+                <div className="flex items-center justify-between p-3 rounded-lg bg-black/30 border border-white/5 text-xs">
+                  <span className="text-deck-dim">Target GitHub Repo:</span>
+                  <span className="font-mono text-white font-bold">{config.githubRepo || 'Auto-detected'} ({config.githubBranch || 'main'})</span>
+                </div>
+                <div className="pt-1">
+                  {onOpenUpdateModal && (
+                    <button
+                      data-focusable
+                      onClick={onOpenUpdateModal}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                    >
+                      <ArrowUpCircle size={15} />
+                      <span>Check for Updates & Upgrade in Place</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </Section>
 
             <Section icon={<SlidersHorizontal size={16} />} title="Library">
               <Toggle

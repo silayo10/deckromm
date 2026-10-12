@@ -26,6 +26,7 @@ interface GameDetailModalProps {
   onToggleFavorite: (game: Game) => void;
   onGameUpdated: (game: Game) => void;
   onSelectGenre?: (genre: string) => void;
+  onOpenBiosModal?: (platformSlug?: string) => void;
 }
 
 /**
@@ -49,6 +50,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   onToggleFavorite,
   onGameUpdated,
   onSelectGenre,
+  onOpenBiosModal,
 }) => {
   const [game, setGame] = useState<Game>(initial);
   const [loadingDetails, setLoadingDetails] = useState(true);
@@ -254,6 +256,32 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* BIOS requirement indicator for PS2, PS1, Dreamcast */}
+          {(['ps2', 'playstation-2', 'playstation2', 'psx', 'ps1', 'playstation', 'dc', 'dreamcast'].includes(game.platformSlug?.toLowerCase() || '')) && (
+            <div className="mt-4 flex items-center gap-3 px-3.5 py-2 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs max-w-xl">
+              <Cpu size={16} className="text-purple-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="font-bold text-purple-200">
+                  {['ps2', 'playstation-2', 'playstation2'].includes(game.platformSlug?.toLowerCase() || '') ? 'PS2 BIOS Required: ' : 'System BIOS: '}
+                </span>
+                <span className="text-purple-300/80">
+                  {['ps2', 'playstation-2', 'playstation2'].includes(game.platformSlug?.toLowerCase() || '')
+                    ? 'PCSX2 requires a PS2 BIOS file to boot.'
+                    : 'Ensure system BIOS files are in ~/Emulation/bios.'}
+                </span>
+              </div>
+              {onOpenBiosModal && (
+                <button
+                  data-focusable
+                  onClick={() => onOpenBiosModal(game.platformSlug)}
+                  className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all"
+                >
+                  Manage BIOS
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Action Row */}
           <div className="mt-6 flex flex-wrap gap-3">

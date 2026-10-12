@@ -27,6 +27,9 @@ import { FocusScope } from './components/FocusScope';
 import { WebEmulatorModal } from './components/WebEmulatorModal';
 import { RomPatcherModal } from './components/RomPatcherModal';
 import { StandaloneEmulatorsModal } from './components/StandaloneEmulatorsModal';
+import { BiosManagerModal } from './components/BiosManagerModal';
+import { UpdateManagerModal } from './components/UpdateManagerModal';
+import { AppUpdateInfo } from './types';
 
 interface KeyboardRequest {
   input: HTMLInputElement | HTMLTextAreaElement;
@@ -98,6 +101,10 @@ export default function App() {
   const [downloadsOpen, setDownloadsOpen] = useState(false);
   const [patcherModalOpen, setPatcherModalOpen] = useState(false);
   const [standaloneEmulatorsModalOpen, setStandaloneEmulatorsModalOpen] = useState(false);
+  const [biosModalOpen, setBiosModalOpen] = useState(false);
+  const [biosPlatformFilter, setBiosPlatformFilter] = useState<string | undefined>();
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo | null>(null);
   const [keyboard, setKeyboard] = useState<KeyboardRequest | null>(null);
   const [downloads, setDownloads] = useState<Record<string, DownloadItem>>({});
   const [emulator, setEmulator] = useState<EmulatorStateEvent>({ running: false });
@@ -201,12 +208,18 @@ export default function App() {
       gamepadService.destroy(); // release every held button, stop the rAF poller
     });
 
+    const offUpdate = bridge.on('app:update-available', (info: AppUpdateInfo) => {
+      setAvailableUpdate(info);
+      toast(`New version on GitHub (${info.latestCommit}): "${info.message}". Press Menu to upgrade in place.`, 'info');
+    });
+
     if (isNativeApp) bridge.emulator.status().then(setEmulator).catch(() => {});
     return () => {
       offProgress();
       offEmu();
       offFocus();
       offQuit();
+      offUpdate();
     };
   }, [toast]);
 
@@ -753,6 +766,10 @@ export default function App() {
           onToggleFavorite={handleFavorite}
           onGameUpdated={(g) => patchGame(g.id, { summary: g.summary, screenshots: g.screenshots, isInstalled: g.isInstalled, localPath: g.localPath })}
           onSelectGenre={handleGenreChange}
+          onOpenBiosModal={(slug) => {
+            setBiosPlatformFilter(slug);
+            setBiosModalOpen(true);
+          }}
         />
       )}
 
@@ -789,6 +806,15 @@ export default function App() {
           onOpenEmulatorsModal={() => {
             setSettingsOpen(false);
             setStandaloneEmulatorsModalOpen(true);
+          }}
+          onOpenBiosModal={() => {
+            setSettingsOpen(false);
+            setBiosPlatformFilter(undefined);
+            setBiosModalOpen(true);
+          }}
+          onOpenUpdateModal={() => {
+            setSettingsOpen(false);
+            setUpdateModalOpen(true);
           }}
         />
       )}
@@ -832,6 +858,15 @@ export default function App() {
           onEmulators={() => {
             setMenuOpen(false);
             setStandaloneEmulatorsModalOpen(true);
+          }}
+          onBios={() => {
+            setMenuOpen(false);
+            setBiosPlatformFilter(undefined);
+            setBiosModalOpen(true);
+          }}
+          onUpdate={() => {
+            setMenuOpen(false);
+            setUpdateModalOpen(true);
           }}
           onSignIn={() => {
             setMenuOpen(false);
@@ -887,6 +922,31 @@ export default function App() {
           isOpen={standaloneEmulatorsModalOpen}
           onClose={() => setStandaloneEmulatorsModalOpen(false)}
           onToast={(text, tone) => toast(text, tone || 'info')}
+          onOpenBiosModal={(slug) => {
+            setStandaloneEmulatorsModalOpen(false);
+            setBiosPlatformFilter(slug);
+            setBiosModalOpen(true);
+          }}
+        />
+      )}
+
+      {biosModalOpen && (
+        <BiosManagerModal
+          isOpen={biosModalOpen}
+          onClose={() => setBiosModalOpen(false)}
+          onToast={toast}
+          initialPlatformFilter={biosPlatformFilter}
+        />
+      )}
+
+      {updateModalOpen && (
+        <UpdateManagerModal
+          isOpen={updateModalOpen}
+          onClose={() => setUpdateModalOpen(false)}
+          config={config}
+          onChangeConfig={updateConfig}
+          onToast={toast}
+          initialUpdateInfo={availableUpdate}
         />
       )}
 
