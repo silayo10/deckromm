@@ -13,7 +13,17 @@ cd "$SCRIPT_DIR"
 TARGET="AppImage"
 [[ "${1:-}" == "--dir" ]] && TARGET="dir"
 
+# Ensure user tool paths are in PATH (bun, node, npm on Steam Deck / SteamOS)
+for p in "$HOME/.bun/bin" "$HOME/.nvm/versions/node/"*/bin "$HOME/.local/bin" "/usr/local/bin"; do
+  if [[ -d "$p" ]]; then
+    export PATH="$p:$PATH"
+  fi
+done
+
 if command -v bun >/dev/null 2>&1; then
+  PM="bun"; RUN="bun run"; X="bunx"
+elif [[ -x "$HOME/.bun/bin/bun" ]]; then
+  export PATH="$HOME/.bun/bin:$PATH"
   PM="bun"; RUN="bun run"; X="bunx"
 elif command -v npm >/dev/null 2>&1; then
   PM="npm"; RUN="npm run"; X="npx"

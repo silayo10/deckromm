@@ -17,6 +17,20 @@ const https = require('https');
 const { app } = require('electron');
 
 const HOME = process.env.HOME || '/home/deck';
+const EXTRA_PATHS = [
+  path.join(HOME, '.bun', 'bin'),
+  path.join(HOME, '.nvm', 'versions', 'node', 'current', 'bin'),
+  path.join(HOME, '.local', 'bin'),
+  '/usr/local/bin',
+  '/usr/bin',
+  '/bin',
+].join(':');
+
+const BUILD_ENV = {
+  ...process.env,
+  PATH: process.env.PATH ? `${EXTRA_PATHS}:${process.env.PATH}` : EXTRA_PATHS,
+  CI: 'true',
+};
 
 /**
  * Validates and returns a real, existing directory on disk.
@@ -48,7 +62,7 @@ function execP(cmd, args, opts = {}) {
     if (!cleanCwd) {
       cleanCwd = getValidDir(process.cwd()) || HOME;
     }
-    const cleanOpts = { timeout: 30000, ...opts, cwd: cleanCwd };
+    const cleanOpts = { timeout: 30000, env: BUILD_ENV, ...opts, cwd: cleanCwd };
     try {
       execFile(cmd, args, cleanOpts, (err, stdout, stderr) => {
         resolve({
@@ -339,7 +353,7 @@ class AppUpdater {
       
       let proc;
       try {
-        proc = spawn(cmd, args, { cwd: safeCwd, env: { ...process.env, CI: 'true' } });
+        proc = spawn(cmd, args, { cwd: safeCwd, env: BUILD_ENV });
       } catch (err) {
         return reject(err);
       }
@@ -424,9 +438,10 @@ class AppUpdater {
           message: 'Installing dependencies...',
         });
 
-        const hasBun = (await execP('which', ['bun'])).ok;
+        const hasBun = (await execP('which', ['bun'])).ok || fs.existsSync(path.join(HOME, '.bun', 'bin', 'bun'));
+        const bunCmd = hasBun ? (fs.existsSync(path.join(HOME, '.bun', 'bin', 'bun')) ? path.join(HOME, '.bun', 'bin', 'bun') : 'bun') : 'npm';
         if (hasBun) {
-          await this.runSpawn('bun', ['install'], gitDir, 'installing', 65, 75);
+          await this.runSpawn(bunCmd, ['install'], gitDir, 'installing', 65, 75);
         } else {
           await this.runSpawn('npm', ['install', '--no-audit', '--no-fund'], gitDir, 'installing', 65, 75);
         }
@@ -438,7 +453,7 @@ class AppUpdater {
         });
 
         if (hasBun) {
-          await this.runSpawn('bun', ['run', 'build'], gitDir, 'building', 80, 90);
+          await this.runSpawn(bunCmd, ['run', 'build'], gitDir, 'building', 80, 90);
         } else {
           await this.runSpawn('npm', ['run', 'build'], gitDir, 'building', 80, 90);
         }
@@ -565,10 +580,11 @@ class AppUpdater {
           await this.runSpawn('bash', [installScript], buildDir, 'installing', 90, 98);
         }
       } else {
-        const hasBun = (await execP('which', ['bun'])).ok;
+        const hasBun = (await execP('which', ['bun'])).ok || fs.existsSync(path.join(HOME, '.bun', 'bin', 'bun'));
+        const bunCmd = hasBun ? (fs.existsSync(path.join(HOME, '.bun', 'bin', 'bun')) ? path.join(HOME, '.bun', 'bin', 'bun') : 'bun') : 'npm';
         if (hasBun) {
-          await this.runSpawn('bun', ['install'], buildDir, 'installing', 60, 75);
-          await this.runSpawn('bun', ['run', 'build'], buildDir, 'building', 75, 95);
+          await this.runSpawn(bunCmd, ['install'], buildDir, 'installing', 60, 75);
+          await this.runSpawn(bunCmd, ['run', 'build'], buildDir, 'building', 75, 95);
         } else {
           await this.runSpawn('npm', ['install', '--no-audit', '--no-fund'], buildDir, 'installing', 60, 75);
           await this.runSpawn('npm', ['run', 'build'], buildDir, 'building', 75, 95);
