@@ -461,6 +461,7 @@ class AppUpdater {
         // Package new AppImage and install if scripts exist
         const buildScript = path.join(gitDir, 'build-appimage.sh');
         if (fs.existsSync(buildScript)) {
+          await fsp.chmod(buildScript, 0o755).catch(() => {});
           this.emit('app:update-progress', {
             stage: 'packaging',
             percent: 92,
@@ -469,6 +470,7 @@ class AppUpdater {
           await this.runSpawn('bash', [buildScript], gitDir, 'packaging', 92, 98);
           const installScript = path.join(gitDir, 'installer.sh');
           if (fs.existsSync(installScript)) {
+            await fsp.chmod(installScript, 0o755).catch(() => {});
             await this.runSpawn('bash', [installScript], gitDir, 'installing', 98, 99);
           }
         }
@@ -574,9 +576,11 @@ class AppUpdater {
 
       const buildScript = path.join(buildDir, 'build-appimage.sh');
       if (fs.existsSync(buildScript)) {
+        await fsp.chmod(buildScript, 0o755).catch(() => {});
         await this.runSpawn('bash', [buildScript], buildDir, 'building', 60, 90);
         const installScript = path.join(buildDir, 'installer.sh');
         if (fs.existsSync(installScript)) {
+          await fsp.chmod(installScript, 0o755).catch(() => {});
           await this.runSpawn('bash', [installScript], buildDir, 'installing', 90, 98);
         }
       } else {
