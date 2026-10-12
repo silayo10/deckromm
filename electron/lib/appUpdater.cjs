@@ -530,7 +530,13 @@ class AppUpdater {
           await this.runSpawn('git', ['fetch', 'origin', targetBranch], buildDir, 'fetching', 25, 40);
           await this.runSpawn('git', ['reset', '--hard', `origin/${targetBranch}`], buildDir, 'resetting', 40, 50);
         } else {
-          await this.runSpawn('git', ['clone', '--depth', '1', '-b', targetBranch, `https://github.com/${targetRepo}.git`, '.'], buildDir, 'cloning', 25, 50);
+          // Initialize git in existing directory to avoid "destination path '.' already exists and is not an empty directory"
+          await execP('git', ['init'], { cwd: buildDir });
+          await execP('git', ['remote', 'add', 'origin', `https://github.com/${targetRepo}.git`], { cwd: buildDir }).catch(() => {
+            return execP('git', ['remote', 'set-url', 'origin', `https://github.com/${targetRepo}.git`], { cwd: buildDir });
+          });
+          await this.runSpawn('git', ['fetch', '--depth', '1', 'origin', targetBranch], buildDir, 'fetching', 25, 40);
+          await this.runSpawn('git', ['reset', '--hard', 'FETCH_HEAD'], buildDir, 'resetting', 40, 50);
         }
       } else {
         // Tarball fallback
