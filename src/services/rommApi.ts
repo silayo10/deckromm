@@ -11,7 +11,7 @@
  * the event loop between chunks, keeping input handling at 60 fps even for
  * libraries with thousands of ROMs.
  */
-import { Collection, Game, Platform, RommConfig, getActiveCoreForGame, RommFirmwareItem } from '../types';
+import { Collection, Game, Platform, RommConfig, getActiveCoreForGame, RommFirmwareItem, normalizeGenre } from '../types';
 import type { AuthResult, AuthStatus, RomFileRequest, RommRequest, ServerProbe } from '../env/electron';
 import { DEMO_GAMES, DEMO_PLATFORMS } from './rommData';
 import { assetUrl, bridge, isNativeApp } from './bridge';
@@ -136,6 +136,9 @@ export const DEFAULT_CONFIG: RommConfig = {
   viewMode: 'grid',
   sortBy: 'title',
   filterTag: 'all',
+  genreFilter: 'all',
+  languageFilter: 'all',
+  hideJapanese: false,
   launcherMode: 'auto',
   customLaunchCommand: '',
   launcherOverrides: {},
@@ -160,6 +163,7 @@ export interface LastError {
 
 export interface GameQuery {
   platform?: Platform | null;
+  platforms?: Platform[] | null;
   collectionId?: string | number | null;
   search?: string;
   signal?: AbortSignal;
@@ -404,7 +408,8 @@ class RommApiService {
       .filter(Boolean)
       .map((s: string) => assetUrl(s, base));
     const companies: string[] = Array.isArray(meta.companies) ? meta.companies : Array.isArray(r.companies) ? r.companies : [];
-    const genres: string[] = (meta.genres || r.genres || []).map((g: any) => (typeof g === 'string' ? g : g?.name)).filter(Boolean);
+    const rawGenres: string[] = (meta.genres || r.genres || []).map((g: any) => (typeof g === 'string' ? g : g?.name)).filter(Boolean);
+    const genres: string[] = Array.from(new Set(rawGenres.map((g: string) => normalizeGenre(g)).filter(Boolean)));
     const ratingRaw = Number(meta.average_rating ?? r.average_rating ?? r.igdb_metadata?.total_rating ?? 0);
     const rating = ratingRaw > 0 && ratingRaw <= 10 ? Math.round(ratingRaw * 10) : Math.round(ratingRaw);
     const id = r.id;
@@ -493,7 +498,12 @@ class RommApiService {
   async getGamesPaged(q: GameQuery = {}): Promise<Game[]> {
     if (this.config.isDemoMode) {
       let demo = [...DEMO_GAMES];
-      if (q.platform && q.platform.slug !== 'all') demo = demo.filter((g) => g.platformSlug === q.platform!.slug);
+      if (q.platform && q.platform.slug !== 'all') {
+        demo = demo.filter((g) => g.platformSlug === q.platform!.slug);
+      } else if (q.platforms && q.platforms.length > 0) {
+        const slugs = new Set(q.platforms.map((p) => p.slug));
+        demo = demo.filter((g) => slugs.has(g.platformSlug));
+      }
       if (q.search) demo = demo.filter((g) => g.title.toLowerCase().includes(q.search!.toLowerCase()));
       return demo.map((g) => ({ ...g, isFavorite: this.favorites.has(String(g.id)) }));
     }
@@ -503,6 +513,8 @@ class RommApiService {
       // RomM 5.x uses platform_ids, 4.x uses platform_id - unknown params are ignored.
       query.platform_ids = [q.platform.id as number];
       query.platform_id = q.platform.id as number;
+    } else if (q.platforms && q.platforms.length > 0) {
+      query.platform_ids = q.platforms.map((p) => p.id as number);
     }
     if (q.collectionId != null) query.collection_id = q.collectionId as number;
     if (q.search && q.search.trim()) query.search_term = q.search.trim();
@@ -515,7 +527,13 @@ class RommApiService {
       const data = await this.request<any>({ path: '/api/roms', query: { ...query, offset }, timeoutMs: 45000 });
       const items: any[] = Array.isArray(data) ? data : data?.items || [];
       total = Array.isArray(data) ? items.length : Number(data?.total ?? items.length);
-      const mapped = await this.annotateInstalled(await this.mapChunked(items, q.signal));
+      let mapped = await this.annotateInstalled(await this.mapChunked(items, q.signal));
+      if (q.platforms && q.platforms.length > 0) {
+        const allowed = new Set(q.platforms.map((p) => p.slug));
+        if (mapped.some((g) => !allowed.has(g.platformSlug))) {
+          mapped = mapped.filter((g) => allowed.has(g.platformSlug));
+        }
+      }
       all.push(...mapped);
       q.onPage?.(all.slice(), total);
       if (items.length === 0 || Array.isArray(data)) break;
@@ -658,26 +676,31 @@ class RommApiService {
       try {
         const query: Record<string, any> = {};
         if (platformId) query.platform_id = platformId;
-        const res = await this.request<any[]>({ path: '/api/firmware', query });
-        if (Array.isArray(res) && res.length > 0) {
+        const res = await this.request<any>({ path: '/api/firmware', query });
+        const list: any[] = Array.isArray(res) ? res : res?.items || res?.data || [];
+        if (list.length > 0) {
           const platforms = await this.getPlatforms().catch(() => []);
           const platformMap = new Map<number, Platform>();
           platforms.forEach((p) => {
             if (p.id) platformMap.set(Number(p.id), p);
           });
 
-          items = res.map((f: any) => {
+          items = list.map((f: any) => {
             const plat = platformMap.get(Number(f.platform_id));
-            const slug = plat?.slug || String(f.platform_slug || '').toLowerCase();
+            const rawSlug = plat?.slug || String(f.platform_slug || f.platform_name || '').toLowerCase();
+            const slug = rawSlug.includes('playstation-2') || rawSlug.includes('ps2') ? 'ps2' : rawSlug;
             const emus: string[] = [];
-            if (['ps2', 'playstation-2', 'playstation2'].includes(slug)) emus.push('pcsx2');
-            if (['psx', 'ps1', 'playstation'].includes(slug)) emus.push('duckstation', 'retroarch');
-            if (['dc', 'dreamcast'].includes(slug)) emus.push('flycast');
+            const fileName = String(f.file_name || f.fileName || '');
+            if (['ps2', 'playstation-2', 'playstation2', 'sony-playstation-2'].includes(slug) || /scph|ps2|erom|rom1/i.test(fileName)) emus.push('pcsx2');
+            if (['psx', 'ps1', 'playstation'].includes(slug) || /scph[1-9]00/i.test(fileName)) emus.push('duckstation', 'retroarch');
+            if (['dc', 'dreamcast'].includes(slug) || /dc_|boot\.bin/i.test(fileName)) emus.push('flycast');
             if (['psp'].includes(slug)) emus.push('ppsspp');
+            if (['saturn', 'sega-saturn'].includes(slug)) emus.push('retroarch');
+            if (['xbox', 'og-xbox', 'original-xbox'].includes(slug)) emus.push('xemu');
 
             return {
               id: Number(f.id),
-              fileName: f.file_name || f.fileName,
+              fileName,
               filePath: f.file_path,
               fileSizeBytes: Number(f.file_size_bytes || 0),
               platformId: Number(f.platform_id),
@@ -744,6 +767,22 @@ class RommApiService {
     return r;
   }
 
+  /**
+   * Sync required BIOS files for a given platform from RomM if missing locally.
+   */
+  async syncPlatformBios(platformSlug: string): Promise<{ ok: boolean; synced: number; message?: string }> {
+    if (!isNativeApp) return { ok: true, synced: 0, message: 'Web demo: simulated BIOS sync' };
+    return bridge.bios.syncPlatform(platformSlug);
+  }
+
+  /**
+   * Sync all missing BIOS files found on RomM server to local directories.
+   */
+  async syncAllBios(): Promise<{ ok: boolean; synced: number; totalMissing?: number; message?: string }> {
+    if (!isNativeApp) return { ok: true, synced: 0, message: 'Web demo: simulated BIOS sync' };
+    return bridge.bios.syncAll();
+  }
+
   // ------------------------------------------------------------------ files & launching
   /**
    * URL the in-app EmulatorJS player loads the ROM from. The main process
@@ -769,7 +808,10 @@ class RommApiService {
   }
 
   /** Download the ROM into Emulation/roms/<platform>/ (progress via bridge 'rom:progress'). */
-  downloadToDeck(game: Game, force = false) {
+  async downloadToDeck(game: Game, force = false) {
+    if (isNativeApp && game.platformSlug) {
+      void this.syncPlatformBios(game.platformSlug).catch(() => {});
+    }
     return bridge.roms.download(this.fileReq(game, force));
   }
 
@@ -784,6 +826,9 @@ class RommApiService {
   /** Download if needed, then launch the matching emulator from the main process. */
   async launchNative(game: Game, core?: string): Promise<{ success: boolean; message: string; command?: string }> {
     if (!isNativeApp) return { success: false, message: 'Native launch requires the DeckRomM desktop app' };
+    if (game.platformSlug) {
+      await this.syncPlatformBios(game.platformSlug).catch((e) => console.warn('BIOS auto-sync check error:', e));
+    }
     const r = await bridge.emulator.launch(this.fileReq(game, false, core));
     return { success: r.ok, message: r.ok ? `Launching with ${r.command}` : r.message || 'Launch failed', command: r.command };
   }
@@ -974,7 +1019,9 @@ export function getEmulatorCore(platformSlug: string, fileName?: string): string
   if (slug.includes('atari-7800') || slug.includes('7800')) return 'atari7800';
   if (slug.includes('lynx')) return 'lynx';
   if (slug.includes('wonderswan')) return 'ws';
-  if (slug.includes('virtual-boy')) return 'vb';
+  if (slug.includes('saturn')) return 'saturn';
+  if (slug.includes('dreamcast') || slug === 'dc') return 'dreamcast';
+  if (slug.includes('segacd') || slug.includes('sega-cd') || slug.includes('mega-cd')) return 'segaMD';
   if (slug.includes('neogeo') || slug.includes('arcade') || slug.includes('mame') || slug.includes('fbneo')) return 'arcade';
 
   return 'gba';

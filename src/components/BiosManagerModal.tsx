@@ -133,6 +133,26 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
     }
   };
 
+  const [syncingAll, setSyncingAll] = useState(false);
+
+  const handleSyncAllServer = async () => {
+    setSyncingAll(true);
+    onToast('Syncing all missing BIOS files from RomM server...', 'info');
+    try {
+      const res = await rommApi.syncAllBios();
+      if (res.ok) {
+        onToast(res.message || `Successfully synced ${res.synced} BIOS files`, 'ok');
+        await loadData();
+      } else {
+        onToast(res.message || 'Server sync failed', 'error');
+      }
+    } catch (e: any) {
+      onToast(`Sync error: ${e.message}`, 'error');
+    } finally {
+      setSyncingAll(false);
+    }
+  };
+
   const handleDownloadAllFiltered = async () => {
     const missing = filteredItems.filter((f) => !f.isInstalled);
     if (missing.length === 0) {
@@ -239,6 +259,30 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
               <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${ps2InstalledCount > 0 ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300' : 'bg-amber-950/60 border-amber-500/40 text-amber-300'}`}>
                 {ps2InstalledCount > 0 ? `✓ ${ps2InstalledCount} PS2 BIOS Installed` : '⚠️ PS2 BIOS Missing'}
               </span>
+              {ps2InstalledCount === 0 && (
+                <button
+                  data-focusable
+                  id="bios-pull-ps2-quick"
+                  onClick={async () => {
+                    onToast('Pulling PS2 BIOS from RomM server...', 'info');
+                    try {
+                      const r = await rommApi.syncPlatformBios('ps2');
+                      if (r.ok) {
+                        onToast(r.message || 'PS2 BIOS installed to PCSX2', 'ok');
+                        await loadData();
+                      } else {
+                        onToast(r.message || 'No PS2 BIOS found on RomM', 'error');
+                      }
+                    } catch (e: any) {
+                      onToast(`PS2 sync failed: ${e.message}`, 'error');
+                    }
+                  }}
+                  className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition-all active:scale-95"
+                >
+                  <Download size={13} />
+                  <span>Pull PS2 BIOS</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -272,6 +316,17 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
+              <button
+                id="bios-sync-all-server"
+                data-focusable
+                onClick={handleSyncAllServer}
+                disabled={syncingAll}
+                className="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md transition-all active:scale-95 disabled:opacity-50"
+                title="Automatically pull all missing server BIOS to ~/Emulation/bios and emulators"
+              >
+                <RefreshCw size={14} className={syncingAll ? 'animate-spin' : ''} />
+                <span>{syncingAll ? 'Syncing...' : 'Sync All Server BIOS'}</span>
+              </button>
               <button
                 id="bios-download-all"
                 data-focusable

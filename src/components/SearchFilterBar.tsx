@@ -18,7 +18,7 @@ interface SearchFilterBarProps {
   onOpenGenrePicker: () => void;
   selectedLanguage: string;
   onLanguageChange: (lang: string) => void;
-  japaneseCount: number;
+  japaneseCount?: number;
   availableLanguages: LanguageCountOption[];
   onOpenLanguagePicker: () => void;
   sortBy: SortOption;
@@ -59,7 +59,6 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   onOpenGenrePicker,
   selectedLanguage,
   onLanguageChange,
-  japaneseCount,
   availableLanguages,
   onOpenLanguagePicker,
   sortBy,
@@ -190,30 +189,6 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             {currentLangLabel}
           </span>
           <ChevronDown size={13} className="opacity-70" />
-        </button>
-
-        {/* Quick Hide JP Toggle Chip */}
-        <button
-          data-focusable
-          id="lang-hide-ja-toggle"
-          onClick={() => onLanguageChange(selectedLanguage === 'no-ja' ? 'all' : 'no-ja')}
-          className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all ${
-            selectedLanguage === 'no-ja'
-              ? 'bg-amber-500/25 border-amber-500 text-amber-300 font-extrabold shadow-sm'
-              : 'bg-deck-panel/60 border-deck-line text-deck-dim hover:text-deck-text hover:border-deck-dim/50'
-          }`}
-          title="Filter out Japanese ROMs"
-        >
-          <span>🇯🇵 Hide JP</span>
-          {japaneseCount > 0 && (
-            <span
-              className={`text-[10px] tabular-nums ${
-                selectedLanguage === 'no-ja' ? 'text-amber-300/90 font-bold' : 'text-deck-dim'
-              }`}
-            >
-              ({japaneseCount})
-            </span>
-          )}
         </button>
 
         <div className="h-4 w-px bg-deck-line/80 shrink-0 mx-0.5" />

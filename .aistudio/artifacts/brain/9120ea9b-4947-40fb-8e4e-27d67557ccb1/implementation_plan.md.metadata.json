@@ -1,0 +1,6 @@
+{
+  "summary": "Comprehensive implementation plan covering:\n- Expanding platform support to include all major systems (Dreamcast, Saturn, PSP, PS3, Wii, 3DS, Switch, Arcade/MAME/Neo-Geo, Sega CD, Game Boy, TG-16, etc.)\n- Automatic BIOS pulling on game launch/download from RomM and fixing RomM /api/firmware response handling\n- Adding a one-click manual BIOS sync button in the BIOS Manager modal\n- Removing the redundant Hide JP chip in the search filter bar",
+  "updatedAt": "2026-10-13T12:06:06.368175025Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

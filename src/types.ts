@@ -221,23 +221,149 @@ export type NavigationAction =
   | 'HELP';
 
 /**
+ * Normalizes genre strings across scraping sources (e.g. merging 'Role-Playing (RPG)' into 'RPG').
+ * Eliminates duplicate/overlapping genre labels like "RPG" vs "Role Playing (RPG)".
+ */
+export function normalizeGenre(genreName?: string): string {
+  if (!genreName) return '';
+  const trimmed = genreName.trim();
+  const lower = trimmed.toLowerCase();
+  const cleaned = lower.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Normalize all Role-Playing / RPG variants to "RPG"
+  if (
+    cleaned === 'rpg' ||
+    cleaned === 'role playing' ||
+    cleaned === 'roleplaying' ||
+    cleaned === 'role playing game' ||
+    cleaned === 'role playing games' ||
+    cleaned === 'role playing rpg' ||
+    cleaned === 'rpg role playing' ||
+    /^role[\s-]playing[\s-]*(game|games)?[\s\/\(\[]*(rpg)?[\s\/\)\]]*$/i.test(trimmed) ||
+    /^rpg[\s\/\(\[]*(role[\s-]playing)?[\s\/\)\]]*$/i.test(trimmed) ||
+    lower === 'role-playing (rpg)' ||
+    lower === 'role playing (rpg)' ||
+    lower === 'role-playing' ||
+    lower === 'role playing' ||
+    lower === 'role-playing games' ||
+    lower === 'role playing games' ||
+    lower === 'role-playing / rpg' ||
+    lower === 'role playing / rpg' ||
+    lower === 'rpg (role-playing)' ||
+    lower === 'rpg (role playing)'
+  ) {
+    return 'RPG';
+  }
+
+  // Normalize Action-Adventure variants
+  if (
+    cleaned === 'action adventure' ||
+    lower === 'action-adventure' ||
+    lower === 'action adventure' ||
+    lower === 'action/adventure' ||
+    lower === 'action / adventure'
+  ) {
+    return 'Action-Adventure';
+  }
+
+  // Normalize Shoot 'Em Up
+  if (
+    cleaned === "shoot em up" ||
+    cleaned === "shmup" ||
+    lower === "shoot 'em up" ||
+    lower === "shoot 'em up (shmup)" ||
+    lower === 'shmup' ||
+    lower === "shoot'em up"
+  ) {
+    return "Shoot 'Em Up";
+  }
+
+  // Normalize Beat 'Em Up
+  if (
+    cleaned === "beat em up" ||
+    lower === "beat 'em up" ||
+    lower === 'beat-em-up' ||
+    lower === "beat'em up"
+  ) {
+    return "Beat 'Em Up";
+  }
+
+  // Normalize Platformer
+  if (
+    cleaned === 'platform' ||
+    cleaned === 'platforming' ||
+    cleaned === 'platformer' ||
+    cleaned === 'platform game' ||
+    cleaned === 'platform games'
+  ) {
+    return 'Platformer';
+  }
+
+  // Normalize Fighting
+  if (
+    cleaned === 'fighting' ||
+    cleaned === 'fighting game' ||
+    cleaned === 'fighting games'
+  ) {
+    return 'Fighting';
+  }
+
+  // Normalize Racing
+  if (
+    cleaned === 'racing' ||
+    cleaned === 'driving racing' ||
+    cleaned === 'racing driving' ||
+    lower === 'driving / racing' ||
+    lower === 'racing / driving'
+  ) {
+    return 'Racing';
+  }
+
+  // Normalize First-Person Shooter
+  if (
+    cleaned === 'first person shooter' ||
+    cleaned === 'fps' ||
+    lower === 'first-person shooter'
+  ) {
+    return 'First-Person Shooter';
+  }
+
+  // Normalize Sci-Fi
+  if (
+    lower === 'sci-fi' ||
+    lower === 'science fiction' ||
+    cleaned === 'sci fi'
+  ) {
+    return 'Sci-Fi';
+  }
+
+  return trimmed;
+}
+
+/**
  * Checks if a game matches the selected genre filter.
  * Supports smart matching for 'RPG' to also match 'JRPG', 'Action RPG', 'Turn-Based RPG', etc.
  */
 export function matchGameGenre(game: Game, selectedGenre?: string): boolean {
   if (!selectedGenre || selectedGenre === 'all' || selectedGenre.toLowerCase() === 'all genres') return true;
   if (!game.genres || game.genres.length === 0) return false;
-  const target = selectedGenre.trim().toLowerCase();
+  const target = normalizeGenre(selectedGenre).toLowerCase();
 
-  if (target === 'rpg' || target === 'role-playing') {
+  if (target === 'rpg') {
     return game.genres.some((g) => {
-      const gl = g.toLowerCase();
-      return gl === 'rpg' || gl === 'jrpg' || gl.includes('rpg') || gl.includes('role-playing');
+      const gl = normalizeGenre(g).toLowerCase();
+      return (
+        gl === 'rpg' ||
+        gl === 'jrpg' ||
+        gl.includes('rpg') ||
+        gl.includes('role-playing') ||
+        gl.includes('role playing')
+      );
     });
   }
 
   return game.genres.some((g) => {
-    const gl = g.toLowerCase();
+    const gl = normalizeGenre(g).toLowerCase();
     return gl === target || gl.includes(target);
   });
 }
@@ -281,6 +407,9 @@ export function getStandaloneEmulatorForPlatform(platformSlug?: string): Standal
   if (['wiiu', 'wii-u'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'cemu') || null;
   if (['switch', 'nintendo-switch'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'ryujinx') || null;
   if (['dc', 'dreamcast', 'naomi', 'atomiswave'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'flycast') || null;
+  if (['xbox', 'og-xbox', 'original-xbox', 'ms-xbox'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'xemu') || null;
+  if (['xbox360', 'xbox-360', 'x360'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'xenia') || null;
+  if (['saturn', 'sega-saturn'].includes(slug)) return SUPPORTED_STANDALONE_EMULATORS.find((e) => e.id === 'yabasanshiro') || null;
   return null;
 }
 
@@ -289,11 +418,14 @@ export const SUPPORTED_STANDALONE_EMULATORS: StandaloneEmulatorInfo[] = [
   { id: 'pcsx2', flatpakId: 'net.pcsx2.PCSX2', name: 'PCSX2', platforms: ['PlayStation 2'], description: 'Full-speed PlayStation 2 emulator with widescreen & HD patches' },
   { id: 'dolphin', flatpakId: 'org.DolphinEmu.dolphin-emu', name: 'Dolphin', platforms: ['GameCube', 'Wii'], description: 'Industry standard GameCube & Wii emulator with full controller support' },
   { id: 'flycast', flatpakId: 'org.flycast.Flycast', name: 'Flycast', platforms: ['Dreamcast', 'NAOMI', 'Atomiswave'], description: 'High performance Dreamcast & arcade emulator' },
+  { id: 'yabasanshiro', flatpakId: 'org.yabasanshiro.YabaSanshiro', name: 'YabaSanshiro', platforms: ['Sega Saturn'], description: 'High performance Sega Saturn emulator with HD upscaling' },
   { id: 'ppsspp', flatpakId: 'org.ppsspp.PPSSPP', name: 'PPSSPP', platforms: ['PSP (PlayStation Portable)'], description: 'Fast, feature-rich PSP emulator with upscaling and HD textures' },
   { id: 'rpcs3', flatpakId: 'net.rpcs3.RPCS3', name: 'RPCS3', platforms: ['PlayStation 3'], description: 'PlayStation 3 open-source emulator' },
   { id: 'lime3ds', flatpakId: 'io.github.lime3ds.Lime3DS', name: 'Lime3DS', platforms: ['Nintendo 3DS'], description: 'Nintendo 3DS emulator fork of Citra' },
   { id: 'cemu', flatpakId: 'info.cemu.Cemu', name: 'Cemu', platforms: ['Wii U'], description: 'Nintendo Wii U emulator' },
   { id: 'ryujinx', flatpakId: 'org.ryujinx.Ryujinx', name: 'Ryujinx', platforms: ['Nintendo Switch'], description: 'Nintendo Switch emulator' },
+  { id: 'xemu', flatpakId: 'app.xemu.xemu', name: 'Xemu', platforms: ['Microsoft Xbox (Original)'], description: 'Open-source Original Xbox emulator with HD upscaling & system link' },
+  { id: 'xenia', flatpakId: 'jp.xenia.xenia', name: 'Xenia', platforms: ['Microsoft Xbox 360'], description: 'Xbox 360 emulator for Linux / Steam Deck' },
   { id: 'retroarch', flatpakId: 'org.libretro.RetroArch', name: 'RetroArch', platforms: ['Multi-System (NES, SNES, N64, GBA, Genesis, Arcade, etc.)'], description: 'All-in-one emulation frontend and libretro core runner' },
 ];
 
@@ -371,6 +503,36 @@ export const PLATFORM_AVAILABLE_CORES: Record<string, CoreOption[]> = {
     { id: 'flycast_standalone', name: 'Flycast (Standalone Flatpak)', type: 'standalone', flatpakId: 'org.flycast.Flycast', recommended: true, description: 'Standalone high performance Dreamcast, NAOMI & Atomiswave emulator' },
     { id: 'flycast', name: 'Flycast (Libretro)', type: 'libretro', recommended: false, description: 'RetroArch Flycast core with shader and RetroAchievements support' },
   ],
+  xbox: [
+    { id: 'xemu', name: 'Xemu (Standalone)', type: 'standalone', flatpakId: 'app.xemu.xemu', recommended: true, description: 'Open-source Original Xbox emulator for Linux / Steam Deck' },
+  ],
+  xbox360: [
+    { id: 'xenia', name: 'Xenia (Standalone)', type: 'standalone', flatpakId: 'jp.xenia.xenia', recommended: true, description: 'Xbox 360 emulator for Linux / Steam Deck' },
+  ],
+  saturn: [
+    { id: 'mednafen_saturn', name: 'Beetle Saturn', type: 'libretro', recommended: true, description: 'Accurate Sega Saturn core' },
+    { id: 'yabasanshiro', name: 'YabaSanshiro', type: 'libretro', description: 'Fast Sega Saturn core with hardware upscaling' },
+  ],
+  gb: [
+    { id: 'gambatte', name: 'Gambatte', type: 'libretro', recommended: true, description: 'Accurate Game Boy core' },
+    { id: 'sameboy', name: 'SameBoy', type: 'libretro', description: 'High-accuracy cycle-accurate Game Boy core' },
+    { id: 'mgba', name: 'mGBA', type: 'libretro', description: 'Modern GB/GBC core' },
+  ],
+  gbc: [
+    { id: 'gambatte', name: 'Gambatte', type: 'libretro', recommended: true, description: 'Accurate Game Boy Color core' },
+    { id: 'sameboy', name: 'SameBoy', type: 'libretro', description: 'High-accuracy Game Boy Color core' },
+  ],
+  segacd: [
+    { id: 'genesis_plus_gx', name: 'Genesis Plus GX', type: 'libretro', recommended: true, description: 'Full Sega CD / Mega CD cycle emulation' },
+    { id: 'picodrive', name: 'PicoDrive', type: 'libretro', description: 'Fast Sega CD & 32X core' },
+  ],
+  gamegear: [
+    { id: 'genesis_plus_gx', name: 'Genesis Plus GX', type: 'libretro', recommended: true, description: 'Accurate Sega Game Gear & Master System core' },
+  ],
+  tg16: [
+    { id: 'mednafen_pce_fast', name: 'Beetle PCE Fast', type: 'libretro', recommended: true, description: 'TurboGrafx-16 & PC Engine fast core' },
+    { id: 'mednafen_pce', name: 'Beetle PCE Accurate', type: 'libretro', description: 'High-accuracy TurboGrafx-16 core' },
+  ],
 };
 
 // Aliases for slug variations
@@ -383,6 +545,23 @@ PLATFORM_AVAILABLE_CORES['nintendo-64'] = PLATFORM_AVAILABLE_CORES['n64'];
 PLATFORM_AVAILABLE_CORES['nintendo-ds'] = PLATFORM_AVAILABLE_CORES['nds'];
 PLATFORM_AVAILABLE_CORES['n3ds'] = PLATFORM_AVAILABLE_CORES['3ds'];
 PLATFORM_AVAILABLE_CORES['gc'] = PLATFORM_AVAILABLE_CORES['gamecube'];
+PLATFORM_AVAILABLE_CORES['og-xbox'] = PLATFORM_AVAILABLE_CORES['xbox'];
+PLATFORM_AVAILABLE_CORES['original-xbox'] = PLATFORM_AVAILABLE_CORES['xbox'];
+PLATFORM_AVAILABLE_CORES['xbox-360'] = PLATFORM_AVAILABLE_CORES['xbox360'];
+PLATFORM_AVAILABLE_CORES['x360'] = PLATFORM_AVAILABLE_CORES['xbox360'];
+PLATFORM_AVAILABLE_CORES['sega-saturn'] = PLATFORM_AVAILABLE_CORES['saturn'];
+PLATFORM_AVAILABLE_CORES['game-boy'] = PLATFORM_AVAILABLE_CORES['gb'];
+PLATFORM_AVAILABLE_CORES['game-boy-color'] = PLATFORM_AVAILABLE_CORES['gbc'];
+PLATFORM_AVAILABLE_CORES['sega-cd'] = PLATFORM_AVAILABLE_CORES['segacd'];
+PLATFORM_AVAILABLE_CORES['mega-cd'] = PLATFORM_AVAILABLE_CORES['segacd'];
+PLATFORM_AVAILABLE_CORES['gg'] = PLATFORM_AVAILABLE_CORES['gamegear'];
+PLATFORM_AVAILABLE_CORES['sms'] = PLATFORM_AVAILABLE_CORES['gamegear'];
+PLATFORM_AVAILABLE_CORES['mastersystem'] = PLATFORM_AVAILABLE_CORES['gamegear'];
+PLATFORM_AVAILABLE_CORES['pce'] = PLATFORM_AVAILABLE_CORES['tg16'];
+PLATFORM_AVAILABLE_CORES['pc-engine'] = PLATFORM_AVAILABLE_CORES['tg16'];
+PLATFORM_AVAILABLE_CORES['turbografx-16'] = PLATFORM_AVAILABLE_CORES['tg16'];
+PLATFORM_AVAILABLE_CORES['neogeo'] = PLATFORM_AVAILABLE_CORES['arcade'];
+PLATFORM_AVAILABLE_CORES['mame'] = PLATFORM_AVAILABLE_CORES['arcade'];
 
 export function getActiveCoreForGame(game: Game, config: RommConfig): string {
   if (config.gameCores?.[String(game.id)]) return config.gameCores[String(game.id)];

@@ -282,6 +282,23 @@ export const StandaloneEmulatorsModal: React.FC<StandaloneEmulatorsModalProps> =
                         </button>
                       </div>
                     )}
+                    {emu.id === 'xemu' && (
+                      <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-500/30 text-emerald-300 font-semibold flex items-center gap-1.5 text-[11px]">
+                          <Cpu size={12} />
+                          <span>Requires Xbox MCPX Boot ROM & BIOS</span>
+                        </span>
+                        {onOpenBiosModal && (
+                          <button
+                            data-focusable
+                            onClick={() => onOpenBiosModal('xbox')}
+                            className="text-[11px] text-sky-400 hover:text-white underline font-bold cursor-pointer transition-colors"
+                          >
+                            Pull Xbox BIOS
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}

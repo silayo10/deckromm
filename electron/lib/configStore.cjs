@@ -23,6 +23,9 @@ const DEFAULTS = {
   viewMode: 'grid',
   sortBy: 'title',
   filterTag: 'all',
+  genreFilter: 'all',
+  languageFilter: 'all',
+  hideJapanese: false,
   launcherMode: 'auto', // auto | retroarch | custom
   customLaunchCommand: '',
   launcherOverrides: {}, // { [platformSlug]: "command template" }

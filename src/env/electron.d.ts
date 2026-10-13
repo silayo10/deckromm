@@ -204,6 +204,8 @@ export interface DeckRommBridge {
     list(): Promise<Array<{ fileName: string; relativePath: string; fullPath: string; sizeBytes: number; mtime: number }>>;
     status(list: any[]): Promise<Record<string, { exists: boolean; path: string; size: number }>>;
     download(req: { firmwareId: number | string; fileName: string; platformSlug?: string; fileSizeBytes?: number }): Promise<{ ok: boolean; path?: string; size?: number; copiedTo?: string[]; message?: string }>;
+    syncPlatform(platformSlug: string): Promise<{ ok: boolean; synced: number; message?: string }>;
+    syncAll(): Promise<{ ok: boolean; synced: number; totalMissing?: number; message?: string }>;
     cancel(firmwareId: number | string): Promise<{ ok: boolean }>;
     openFolder(): Promise<{ ok: boolean; path?: string }>;
   };

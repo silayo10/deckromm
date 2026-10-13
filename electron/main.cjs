@@ -516,6 +516,8 @@ function registerIpc() {
   handle('bios:list', () => bios.listLocalBios());
   handle('bios:status', (list) => bios.checkStatus(list));
   handle('bios:download', (req) => bios.download(req));
+  handle('bios:sync-platform', (platformSlug) => bios.syncPlatformBios(platformSlug));
+  handle('bios:sync-all', () => bios.syncAllMissing());
   handle('bios:cancel', (id) => bios.cancel(id));
   handle('bios:open-folder', () => bios.openFolder());
 

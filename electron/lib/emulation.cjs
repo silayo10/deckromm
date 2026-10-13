@@ -38,6 +38,8 @@ const PLATFORM_FOLDERS = {
   'turbografx-16-slash-pc-engine': 'pcengine', tg16: 'tg16', pce: 'pcengine',
   ngp: 'ngp', ngpc: 'ngpc', wonderswan: 'wonderswan', 'wonderswan-color': 'wonderswancolor',
   virtualboy: 'virtualboy', msx: 'msx', dos: 'dos', c64: 'c64', amiga: 'amiga',
+  xbox: 'xbox', 'og-xbox': 'xbox', 'original-xbox': 'xbox',
+  xbox360: 'xbox360', 'xbox-360': 'xbox360', x360: 'xbox360',
 };
 
 /** RomM platform slug -> libretro core basename. */
@@ -77,12 +79,22 @@ const STANDALONE = {
   switch: { flatpak: 'org.ryujinx.Ryujinx', args: (rom) => ['--fullscreen', rom] },
   dc: { flatpak: 'org.flycast.Flycast', args: (rom) => [rom] },
   dreamcast: { flatpak: 'org.flycast.Flycast', args: (rom) => [rom] },
+  saturn: { flatpak: 'org.yabasanshiro.YabaSanshiro', args: (rom) => [rom] },
+  'sega-saturn': { flatpak: 'org.yabasanshiro.YabaSanshiro', args: (rom) => [rom] },
+  xbox: { flatpak: 'app.xemu.xemu', args: (rom) => ['-dvd_path', rom] },
+  'og-xbox': { flatpak: 'app.xemu.xemu', args: (rom) => ['-dvd_path', rom] },
+  'original-xbox': { flatpak: 'app.xemu.xemu', args: (rom) => ['-dvd_path', rom] },
+  xbox360: { flatpak: 'jp.xenia.xenia', args: (rom) => [rom] },
+  'xbox-360': { flatpak: 'jp.xenia.xenia', args: (rom) => [rom] },
+  x360: { flatpak: 'jp.xenia.xenia', args: (rom) => [rom] },
 };
 
 /** Fallback core search order when a specific core is not specified or not installed */
 const CORE_FALLBACKS = {
   dc: ['flycast', 'redream'],
   dreamcast: ['flycast', 'redream'],
+  saturn: ['mednafen_saturn', 'yabasanshiro', 'kronos', 'beetle_saturn'],
+  'sega-saturn': ['mednafen_saturn', 'yabasanshiro', 'kronos'],
   psx: ['duckstation', 'pcsx_rearmed', 'swanstation', 'mednafen_psx_hw', 'mednafen_psx', 'beetle_psx_hw', 'beetle_psx'],
   ps1: ['duckstation', 'pcsx_rearmed', 'swanstation', 'mednafen_psx_hw', 'mednafen_psx'],
   playstation: ['duckstation', 'pcsx_rearmed', 'swanstation', 'mednafen_psx_hw', 'mednafen_psx'],
@@ -97,10 +109,16 @@ const CORE_FALLBACKS = {
   genesis: ['genesis_plus_gx', 'picodrive'],
   'sega-genesis': ['genesis_plus_gx', 'picodrive'],
   megadrive: ['genesis_plus_gx', 'picodrive'],
+  segacd: ['genesis_plus_gx', 'picodrive'],
+  'sega-cd': ['genesis_plus_gx', 'picodrive'],
+  tg16: ['mednafen_pce_fast', 'mednafen_pce'],
+  pce: ['mednafen_pce_fast', 'mednafen_pce'],
   nes: ['mesen', 'fceumm', 'nestopia'],
   arcade: ['fbneo', 'mame', 'mame2003_plus'],
   gb: ['gambatte', 'sameboy', 'mgba'],
   gbc: ['gambatte', 'sameboy', 'mgba'],
+  xbox: ['xemu'],
+  xbox360: ['xenia'],
 };
 
 function expandHome(p) {

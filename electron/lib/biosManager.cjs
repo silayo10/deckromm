@@ -17,27 +17,40 @@ const { execFile } = require('child_process');
 const HOME = process.env.HOME || '/home/deck';
 
 // Specific paths where standalone emulators look for BIOS files
-function getEmulatorBiosDirs() {
+function getEmulatorBiosDirs(emulationRoot) {
+  const root = emulationRoot || path.join(HOME, 'Emulation');
   return {
     pcsx2: [
+      path.join(root, 'bios'),
+      path.join(root, 'bios', 'ps2'),
       path.join(HOME, '.var/app/net.pcsx2.PCSX2/data/PCSX2/bios'),
       path.join(HOME, '.var/app/net.pcsx2.PCSX2/config/PCSX2/bios'),
       path.join(HOME, '.config/PCSX2/bios'),
     ],
     duckstation: [
+      path.join(root, 'bios'),
       path.join(HOME, '.var/app/org.duckstation.DuckStation/data/duckstation/bios'),
       path.join(HOME, '.config/duckstation/bios'),
     ],
     retroarch: [
+      path.join(root, 'bios'),
       path.join(HOME, '.var/app/org.libretro.RetroArch/config/retroarch/system'),
       path.join(HOME, '.config/retroarch/system'),
     ],
     flycast: [
+      path.join(root, 'bios'),
+      path.join(root, 'bios', 'dc'),
       path.join(HOME, '.var/app/org.flycast.Flycast/data/flycast'),
       path.join(HOME, '.config/flycast'),
     ],
     ppsspp: [
+      path.join(root, 'bios'),
       path.join(HOME, '.var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP/SYSTEM'),
+    ],
+    xemu: [
+      path.join(root, 'bios'),
+      path.join(HOME, '.var/app/app.xemu.xemu/data/xemu/xemu'),
+      path.join(HOME, '.local/share/xemu/xemu'),
     ],
   };
 }
@@ -100,8 +113,8 @@ class BiosManager {
 
     await scanDir(biosDir);
 
-    // Also check PCSX2 flatpak directory directly
-    for (const p of getEmulatorBiosDirs().pcsx2) {
+    // Also check PCSX2 directories directly
+    for (const p of getEmulatorBiosDirs(this.getRoot()).pcsx2) {
       await scanDir(p, 'pcsx2');
     }
 
@@ -241,10 +254,13 @@ class BiosManager {
       }
 
       // 2. Platform-specific standalone emulator synchronization
-      const emulatorDirs = getEmulatorBiosDirs();
+      const emulatorDirs = getEmulatorBiosDirs(this.getRoot());
 
       // PS2 -> PCSX2
-      if (['ps2', 'playstation-2', 'playstation2'].includes(platformSlug) || /scph|ps2/i.test(fileName)) {
+      if (
+        ['ps2', 'playstation-2', 'playstation2', 'sony-playstation-2'].includes(platformSlug) ||
+        /scph|ps2|erom|rom1|rom2/i.test(fileName)
+      ) {
         for (const dir of emulatorDirs.pcsx2) {
           try {
             await this.ensureDir(dir);
@@ -282,6 +298,21 @@ class BiosManager {
             copiedTo.push(emuPath);
           } catch {
             /* ignore */
+          }
+        }
+      }
+
+      // Xbox -> Xemu
+      if (['xbox', 'og-xbox', 'original-xbox'].includes(platformSlug) || /mcpx|complex|xbox.*bios/i.test(fileName)) {
+        for (const dir of emulatorDirs.xemu) {
+          try {
+            await this.ensureDir(dir);
+            const emuPath = path.join(dir, fileName);
+            await fsp.copyFile(targetPath, emuPath);
+            copiedTo.push(emuPath);
+            this.log(`[bios] Installed Xbox BIOS to Xemu: ${emuPath}`);
+          } catch (e) {
+            this.log(`[bios] notice: Xemu dir ${dir}: ${e.message}`);
           }
         }
       }
@@ -345,6 +376,146 @@ class BiosManager {
       return { ok: true };
     }
     return { ok: false };
+  }
+
+  /**
+   * Fetch firmware list from RomM API, normalizing array vs paginated format.
+   */
+  async fetchServerFirmware() {
+    try {
+      const res = await this.romm.authedFetch('/api/firmware');
+      if (!res.ok) return [];
+      const data = await res.json().catch(() => []);
+      const items = Array.isArray(data) ? data : data?.items || data?.data || [];
+      return items;
+    } catch (e) {
+      this.log(`[bios] failed to fetch firmware list: ${e.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Automatically check and sync required BIOS files for a given platform.
+   */
+  async syncPlatformBios(platformSlug) {
+    const slug = String(platformSlug || '').toLowerCase().trim();
+    if (!slug) return { ok: true, synced: 0 };
+
+    const isPs2 = ['ps2', 'playstation-2', 'playstation2', 'sony-playstation-2'].includes(slug);
+    const isPs1 = ['psx', 'ps1', 'playstation'].includes(slug);
+    const isDc = ['dc', 'dreamcast'].includes(slug);
+    const isSaturn = ['saturn', 'sega-saturn'].includes(slug);
+    const isSegaCd = ['segacd', 'sega-cd', 'mega-cd'].includes(slug);
+    const isXbox = ['xbox', 'og-xbox', 'original-xbox'].includes(slug);
+
+    if (!isPs2 && !isPs1 && !isDc && !isSaturn && !isSegaCd && !isXbox) {
+      return { ok: true, synced: 0, message: 'Platform does not require external BIOS' };
+    }
+
+    const localFiles = await this.listLocalBios();
+    const hasPs2 = localFiles.some((f) => /scph|ps2|erom|rom1/i.test(f.fileName) && f.sizeBytes > 100000);
+    const hasPs1 = localFiles.some((f) => /scph[1-9]00|ps-?x/i.test(f.fileName));
+    const hasDc = localFiles.some((f) => /dc_boot|boot\.bin/i.test(f.fileName));
+    const hasSaturn = localFiles.some((f) => /saturn.*bin|sega_106/i.test(f.fileName));
+    const hasXbox = localFiles.some((f) => /mcpx|complex|xbox.*bios/i.test(f.fileName));
+
+    if (isPs2 && hasPs2) return { ok: true, synced: 0, message: 'PS2 BIOS already present locally' };
+    if (isPs1 && hasPs1) return { ok: true, synced: 0, message: 'PS1 BIOS already present locally' };
+    if (isDc && hasDc) return { ok: true, synced: 0, message: 'Dreamcast BIOS already present locally' };
+    if (isSaturn && hasSaturn) return { ok: true, synced: 0, message: 'Saturn BIOS already present locally' };
+    if (isXbox && hasXbox) return { ok: true, synced: 0, message: 'Xbox BIOS already present locally' };
+
+    this.log(`[bios] Missing BIOS for ${slug}, checking RomM server...`);
+    const serverItems = await this.fetchServerFirmware();
+    if (!serverItems.length) {
+      return { ok: false, synced: 0, message: 'No firmware found on RomM server' };
+    }
+
+    const matches = serverItems.filter((item) => {
+      const itemSlug = String(item.platform_slug || item.platformSlug || '').toLowerCase();
+      const name = String(item.file_name || item.fileName || '').toLowerCase();
+      if (isPs2) {
+        return (
+          ['ps2', 'playstation-2', 'playstation2', 'sony-playstation-2'].includes(itemSlug) ||
+          /scph|ps2|erom|rom1|rom2/i.test(name)
+        );
+      }
+      if (isPs1) {
+        return ['psx', 'ps1', 'playstation'].includes(itemSlug) || /scph[1-9]00/i.test(name);
+      }
+      if (isDc) {
+        return ['dc', 'dreamcast'].includes(itemSlug) || /dc_|boot\.bin/i.test(name);
+      }
+      if (isSaturn) {
+        return ['saturn', 'sega-saturn'].includes(itemSlug) || /saturn/i.test(name);
+      }
+      if (isXbox) {
+        return ['xbox', 'og-xbox', 'original-xbox'].includes(itemSlug) || /mcpx|complex|xbox/i.test(name);
+      }
+      return false;
+    });
+
+    if (!matches.length) {
+      this.log(`[bios] No matching BIOS files on RomM for platform ${slug}`);
+      return { ok: false, synced: 0, message: `No matching BIOS found on server for ${slug}` };
+    }
+
+    let downloadedCount = 0;
+    for (const item of matches) {
+      const res = await this.download({
+        id: item.id,
+        firmwareId: item.id,
+        fileName: item.file_name || item.fileName,
+        platformSlug: slug,
+        fileSizeBytes: item.file_size_bytes || item.fileSizeBytes || 0,
+      });
+      if (res.ok) downloadedCount++;
+    }
+
+    return {
+      ok: downloadedCount > 0,
+      synced: downloadedCount,
+      message: `Downloaded ${downloadedCount} BIOS file(s) for ${slug}`,
+    };
+  }
+
+  /**
+   * Sync all missing BIOS files from RomM server to local directories.
+   */
+  async syncAllMissing() {
+    const serverItems = await this.fetchServerFirmware();
+    if (!serverItems.length) return { ok: false, synced: 0, message: 'No firmware found on server' };
+
+    const local = await this.listLocalBios();
+    const localSet = new Set(local.map((f) => f.fileName.toLowerCase()));
+
+    const missing = serverItems.filter((item) => {
+      const name = String(item.file_name || item.fileName || '').toLowerCase();
+      return !localSet.has(name);
+    });
+
+    if (!missing.length) {
+      return { ok: true, synced: 0, totalMissing: 0, message: 'All server firmware files are already installed locally' };
+    }
+
+    let downloadedCount = 0;
+    for (const item of missing) {
+      const res = await this.download({
+        id: item.id,
+        firmwareId: item.id,
+        fileName: item.file_name || item.fileName,
+        platformSlug: item.platform_slug || item.platformSlug || '',
+        fileSizeBytes: item.file_size_bytes || item.fileSizeBytes || 0,
+      });
+      if (res.ok) downloadedCount++;
+    }
+
+    return {
+      ok: downloadedCount > 0,
+      synced: downloadedCount,
+      totalMissing: missing.length,
+      message: `Successfully synchronized ${downloadedCount} of ${missing.length} missing BIOS file(s)`,
+    };
   }
 
   /**

@@ -83,6 +83,8 @@ const api = {
     list: invoke('bios:list'),
     status: invoke('bios:status'),
     download: invoke('bios:download'),
+    syncPlatform: invoke('bios:sync-platform'),
+    syncAll: invoke('bios:sync-all'),
     cancel: invoke('bios:cancel'),
     openFolder: invoke('bios:open-folder'),
   },

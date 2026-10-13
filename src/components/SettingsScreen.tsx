@@ -32,6 +32,8 @@ const CONFIGURABLE_PLATFORMS = [
   { slug: 'nes', name: 'Nintendo Entertainment System', defaultCore: 'mesen' },
   { slug: 'gamecube', name: 'Nintendo GameCube / Wii', defaultCore: 'dolphin_standalone' },
   { slug: 'arcade', name: 'Arcade (MAME / Neo-Geo)', defaultCore: 'fbneo' },
+  { slug: 'xbox', name: 'Microsoft Xbox (Original)', defaultCore: 'xemu' },
+  { slug: 'xbox360', name: 'Microsoft Xbox 360', defaultCore: 'xenia' },
 ];
 
 const LAUNCHERS: Array<{ id: NonNullable<RommConfig['launcherMode']>; label: string; hint: string }> = [

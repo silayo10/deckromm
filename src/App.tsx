@@ -1,6 +1,6 @@
 import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Square } from 'lucide-react';
-import { Collection, DownloadItem, FilterTag, Game, LibraryViewMode, NavigationAction, Platform, RommConfig, SortOption, matchGameGenre } from './types';
+import { Collection, DownloadItem, FilterTag, Game, LibraryViewMode, NavigationAction, Platform, RommConfig, SortOption, matchGameGenre, normalizeGenre } from './types';
 import { AuthStatus, EmulatorStateEvent, RomProgressEvent } from './env/electron';
 import { rommApi } from './services/rommApi';
 import { bridge, isNativeApp } from './services/bridge';
@@ -11,6 +11,7 @@ import { soundService } from './services/soundService';
 import { useFocusScope } from './hooks/useFocusScope';
 import { HeaderBar } from './components/HeaderBar';
 import { LibrarySource, PlatformBar, sourceKey } from './components/PlatformBar';
+import { groupPlatformsByFamily } from './utils/platformGrouping';
 import { SearchFilterBar, VIEW_MODES } from './components/SearchFilterBar';
 import { GameGrid } from './components/GameGrid';
 import { GameDetailModal } from './components/GameDetailModal';
@@ -64,6 +65,7 @@ function sourceLabel(s: LibrarySource) {
     case 'favorites': return 'Favorites';
     case 'installed': return 'On this Deck';
     case 'platform': return s.platform.name;
+    case 'platform_family': return `All ${s.name} Games`;
     case 'collection': return s.collection.name;
   }
 }
@@ -76,7 +78,7 @@ export default function App() {
 
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [source, setSource] = useState<LibrarySource>({ kind: 'all' });
+  const [source, setSource] = useState<LibrarySource>({ kind: 'recent' });
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -137,6 +139,12 @@ export default function App() {
         soundService.enabled = cfg.audioFeedback !== false;
         setConfig(cfg);
         setAuth(a);
+        if (cfg.languageFilter || cfg.hideJapanese) {
+          setSelectedLanguage(cfg.languageFilter || (cfg.hideJapanese ? 'no-ja' : 'all'));
+        }
+        if (cfg.genreFilter) {
+          setSelectedGenre(cfg.genreFilter);
+        }
         if (!a.authenticated && !cfg.isDemoMode) setLogin({ open: true });
       })
       .catch((e) => {
@@ -249,6 +257,8 @@ export default function App() {
     const q =
       source.kind === 'platform'
         ? { platform: source.platform }
+        : source.kind === 'platform_family'
+        ? { platforms: source.platforms }
         : source.kind === 'collection'
         ? { collectionId: source.collection.id }
         : {};
@@ -283,13 +293,10 @@ export default function App() {
       if (!g.genres || g.genres.length === 0) continue;
       const seenForGame = new Set<string>();
       for (const raw of g.genres) {
-        const trimmed = raw.trim();
-        if (!trimmed) continue;
-        const isRpg = trimmed.toLowerCase() === 'rpg' || trimmed.toLowerCase() === 'jrpg' || trimmed.toLowerCase().includes('rpg');
-        if (isRpg) {
-          seenForGame.add('RPG');
+        const norm = normalizeGenre(raw);
+        if (norm) {
+          seenForGame.add(norm);
         }
-        seenForGame.add(trimmed);
       }
       for (const name of seenForGame) {
         counts[name] = (counts[name] || 0) + 1;
@@ -393,17 +400,38 @@ export default function App() {
     }
   }, [visibleGames]);
 
-  const sources: LibrarySource[] = useMemo(
-    () => [
-      { kind: 'all' },
+  const platformFamilies = useMemo(() => groupPlatformsByFamily(platforms), [platforms]);
+
+  const sources: LibrarySource[] = useMemo(() => {
+    const list: LibrarySource[] = [
       { kind: 'recent' },
+      { kind: 'all' },
       { kind: 'favorites' },
-      ...(isNativeApp ? [{ kind: 'installed' } as LibrarySource] : []),
-      ...platforms.map((p) => ({ kind: 'platform', platform: p }) as LibrarySource),
-      ...collections.map((c) => ({ kind: 'collection', collection: c }) as LibrarySource),
-    ],
-    [platforms, collections]
-  );
+    ];
+    if (isNativeApp) list.push({ kind: 'installed' });
+
+    for (const fam of platformFamilies) {
+      if (fam.platforms.length > 1) {
+        list.push({
+          kind: 'platform_family',
+          familyId: fam.id,
+          name: fam.name,
+          platforms: fam.platforms,
+        });
+      } else if (fam.platforms.length === 1) {
+        list.push({
+          kind: 'platform',
+          platform: fam.platforms[0],
+        });
+      }
+    }
+
+    for (const c of collections) {
+      list.push({ kind: 'collection', collection: c });
+    }
+
+    return list;
+  }, [platformFamilies, collections]);
 
   const selectSource = useCallback((s: LibrarySource) => {
     focusGridOnLoad.current = !document.activeElement?.closest('[data-focus-memory="platforms"]');
@@ -411,7 +439,14 @@ export default function App() {
   }, []);
 
   const cycleSource = (delta: number) => {
-    const idx = Math.max(0, sources.findIndex((s) => sourceKey(s) === activeKey));
+    let currentIdx = sources.findIndex((s) => sourceKey(s) === activeKey);
+    if (currentIdx === -1 && source.kind === 'platform') {
+      const famId = platformFamilies.find((f) => f.platforms.some((p) => p.id === source.platform.id))?.id;
+      if (famId) {
+        currentIdx = sources.findIndex((s) => s.kind === 'platform_family' && s.familyId === famId);
+      }
+    }
+    const idx = Math.max(0, currentIdx);
     const next = sources[(idx + delta + sources.length) % sources.length];
     focusGridOnLoad.current = true;
     setSource(next);
@@ -697,7 +732,7 @@ export default function App() {
           connected={auth.authenticated || config.isDemoMode}
           serverLabel={serverLabel}
         />
-        <PlatformBar sources={sources} active={source} onSelect={selectSource} />
+        <PlatformBar sources={sources} active={source} onSelect={selectSource} platforms={platforms} collections={collections} />
         <SearchFilterBar
           filter={filter}
           onFilterChange={(f) => updateConfig({ filterTag: f })}

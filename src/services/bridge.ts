@@ -183,6 +183,8 @@ function createBrowserFallback(): DeckRommBridge {
       list: async () => [],
       status: async (list: any[]) => Object.fromEntries(list.map((i) => [String(i.id), { exists: false, path: '', size: 0 }])),
       download: async (req: any) => ({ ok: true, message: `Simulated BIOS download for ${req.fileName}` }),
+      syncPlatform: async (slug: string) => ({ ok: true, synced: 0, message: `Simulated BIOS sync for ${slug}` }),
+      syncAll: async () => ({ ok: true, synced: 0, totalMissing: 0, message: 'Simulated BIOS sync for all platforms' }),
       cancel: async () => ({ ok: true }),
       openFolder: async () => ({ ok: false, message: 'Only available in desktop app' }),
     },
