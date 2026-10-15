@@ -64,6 +64,7 @@ const api = {
     cancel: invoke('rom:cancel'),
     localStatus: invoke('rom:local-status'),
     remove: invoke('rom:delete'),
+    listDownloaded: invoke('rom:list-downloaded'),
     read: invoke('rom:read'),
   },
   emulator: {
@@ -87,6 +88,9 @@ const api = {
     syncAll: invoke('bios:sync-all'),
     cancel: invoke('bios:cancel'),
     openFolder: invoke('bios:open-folder'),
+    xboxStatus: invoke('bios:xbox-status'),
+    xboxSetup: invoke('bios:xbox-setup'),
+    xboxCreateHdd: invoke('bios:xbox-create-hdd'),
   },
   updater: {
     check: invoke('app:check-update'),

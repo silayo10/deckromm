@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders } from 'lucide-react';
+import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders } from 'lucide-react';
 import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, getActiveCoreForGame, getStandaloneEmulatorForPlatform } from '../types';
 import { FocusScope } from './FocusScope';
 import { PlatformBadge } from './PlatformBadge';
@@ -141,6 +141,8 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
 
   const standaloneEmu = getStandaloneEmulatorForPlatform(game.platformSlug);
   const [standaloneLaunchMessage, setStandaloneLaunchMessage] = useState<string | null>(null);
+  const [settingUpXbox, setSettingUpXbox] = useState(false);
+  const [xboxSetupMessage, setXboxSetupMessage] = useState<string | null>(null);
 
   const handleLaunchStandaloneConfig = async () => {
     if (!standaloneEmu) return;
@@ -280,6 +282,61 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
                   Manage BIOS
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Xbox Environment requirement indicator */}
+          {(['xbox', 'og-xbox', 'original-xbox'].includes(game.platformSlug?.toLowerCase() || '')) && (
+            <div className="mt-4 flex flex-wrap items-center gap-3 px-3.5 py-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs max-w-xl">
+              <HardDrive size={16} className="text-emerald-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-emerald-200">Xbox (xemu) Environment:</span>
+                  <span className="text-emerald-300/80">
+                    Requires 8GB Virtual Hard Disk (xbox_hdd.qcow2), MCPX Boot ROM, & BIOS.
+                  </span>
+                </div>
+                {xboxSetupMessage && (
+                  <div className="text-[11px] text-emerald-300 font-semibold mt-1">{xboxSetupMessage}</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  data-focusable
+                  disabled={settingUpXbox}
+                  onClick={async () => {
+                    setSettingUpXbox(true);
+                    soundService.playTick();
+                    try {
+                      const res = await rommApi.autoSetupXbox();
+                      if (res.ok) {
+                        soundService.playSuccess();
+                        setXboxSetupMessage('✓ 8GB HDD created & xemu.toml configured!');
+                      } else {
+                        soundService.playBack();
+                        setXboxSetupMessage(`Setup note: ${res.message}`);
+                      }
+                    } catch (e: any) {
+                      soundService.playBack();
+                      setXboxSetupMessage(`Error: ${e.message}`);
+                    } finally {
+                      setSettingUpXbox(false);
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all disabled:opacity-50"
+                >
+                  {settingUpXbox ? 'Configuring...' : '1-Click Setup Xbox'}
+                </button>
+                {onOpenBiosModal && (
+                  <button
+                    data-focusable
+                    onClick={() => onOpenBiosModal('xbox')}
+                    className="px-2.5 py-1 rounded-lg bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all"
+                  >
+                    Manage BIOS & HDD
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

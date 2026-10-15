@@ -517,6 +517,49 @@ class DownloadManager {
     await fsp.rm(p, { force: true });
     return { ok: true };
   }
+
+  /**
+   * Scan ~/Emulation/roms/ (or configured root) for all downloaded ROM files.
+   * Returns each ROM file with platform slug, file name, path, sizeBytes, and mtime.
+   */
+  async listDownloaded() {
+    const romsRoot = path.join(this.getRoot(), 'roms');
+    const items = [];
+    let totalSizeBytes = 0;
+
+    try {
+      const platformDirs = await fsp.readdir(romsRoot, { withFileTypes: true });
+      for (const pDir of platformDirs) {
+        if (!pDir.isDirectory() || pDir.name.startsWith('.')) continue;
+        const platformSlug = pDir.name;
+        const subPath = path.join(romsRoot, platformSlug);
+        try {
+          const files = await fsp.readdir(subPath, { withFileTypes: true });
+          for (const file of files) {
+            if (!file.isFile() || file.name.startsWith('.') || file.name.endsWith('.part')) continue;
+            const fullPath = path.join(subPath, file.name);
+            const st = await fsp.stat(fullPath).catch(() => null);
+            if (st && st.size > 0) {
+              totalSizeBytes += st.size;
+              items.push({
+                platformSlug,
+                fileName: file.name,
+                fullPath,
+                sizeBytes: st.size,
+                mtime: st.mtimeMs,
+              });
+            }
+          }
+        } catch {
+          // ignore directory read errors
+        }
+      }
+    } catch {
+      // ignore root read error
+    }
+
+    return { items, totalSizeBytes, romsRoot };
+  }
 }
 
 // ---------------------------------------------------------------------------

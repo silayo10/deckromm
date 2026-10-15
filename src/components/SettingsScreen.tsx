@@ -19,6 +19,7 @@ interface SettingsScreenProps {
   onOpenEmulatorsModal?: () => void;
   onOpenBiosModal?: () => void;
   onOpenUpdateModal?: () => void;
+  onOpenStorage?: () => void;
 }
 
 const CONFIGURABLE_PLATFORMS = [
@@ -75,6 +76,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onOpenEmulatorsModal,
   onOpenBiosModal,
   onOpenUpdateModal,
+  onOpenStorage,
 }) => {
   const [storage, setStorage] = useState<NativeStorage | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -560,6 +562,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     <div>{storage.sdCardMounted ? `${formatBytes(storage.sdFreeBytes)} of ${formatBytes(storage.sdTotalBytes)}` : 'Not inserted'}</div>
                   </div>
                 </div>
+                {onOpenStorage && (
+                  <div className="pt-2">
+                    <button
+                      data-focusable
+                      onClick={onOpenStorage}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                    >
+                      <HardDrive size={15} />
+                      <span>Manage Downloaded Games & Storage Space</span>
+                    </button>
+                  </div>
+                )}
               </Section>
             )}
 

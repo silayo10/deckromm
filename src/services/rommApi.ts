@@ -12,7 +12,7 @@
  * libraries with thousands of ROMs.
  */
 import { Collection, Game, Platform, RommConfig, getActiveCoreForGame, RommFirmwareItem, normalizeGenre } from '../types';
-import type { AuthResult, AuthStatus, RomFileRequest, RommRequest, ServerProbe } from '../env/electron';
+import type { AuthResult, AuthStatus, RomFileRequest, RommRequest, ServerProbe, XboxEmulatorStatus, NativeStorage } from '../env/electron';
 import { DEMO_GAMES, DEMO_PLATFORMS } from './rommData';
 import { assetUrl, bridge, isNativeApp } from './bridge';
 import { parseRomFileName } from '../utils/languageUtils';
@@ -107,6 +107,39 @@ export const DEMO_FIRMWARE: RommFirmwareItem[] = [
     isVerified: true,
     description: 'Official GBA Boot ROM for authentic boot animation & sound in mGBA',
     requiredForEmulators: ['retroarch'],
+  },
+  {
+    id: 501,
+    fileName: 'mcpx_1.0.bin',
+    fileSizeBytes: 512,
+    platformId: 10,
+    platformSlug: 'xbox',
+    platformName: 'Microsoft Xbox',
+    isVerified: true,
+    description: 'Xbox MCPX Boot ROM (512 B) - Required by xemu to initialize hardware',
+    requiredForEmulators: ['xemu'],
+  },
+  {
+    id: 502,
+    fileName: 'Complex_4627.bin',
+    fileSizeBytes: 1048576,
+    platformId: 10,
+    platformSlug: 'xbox',
+    platformName: 'Microsoft Xbox',
+    isVerified: true,
+    description: 'Xbox Flash ROM / BIOS (1 MB) - Required by xemu to execute Xbox kernel',
+    requiredForEmulators: ['xemu'],
+  },
+  {
+    id: 503,
+    fileName: 'xbox_hdd.qcow2',
+    fileSizeBytes: 8589934592,
+    platformId: 10,
+    platformSlug: 'xbox',
+    platformName: 'Microsoft Xbox',
+    isVerified: true,
+    description: 'Xbox Virtual Hard Disk (8 GB QCOW2) - Required by xemu for dashboard & cache partitions',
+    requiredForEmulators: ['xemu'],
   },
 ];
 
@@ -783,6 +816,28 @@ class RommApiService {
     return bridge.bios.syncAll();
   }
 
+  /**
+   * Get Xbox emulator (xemu) environment diagnostic (Boot ROM, Flash ROM, Virtual HDD, xemu.toml config).
+   */
+  async getXboxStatus(): Promise<XboxEmulatorStatus> {
+    return bridge.bios.xboxStatus();
+  }
+
+  /**
+   * One-click automated setup for Xbox: syncs BIOS/Boot ROM from RomM server,
+   * generates 8GB virtual hard disk (xbox_hdd.qcow2), and configures xemu.toml.
+   */
+  async autoSetupXbox(): Promise<{ ok: boolean; synced: number; status: XboxEmulatorStatus; message: string }> {
+    return bridge.bios.xboxSetup();
+  }
+
+  /**
+   * Create an 8GB virtual Xbox hard disk image (xbox_hdd.qcow2).
+   */
+  async createXboxHdd(customPath?: string): Promise<{ ok: boolean; path: string; method: string; message: string }> {
+    return bridge.bios.xboxCreateHdd(customPath);
+  }
+
   // ------------------------------------------------------------------ files & launching
   /**
    * URL the in-app EmulatorJS player loads the ROM from. The main process
@@ -810,7 +865,11 @@ class RommApiService {
   /** Download the ROM into Emulation/roms/<platform>/ (progress via bridge 'rom:progress'). */
   async downloadToDeck(game: Game, force = false) {
     if (isNativeApp && game.platformSlug) {
-      void this.syncPlatformBios(game.platformSlug).catch(() => {});
+      if (['xbox', 'og-xbox', 'original-xbox'].includes(game.platformSlug)) {
+        void this.autoSetupXbox().catch((e) => console.warn('Xbox auto-setup error:', e));
+      } else {
+        void this.syncPlatformBios(game.platformSlug).catch(() => {});
+      }
     }
     return bridge.roms.download(this.fileReq(game, force));
   }
@@ -823,11 +882,91 @@ class RommApiService {
     return bridge.roms.remove(this.fileReq(game));
   }
 
+  /**
+   * Scan local ~/Emulation/roms/ directory and return full details of all downloaded games,
+   * their sizes, total occupied space, and available storage on the Steam Deck.
+   */
+  async getDownloadedRomsReport(): Promise<{
+    items: Array<{
+      id: string | number;
+      title: string;
+      platformSlug: string;
+      platformName: string;
+      fileName: string;
+      fullPath: string;
+      sizeBytes: number;
+      mtime: number;
+      coverUrl?: string;
+      game?: Game;
+    }>;
+    totalSizeBytes: number;
+    romsRoot: string;
+    storage: NativeStorage;
+  }> {
+    const [downloaded, storage, platforms] = await Promise.all([
+      bridge.roms.listDownloaded().catch(() => ({ items: [], totalSizeBytes: 0, romsRoot: '' })),
+      bridge.system.storage().catch(() => ({
+        emulationRoot: '',
+        internalTotalBytes: 0,
+        internalFreeBytes: 0,
+        internalUsedBytes: 0,
+        sdCardMounted: false,
+        sdPath: null,
+        sdTotalBytes: 0,
+        sdFreeBytes: 0,
+        sdUsedBytes: 0,
+        storageTarget: 'internal' as const,
+        isRealDeckFs: false,
+      })),
+      this.getPlatforms().catch(() => []),
+    ]);
+
+    const platMap = new Map<string, string>();
+    for (const p of platforms) {
+      platMap.set(p.slug.toLowerCase(), p.name);
+    }
+
+    const items = downloaded.items.map((file) => {
+      const match = DEMO_GAMES.find(
+        (g) => g.fileName.toLowerCase() === file.fileName.toLowerCase() ||
+               (g.platformSlug.toLowerCase() === file.platformSlug.toLowerCase() &&
+                file.fileName.toLowerCase().includes(g.title.toLowerCase().replace(/[^a-z0-9]/g, '')))
+      );
+
+      const title = match?.title || file.fileName.replace(/\.[^/.]+$/, '').replace(/[_.]/g, ' ');
+      const platformName = platMap.get(file.platformSlug.toLowerCase()) || match?.platformName || file.platformSlug.toUpperCase();
+
+      return {
+        id: match?.id || `${file.platformSlug}-${file.fileName}`,
+        title,
+        platformSlug: file.platformSlug,
+        platformName,
+        fileName: file.fileName,
+        fullPath: file.fullPath,
+        sizeBytes: file.sizeBytes,
+        mtime: file.mtime,
+        coverUrl: match?.coverUrl,
+        game: match ? { ...match, isInstalled: true, localPath: file.fullPath, fileSizeBytes: file.sizeBytes } : undefined,
+      };
+    });
+
+    return {
+      items,
+      totalSizeBytes: downloaded.totalSizeBytes,
+      romsRoot: downloaded.romsRoot,
+      storage,
+    };
+  }
+
   /** Download if needed, then launch the matching emulator from the main process. */
   async launchNative(game: Game, core?: string): Promise<{ success: boolean; message: string; command?: string }> {
     if (!isNativeApp) return { success: false, message: 'Native launch requires the DeckRomM desktop app' };
     if (game.platformSlug) {
-      await this.syncPlatformBios(game.platformSlug).catch((e) => console.warn('BIOS auto-sync check error:', e));
+      if (['xbox', 'og-xbox', 'original-xbox'].includes(game.platformSlug)) {
+        await this.autoSetupXbox().catch((e) => console.warn('Xbox auto-setup check error:', e));
+      } else {
+        await this.syncPlatformBios(game.platformSlug).catch((e) => console.warn('BIOS auto-sync check error:', e));
+      }
     }
     const r = await bridge.emulator.launch(this.fileReq(game, false, core));
     return { success: r.ok, message: r.ok ? `Launching with ${r.command}` : r.message || 'Launch failed', command: r.command };

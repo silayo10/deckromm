@@ -133,6 +133,17 @@ export interface CloudSave {
   downloadPath: string;
 }
 
+export interface XboxEmulatorStatus {
+  ready: boolean;
+  xemuInstalled: boolean;
+  bootrom: { found: boolean; path: string | null; fileName: string; sizeBytes: number };
+  flashrom: { found: boolean; path: string | null; fileName: string; sizeBytes: number };
+  hdd: { found: boolean; path: string | null; fileName: string; sizeBytes: number };
+  eeprom: { found: boolean; path: string | null; fileName: string };
+  config: { configured: boolean; path: string | null };
+  missingItems: string[];
+}
+
 export interface DeckRommBridge {
   isElectron: true;
   app: {
@@ -185,6 +196,11 @@ export interface DeckRommBridge {
     cancel(romId: string | number): Promise<{ ok: boolean }>;
     localStatus(list: RomFileRequest[]): Promise<Record<string, { exists: boolean; path: string; size: number }>>;
     remove(req: RomFileRequest): Promise<{ ok: boolean }>;
+    listDownloaded(): Promise<{
+      items: Array<{ platformSlug: string; fileName: string; fullPath: string; sizeBytes: number; mtime: number }>;
+      totalSizeBytes: number;
+      romsRoot: string;
+    }>;
     read(req: RomFileRequest): Promise<Uint8Array>;
   };
   emulator: {
@@ -208,6 +224,9 @@ export interface DeckRommBridge {
     syncAll(): Promise<{ ok: boolean; synced: number; totalMissing?: number; message?: string }>;
     cancel(firmwareId: number | string): Promise<{ ok: boolean }>;
     openFolder(): Promise<{ ok: boolean; path?: string }>;
+    xboxStatus(): Promise<XboxEmulatorStatus>;
+    xboxSetup(): Promise<{ ok: boolean; synced: number; status: XboxEmulatorStatus; message: string }>;
+    xboxCreateHdd(customPath?: string): Promise<{ ok: boolean; path: string; method: string; message: string }>;
   };
   updater: {
     check(): Promise<any>;

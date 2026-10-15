@@ -156,11 +156,19 @@ const downloads = new DownloadManager({
   log,
 });
 
+const bios = new BiosManager({
+  romm,
+  getRoot: getEmulationRoot,
+  emit,
+  log,
+});
+
 const emulators = new EmulatorManager({
   getConfig: () => configStore.get(),
   emit,
   log,
   logDir: LOG_DIR,
+  getBiosManager: () => bios,
   onGameStart: () => {
     if (!mainWindow) return;
     // Hand the screen to the emulator. In gamescope the most recently mapped
@@ -169,13 +177,6 @@ const emulators = new EmulatorManager({
     else mainWindow.minimize();
   },
   onGameEnd: () => restoreWindow(),
-});
-
-const bios = new BiosManager({
-  romm,
-  getRoot: getEmulationRoot,
-  emit,
-  log,
 });
 
 const updater = new AppUpdater({
@@ -482,6 +483,7 @@ function registerIpc() {
   handle('rom:cancel', (romId) => downloads.cancel(romId));
   handle('rom:local-status', (list) => downloads.localStatus(list));
   handle('rom:delete', (req) => downloads.deleteLocal(req));
+  handle('rom:list-downloaded', () => downloads.listDownloaded());
   handle('rom:read', async (req) => {
     const p = downloads.localPath(req);
     const buf = await fsp.readFile(p);
@@ -520,6 +522,9 @@ function registerIpc() {
   handle('bios:sync-all', () => bios.syncAllMissing());
   handle('bios:cancel', (id) => bios.cancel(id));
   handle('bios:open-folder', () => bios.openFolder());
+  handle('bios:xbox-status', () => bios.getXboxStatus());
+  handle('bios:xbox-setup', () => bios.autoSetupXbox());
+  handle('bios:xbox-create-hdd', (customPath) => bios.createXboxHdd(customPath));
 
   // App Updater & GitHub in-place upgrade
   handle('app:check-update', () => updater.checkForUpdates());

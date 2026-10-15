@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownAZ, LayoutGrid, List, GalleryHorizontal, RefreshCw, Filter, X, ChevronDown, Globe } from 'lucide-react';
+import { ArrowDownAZ, LayoutGrid, List, GalleryHorizontal, RefreshCw, Filter, X, ChevronDown, Globe, HardDrive } from 'lucide-react';
 import { FilterTag, LibraryViewMode, SortOption } from '../types';
 import { getGenreIcon } from './GenrePickerModal';
 import { LanguageCountOption } from './LanguagePickerModal';
@@ -30,6 +30,7 @@ interface SearchFilterBarProps {
   currentPlatformName?: string;
   loading: boolean;
   onRefresh: () => void;
+  onOpenStorage?: () => void;
 }
 
 const FILTERS: Array<{ id: FilterTag; label: string }> = [
@@ -70,6 +71,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   currentPlatformName,
   loading,
   onRefresh,
+  onOpenStorage,
 }) => {
   const nextSort = () => {
     const i = SORTS.findIndex((s) => s.id === sortBy);
@@ -121,6 +123,19 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             {f.label}
           </button>
         ))}
+
+        {onOpenStorage && (
+          <button
+            data-focusable
+            id="filter-manage-storage"
+            onClick={onOpenStorage}
+            className="deck-chip h-9 px-3 rounded-lg text-xs font-bold border border-sky-400/30 bg-sky-950/40 text-sky-300 hover:text-white hover:border-sky-400/60 flex items-center gap-1.5 transition-colors"
+            title="View all downloaded games, file sizes, and free storage space"
+          >
+            <HardDrive size={14} className="text-sky-400" />
+            <span>Storage & Space</span>
+          </button>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-sm text-deck-dim tabular-nums mr-2">

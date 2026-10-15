@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Menu, Search, Wifi, WifiOff, Battery, BatteryCharging, Download } from 'lucide-react';
+import { Menu, Search, Wifi, WifiOff, Battery, BatteryCharging, Download, HardDrive } from 'lucide-react';
 
 interface HeaderBarProps {
   title: string;
@@ -8,6 +8,7 @@ interface HeaderBarProps {
   onSearchChange: (q: string) => void;
   onOpenMenu: () => void;
   onOpenDownloads: () => void;
+  onOpenStorage?: () => void;
   activeDownloads: number;
   connected: boolean;
   serverLabel: string;
@@ -50,6 +51,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onSearchChange,
   onOpenMenu,
   onOpenDownloads,
+  onOpenStorage,
   activeDownloads,
   connected,
   serverLabel,
@@ -86,7 +88,20 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         />
       </label>
 
-      <div className="ml-auto flex items-center gap-4 text-sm text-deck-dim">
+      <div className="ml-auto flex items-center gap-3 text-sm text-deck-dim">
+        {onOpenStorage && (
+          <button
+            data-focusable
+            id="header-storage"
+            onClick={onOpenStorage}
+            className="h-11 px-3.5 flex items-center gap-2 rounded-xl bg-deck-panel-2 hover:bg-white/10 border border-deck-line text-deck-text hover:text-white transition-colors"
+            aria-label="Storage and Downloaded Games"
+            title="Storage & Downloaded Games Space"
+          >
+            <HardDrive size={18} className="text-sky-400" />
+            <span className="hidden sm:inline text-xs font-bold text-slate-200">Storage</span>
+          </button>
+        )}
         <button
           data-focusable
           onClick={onOpenDownloads}

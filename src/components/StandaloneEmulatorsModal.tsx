@@ -13,6 +13,7 @@ import {
   Gamepad2,
   Settings,
   Cpu,
+  HardDrive,
 } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { SUPPORTED_STANDALONE_EMULATORS, StandaloneEmulatorInfo } from '../types';
@@ -38,6 +39,7 @@ export const StandaloneEmulatorsModal: React.FC<StandaloneEmulatorsModalProps> =
   const [installedMap, setInstalledMap] = useState<Record<string, boolean>>({});
   const [installingMap, setInstallingMap] = useState<Record<string, { progress?: number; message?: string }>>({});
   const [launchingId, setLaunchingId] = useState<string | null>(null);
+  const [settingUpXbox, setSettingUpXbox] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch flatpak installation status
@@ -286,15 +288,42 @@ export const StandaloneEmulatorsModal: React.FC<StandaloneEmulatorsModalProps> =
                       <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
                         <span className="px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-500/30 text-emerald-300 font-semibold flex items-center gap-1.5 text-[11px]">
                           <Cpu size={12} />
-                          <span>Requires Xbox MCPX Boot ROM & BIOS</span>
+                          <span>Requires 8GB HDD Image, Boot ROM & BIOS</span>
                         </span>
+                        <button
+                          data-focusable
+                          disabled={settingUpXbox}
+                          onClick={async () => {
+                            setSettingUpXbox(true);
+                            onToast('Setting up Xbox (pulling BIOS, generating 8GB HDD, configuring xemu)...', 'info');
+                            try {
+                              const res = await rommApi.autoSetupXbox();
+                              if (res.ok) {
+                                soundService.playSuccess();
+                                onToast(res.message, 'ok');
+                              } else {
+                                soundService.playBack();
+                                onToast(res.message || 'Setup failed', 'error');
+                              }
+                            } catch (e: any) {
+                              soundService.playBack();
+                              onToast(`Setup error: ${e.message}`, 'error');
+                            } finally {
+                              setSettingUpXbox(false);
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 shadow transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          <HardDrive size={11} />
+                          <span>{settingUpXbox ? 'Configuring...' : '1-Click Setup Xbox'}</span>
+                        </button>
                         {onOpenBiosModal && (
                           <button
                             data-focusable
                             onClick={() => onOpenBiosModal('xbox')}
                             className="text-[11px] text-sky-400 hover:text-white underline font-bold cursor-pointer transition-colors"
                           >
-                            Pull Xbox BIOS
+                            Manage BIOS & HDD
                           </button>
                         )}
                       </div>

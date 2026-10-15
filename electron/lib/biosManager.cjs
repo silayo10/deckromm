@@ -49,10 +49,58 @@ function getEmulatorBiosDirs(emulationRoot) {
     ],
     xemu: [
       path.join(root, 'bios'),
+      path.join(root, 'bios', 'xbox'),
+      path.join(root, 'bios', 'xemu'),
       path.join(HOME, '.var/app/app.xemu.xemu/data/xemu/xemu'),
+      path.join(HOME, '.var/app/app.xemu.xemu/config/xemu'),
       path.join(HOME, '.local/share/xemu/xemu'),
+      path.join(HOME, '.config/xemu'),
     ],
   };
+}
+
+/**
+ * Generate a valid, sparse QCOW2 v3 image buffer for an 8GB Xbox virtual disk.
+ * Complies with the official QEMU QCOW2 v3 format specification.
+ */
+function generateEmptyQcow2Buffer(sizeBytes = 8589934592) {
+  const CLUSTER_SIZE = 65536;
+  const totalSize = CLUSTER_SIZE * 4; // 256 KB sparse container
+  const buf = Buffer.alloc(totalSize, 0);
+
+  // QCOW2 v3 Header (104 bytes)
+  buf.writeUInt32BE(0x514649fb, 0); // Magic: 'QFI\xfb'
+  buf.writeUInt32BE(3, 4);          // Version 3
+  buf.writeBigUInt64BE(0n, 8);      // Backing file offset: 0
+  buf.writeUInt32BE(0, 16);         // Backing file size: 0
+  buf.writeUInt32BE(16, 20);        // Cluster bits: 16 (64 KB)
+  buf.writeBigUInt64BE(BigInt(sizeBytes), 24); // Size in bytes (8 GiB)
+  buf.writeUInt32BE(0, 32);         // Crypt method: 0
+  buf.writeUInt32BE(16, 36);        // L1 size: 16 entries
+  buf.writeBigUInt64BE(BigInt(CLUSTER_SIZE), 40);     // L1 table offset: cluster 1
+  buf.writeBigUInt64BE(BigInt(CLUSTER_SIZE * 2), 48); // Refcount table offset: cluster 2
+  buf.writeUInt32BE(1, 56);         // Refcount table clusters: 1
+  buf.writeUInt32BE(0, 60);         // Snapshots: 0
+  buf.writeBigUInt64BE(0n, 64);     // Snapshots offset: 0
+  buf.writeBigUInt64BE(0n, 72);     // Incompatible features: 0
+  buf.writeBigUInt64BE(0n, 80);     // Compatible features: 0
+  buf.writeBigUInt64BE(0n, 88);     // Autoclear features: 0
+  buf.writeUInt32BE(4, 96);         // Refcount order: 4 (16 bits)
+  buf.writeUInt32BE(104, 100);      // Header length: 104
+
+  // Cluster 2: Refcount Table
+  // Entry 0 points to Refcount Block at cluster 3
+  buf.writeBigUInt64BE(BigInt(CLUSTER_SIZE * 3), CLUSTER_SIZE * 2);
+
+  // Cluster 3: Refcount Block
+  // Mark clusters 0, 1, 2, 3 as allocated (refcount = 1)
+  const refcountBlockOffset = CLUSTER_SIZE * 3;
+  buf.writeUInt16BE(1, refcountBlockOffset + 0); // Cluster 0
+  buf.writeUInt16BE(1, refcountBlockOffset + 2); // Cluster 1
+  buf.writeUInt16BE(1, refcountBlockOffset + 4); // Cluster 2
+  buf.writeUInt16BE(1, refcountBlockOffset + 6); // Cluster 3
+
+  return buf;
 }
 
 class BiosManager {
@@ -515,6 +563,323 @@ class BiosManager {
       synced: downloadedCount,
       totalMissing: missing.length,
       message: `Successfully synchronized ${downloadedCount} of ${missing.length} missing BIOS file(s)`,
+    };
+  }
+
+  /**
+   * Comprehensive Xbox & xemu diagnostic. Checks Boot ROM, Flash ROM, HDD, EEPROM, and xemu.toml config.
+   */
+  async getXboxStatus() {
+    const biosDir = this.getBiosDir();
+    const searchDirs = [
+      biosDir,
+      path.join(biosDir, 'xbox'),
+      path.join(biosDir, 'xemu'),
+      path.join(HOME, '.var/app/app.xemu.xemu/data/xemu/xemu'),
+      path.join(HOME, '.local/share/xemu/xemu'),
+    ];
+
+    const findFile = async (matchRegex) => {
+      for (const d of searchDirs) {
+        try {
+          const entries = await fsp.readdir(d);
+          for (const entry of entries) {
+            if (matchRegex.test(entry)) {
+              const full = path.join(d, entry);
+              const st = await fsp.stat(full).catch(() => null);
+              if (st && st.size > 0) {
+                return { path: full, fileName: entry, sizeBytes: st.size };
+              }
+            }
+          }
+        } catch {
+          // ignore directory read errors
+        }
+      }
+      return null;
+    };
+
+    const mcpx = await findFile(/^(mcpx(_1\.0)?|mcpx_1\.1)\.bin$/i);
+    const flashrom = await findFile(/^(complex_4627|complex 4627|4627|cerbios|xbox.*bios|bios)\.bin$/i);
+    const hdd = await findFile(/^xbox_hdd\.(qcow2|img)$/i);
+    const eeprom = await findFile(/^eeprom\.bin$/i);
+
+    // Check xemu.toml configuration
+    const configCandidates = [
+      path.join(HOME, '.var/app/app.xemu.xemu/data/xemu/xemu/xemu.toml'),
+      path.join(HOME, '.var/app/app.xemu.xemu/config/xemu/xemu.toml'),
+      path.join(biosDir, 'xemu', 'xemu.toml'),
+    ];
+
+    let foundConfig = null;
+    let isConfigured = false;
+    for (const cp of configCandidates) {
+      try {
+        const text = await fsp.readFile(cp, 'utf8');
+        foundConfig = cp;
+        if (text.includes('bootrom_path') && text.includes('hdd_path')) {
+          isConfigured = true;
+          break;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Check if xemu is installed
+    let xemuInstalled = false;
+    try {
+      const flatpakCheck = await new Promise((res) => {
+        execFile('flatpak', ['info', 'app.xemu.xemu'], { timeout: 3000 }, (err) => res(!err));
+      });
+      xemuInstalled = flatpakCheck;
+    } catch {
+      // ignore
+    }
+
+    const missingItems = [];
+    if (!mcpx) missingItems.push('Boot ROM (mcpx_1.0.bin)');
+    if (!flashrom) missingItems.push('BIOS (Complex_4627.bin)');
+    if (!hdd) missingItems.push('Virtual Hard Disk (xbox_hdd.qcow2)');
+    if (!isConfigured) missingItems.push('xemu.toml configuration');
+
+    return {
+      ready: Boolean(mcpx && flashrom && hdd),
+      xemuInstalled,
+      bootrom: {
+        found: Boolean(mcpx),
+        path: mcpx ? mcpx.path : null,
+        fileName: mcpx ? mcpx.fileName : 'mcpx_1.0.bin',
+        sizeBytes: mcpx ? mcpx.sizeBytes : 0,
+      },
+      flashrom: {
+        found: Boolean(flashrom),
+        path: flashrom ? flashrom.path : null,
+        fileName: flashrom ? flashrom.fileName : 'Complex_4627.bin',
+        sizeBytes: flashrom ? flashrom.sizeBytes : 0,
+      },
+      hdd: {
+        found: Boolean(hdd),
+        path: hdd ? hdd.path : null,
+        fileName: hdd ? hdd.fileName : 'xbox_hdd.qcow2',
+        sizeBytes: hdd ? hdd.sizeBytes : 0,
+      },
+      eeprom: {
+        found: Boolean(eeprom),
+        path: eeprom ? eeprom.path : null,
+        fileName: eeprom ? eeprom.fileName : 'eeprom.bin',
+      },
+      config: {
+        configured: isConfigured,
+        path: foundConfig,
+      },
+      missingItems,
+    };
+  }
+
+  /**
+   * Create or provision the 8GB virtual Xbox hard disk image (xbox_hdd.qcow2).
+   */
+  async createXboxHdd(customPath) {
+    const biosDir = this.getBiosDir();
+    const targetPath = customPath || path.join(biosDir, 'xbox_hdd.qcow2');
+    await this.ensureDir(path.dirname(targetPath));
+
+    let created = false;
+    let method = 'unknown';
+
+    // 1. Try flatpak app.xemu.xemu qemu-img
+    try {
+      const ok = await new Promise((res) => {
+        execFile('flatpak', ['run', '--command=qemu-img', 'app.xemu.xemu', 'create', '-f', 'qcow2', targetPath, '8G'], { timeout: 8000 }, (err) => res(!err));
+      });
+      if (ok) {
+        created = true;
+        method = 'flatpak qemu-img';
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Try host qemu-img
+    if (!created) {
+      try {
+        const ok = await new Promise((res) => {
+          execFile('qemu-img', ['create', '-f', 'qcow2', targetPath, '8G'], { timeout: 5000 }, (err) => res(!err));
+        });
+        if (ok) {
+          created = true;
+          method = 'host qemu-img';
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 3. Pure Node.js valid 8GB QCOW2 v3 image generator fallback
+    if (!created) {
+      try {
+        const buf = generateEmptyQcow2Buffer(8589934592);
+        await fsp.writeFile(targetPath, buf);
+        created = true;
+        method = 'native sparse QCOW2 generator';
+      } catch (e) {
+        return { ok: false, message: `Could not create HDD image: ${e.message}` };
+      }
+    }
+
+    // Copy or symlink to standard xemu and xbox paths
+    const otherPaths = [
+      path.join(biosDir, 'xbox', 'xbox_hdd.qcow2'),
+      path.join(biosDir, 'xemu', 'xbox_hdd.qcow2'),
+      path.join(HOME, '.var/app/app.xemu.xemu/data/xemu/xemu', 'xbox_hdd.qcow2'),
+    ];
+
+    for (const op of otherPaths) {
+      try {
+        await this.ensureDir(path.dirname(op));
+        await fsp.copyFile(targetPath, op);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Update xemu.toml configuration
+    await this.configureXemu().catch(() => {});
+
+    return {
+      ok: true,
+      path: targetPath,
+      method,
+      message: `Created 8GB Xbox virtual hard disk (${targetPath}) via ${method}`,
+    };
+  }
+
+  /**
+   * Automatically generate and sync xemu.toml config with detected file paths.
+   */
+  async configureXemu() {
+    const status = await this.getXboxStatus();
+    const biosDir = this.getBiosDir();
+
+    // Default paths if not already found on disk
+    const bootrom = status.bootrom.path || path.join(biosDir, 'mcpx_1.0.bin');
+    const flashrom = status.flashrom.path || path.join(biosDir, 'Complex_4627.bin');
+    const hdd = status.hdd.path || path.join(biosDir, 'xbox_hdd.qcow2');
+    const eeprom = status.eeprom.path || path.join(biosDir, 'eeprom.bin');
+
+    const tomlContent = [
+      '# Generated by DeckRomM for Steam Deck Game Mode',
+      '[general]',
+      'show_welcome = false',
+      '',
+      '[sys]',
+      'mem_limit = "64"',
+      '',
+      '[sys.files]',
+      `bootrom_path = "${bootrom}"`,
+      `flashrom_path = "${flashrom}"`,
+      `hdd_path = "${hdd}"`,
+      `eeprom_path = "${eeprom}"`,
+      '',
+      '[display]',
+      'scale = "scale_integer"',
+      'ui = "hidden"',
+      '',
+    ].join('\n');
+
+    const configTargets = [
+      path.join(HOME, '.var/app/app.xemu.xemu/data/xemu/xemu/xemu.toml'),
+      path.join(HOME, '.var/app/app.xemu.xemu/config/xemu/xemu.toml'),
+      path.join(biosDir, 'xemu', 'xemu.toml'),
+    ];
+
+    let writtenAny = false;
+    for (const target of configTargets) {
+      try {
+        await this.ensureDir(path.dirname(target));
+        await fsp.writeFile(target, tomlContent, 'utf8');
+        writtenAny = true;
+      } catch (e) {
+        this.log(`[xemu] could not write ${target}: ${e.message}`);
+      }
+    }
+
+    // Copy/link discovered files into Flatpak data directory so sandbox access always works
+    const flatpakDataDir = path.join(HOME, '.var/app/app.xemu.xemu/data/xemu/xemu');
+    try {
+      await this.ensureDir(flatpakDataDir);
+      if (status.bootrom.path) {
+        await fsp.copyFile(status.bootrom.path, path.join(flatpakDataDir, path.basename(status.bootrom.path))).catch(() => {});
+      }
+      if (status.flashrom.path) {
+        await fsp.copyFile(status.flashrom.path, path.join(flatpakDataDir, path.basename(status.flashrom.path))).catch(() => {});
+      }
+      if (status.hdd.path) {
+        await fsp.copyFile(status.hdd.path, path.join(flatpakDataDir, path.basename(status.hdd.path))).catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      ok: writtenAny,
+      message: 'xemu.toml configured with detected BIOS and HDD paths',
+      paths: { bootrom, flashrom, hdd, eeprom },
+    };
+  }
+
+  /**
+   * One-click automated setup for Xbox:
+   * 1. Check & sync missing firmware from RomM server
+   * 2. Auto-create 8GB HDD image if missing
+   * 3. Write and link xemu.toml
+   */
+  async autoSetupXbox() {
+    this.log('[xemu] Running autoSetupXbox...');
+
+    // 1. Attempt to sync Xbox firmware from RomM server
+    let synced = 0;
+    try {
+      const serverItems = await this.fetchServerFirmware();
+      const xboxItems = serverItems.filter((i) => {
+        const slug = String(i.platform_slug || i.platformSlug || '').toLowerCase();
+        const name = String(i.file_name || i.fileName || '').toLowerCase();
+        return slug === 'xbox' || /mcpx|complex|xbox.*bios|xbox.*hdd/i.test(name);
+      });
+
+      for (const item of xboxItems) {
+        const res = await this.download({
+          id: item.id,
+          firmwareId: item.id,
+          fileName: item.file_name || item.fileName,
+          platformSlug: 'xbox',
+          fileSizeBytes: item.file_size_bytes || item.fileSizeBytes || 0,
+        });
+        if (res.ok) synced++;
+      }
+    } catch (e) {
+      this.log(`[xemu] server sync note: ${e.message}`);
+    }
+
+    // 2. Check if HDD image exists; create it if missing
+    let status = await this.getXboxStatus();
+    if (!status.hdd.found) {
+      await this.createXboxHdd();
+      status = await this.getXboxStatus();
+    }
+
+    // 3. Write xemu.toml
+    await this.configureXemu();
+    status = await this.getXboxStatus();
+
+    return {
+      ok: true,
+      synced,
+      status,
+      message: status.ready
+        ? 'Xbox (xemu) environment is fully configured and ready to play!'
+        : `Xbox configured (HDD created). Missing: ${status.missingItems.join(', ')}`,
     };
   }
 

@@ -17,6 +17,7 @@ import { FocusScope } from './FocusScope';
 import { rommApi } from '../services/rommApi';
 import { bridge, isNativeApp } from '../services/bridge';
 import { RommFirmwareItem, BiosProgressEvent } from '../types';
+import type { XboxEmulatorStatus } from '../env/electron';
 
 interface BiosManagerModalProps {
   isOpen: boolean;
@@ -38,11 +39,20 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
   const [downloadingIds, setDownloadingIds] = useState<Record<string, number>>({}); // id -> progress percent
   const [activeItem, setActiveItem] = useState<RommFirmwareItem | null>(null);
 
+  // Xbox environment state
+  const [xboxStatus, setXboxStatus] = useState<XboxEmulatorStatus | null>(null);
+  const [settingUpXbox, setSettingUpXbox] = useState(false);
+  const [creatingHdd, setCreatingHdd] = useState(false);
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const items = await rommApi.getFirmware();
+      const [items, xbox] = await Promise.all([
+        rommApi.getFirmware(),
+        rommApi.getXboxStatus().catch(() => null),
+      ]);
       setFirmwareList(items);
+      if (xbox) setXboxStatus(xbox);
       if (items.length > 0 && !activeItem) {
         setActiveItem(items[0]);
       }
@@ -165,6 +175,45 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
     }
   };
 
+  const handleAutoSetupXbox = async () => {
+    setSettingUpXbox(true);
+    onToast('Setting up Xbox environment (pulling BIOS, creating 8GB HDD, configuring xemu)...', 'info');
+    try {
+      const res = await rommApi.autoSetupXbox();
+      if (res.ok) {
+        setXboxStatus(res.status);
+        onToast(res.message, 'ok');
+        await loadData();
+      } else {
+        onToast(res.message || 'Xbox setup failed', 'error');
+      }
+    } catch (e: any) {
+      onToast(`Xbox setup error: ${e.message}`, 'error');
+    } finally {
+      setSettingUpXbox(false);
+    }
+  };
+
+  const handleCreateXboxHdd = async () => {
+    setCreatingHdd(true);
+    onToast('Creating 8GB virtual Xbox hard disk image (xbox_hdd.qcow2)...', 'info');
+    try {
+      const res = await rommApi.createXboxHdd();
+      if (res.ok) {
+        onToast(res.message, 'ok');
+        const updated = await rommApi.getXboxStatus().catch(() => null);
+        if (updated) setXboxStatus(updated);
+        await loadData();
+      } else {
+        onToast(res.message || 'HDD creation failed', 'error');
+      }
+    } catch (e: any) {
+      onToast(`HDD creation error: ${e.message}`, 'error');
+    } finally {
+      setCreatingHdd(false);
+    }
+  };
+
   const handleOpenFolder = async () => {
     if (!isNativeApp) {
       onToast('Folder opening is only supported in the native Steam Deck app', 'info');
@@ -184,6 +233,9 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
     if (mb >= 1) return `${mb.toFixed(2)} MB`;
     return `${(bytes / 1024).toFixed(1)} KB`;
   };
+
+  const isXboxView = selectedPlatform === 'all' || selectedPlatform === 'xbox';
+  const xboxReady = xboxStatus?.ready;
 
   return (
     <div className="fixed inset-0 z-[220] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
@@ -243,7 +295,7 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
           </div>
 
           {/* PS2 Callout Banner */}
-          <div className="px-6 py-3 bg-gradient-to-r from-blue-950/40 via-purple-950/30 to-transparent border-b border-blue-500/20 flex items-center justify-between gap-4">
+          <div className="px-6 py-2.5 bg-gradient-to-r from-blue-950/40 via-purple-950/30 to-transparent border-b border-blue-500/20 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-300">
                 <HardDrive size={18} />
@@ -251,7 +303,7 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
               <div className="text-xs">
                 <span className="font-bold text-blue-300 mr-2">PlayStation 2 (PCSX2):</span>
                 <span className="text-deck-dim">
-                  PS2 requires BIOS files (e.g. <code className="text-deck-text font-mono">scph39001.bin</code>). DeckRomM automatically places downloaded BIOS into <code className="text-blue-300 font-mono">~/Emulation/bios</code> and the PCSX2 Flatpak data directory.
+                  PS2 requires BIOS files (e.g. <code className="text-deck-text font-mono">scph39001.bin</code>). DeckRomM automatically places downloaded BIOS into <code className="text-blue-300 font-mono">~/Emulation/bios</code> and PCSX2 Flatpak dirs.
                 </span>
               </div>
             </div>
@@ -285,6 +337,66 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
               )}
             </div>
           </div>
+
+          {/* Xbox (xemu) Environment & Virtual HDD Callout Banner */}
+          {isXboxView && (
+            <div className="px-6 py-2.5 bg-gradient-to-r from-emerald-950/40 via-green-950/30 to-transparent border-b border-emerald-500/20 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300">
+                  <HardDrive size={18} />
+                </div>
+                <div className="text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-emerald-300">Microsoft Xbox (xemu):</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${xboxReady ? 'bg-emerald-900/60 border-emerald-400 text-emerald-200' : 'bg-amber-900/60 border-amber-400 text-amber-200'}`}>
+                      {xboxReady ? '✓ Xbox Environment Ready' : '⚠️ Setup Required (HDD / BIOS)'}
+                    </span>
+                  </div>
+                  <div className="text-deck-dim mt-0.5 flex items-center gap-3 flex-wrap">
+                    <span className={xboxStatus?.bootrom.found ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>
+                      {xboxStatus?.bootrom.found ? '✓' : '✗'} Boot ROM (mcpx)
+                    </span>
+                    <span className={xboxStatus?.flashrom.found ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>
+                      {xboxStatus?.flashrom.found ? '✓' : '✗'} BIOS (Complex 4627)
+                    </span>
+                    <span className={xboxStatus?.hdd.found ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>
+                      {xboxStatus?.hdd.found ? '✓' : '✗'} 8GB HDD (xbox_hdd.qcow2)
+                    </span>
+                    <span className={xboxStatus?.config.configured ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>
+                      {xboxStatus?.config.configured ? '✓' : '✗'} xemu.toml
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {!xboxStatus?.hdd.found && (
+                  <button
+                    data-focusable
+                    id="bios-create-xbox-hdd"
+                    disabled={creatingHdd}
+                    onClick={handleCreateXboxHdd}
+                    className="px-3 py-1 rounded-lg bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-500/40 text-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                    title="Generate the required 8GB virtual hard disk image"
+                  >
+                    <HardDrive size={13} />
+                    <span>{creatingHdd ? 'Creating 8GB HDD...' : 'Create 8GB HDD'}</span>
+                  </button>
+                )}
+                <button
+                  data-focusable
+                  id="bios-xbox-auto-setup"
+                  disabled={settingUpXbox}
+                  onClick={handleAutoSetupXbox}
+                  className="px-3.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition-all active:scale-95 disabled:opacity-50"
+                  title="Automatically pull missing Xbox firmware, create 8GB HDD, and write xemu.toml config"
+                >
+                  <RefreshCw size={13} className={settingUpXbox ? 'animate-spin' : ''} />
+                  <span>{settingUpXbox ? 'Configuring Xbox...' : '1-Click Setup Xbox'}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Filters & Search Toolbar */}
           <div className="px-6 py-3 border-b border-deck-line bg-deck-bg/20 flex flex-wrap items-center justify-between gap-3">

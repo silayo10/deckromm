@@ -29,6 +29,7 @@ import { WebEmulatorModal } from './components/WebEmulatorModal';
 import { RomPatcherModal } from './components/RomPatcherModal';
 import { StandaloneEmulatorsModal } from './components/StandaloneEmulatorsModal';
 import { BiosManagerModal } from './components/BiosManagerModal';
+import { StorageManagerModal } from './components/StorageManagerModal';
 import { UpdateManagerModal } from './components/UpdateManagerModal';
 import { AppUpdateInfo } from './types';
 
@@ -105,6 +106,7 @@ export default function App() {
   const [standaloneEmulatorsModalOpen, setStandaloneEmulatorsModalOpen] = useState(false);
   const [biosModalOpen, setBiosModalOpen] = useState(false);
   const [biosPlatformFilter, setBiosPlatformFilter] = useState<string | undefined>();
+  const [storageModalOpen, setStorageModalOpen] = useState(false);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo | null>(null);
   const [keyboard, setKeyboard] = useState<KeyboardRequest | null>(null);
@@ -728,6 +730,7 @@ export default function App() {
           onSearchChange={setSearch}
           onOpenMenu={() => setMenuOpen(true)}
           onOpenDownloads={() => setDownloadsOpen(true)}
+          onOpenStorage={() => setStorageModalOpen(true)}
           activeDownloads={activeDownloads}
           connected={auth.authenticated || config.isDemoMode}
           serverLabel={serverLabel}
@@ -754,6 +757,7 @@ export default function App() {
           currentPlatformName={sourceLabel(source)}
           loading={loading}
           onRefresh={refresh}
+          onOpenStorage={() => setStorageModalOpen(true)}
         />
         <GameGrid
           games={visibleGames}
@@ -851,6 +855,10 @@ export default function App() {
             setSettingsOpen(false);
             setUpdateModalOpen(true);
           }}
+          onOpenStorage={() => {
+            setSettingsOpen(false);
+            setStorageModalOpen(true);
+          }}
         />
       )}
 
@@ -881,6 +889,10 @@ export default function App() {
           onDownloads={() => {
             setMenuOpen(false);
             setDownloadsOpen(true);
+          }}
+          onStorage={() => {
+            setMenuOpen(false);
+            setStorageModalOpen(true);
           }}
           onSettings={() => {
             setMenuOpen(false);
@@ -971,6 +983,18 @@ export default function App() {
           onClose={() => setBiosModalOpen(false)}
           onToast={toast}
           initialPlatformFilter={biosPlatformFilter}
+        />
+      )}
+
+      {storageModalOpen && (
+        <StorageManagerModal
+          isOpen={storageModalOpen}
+          onClose={() => setStorageModalOpen(false)}
+          onToast={toast}
+          onLaunchGame={handleLaunch}
+          onGameDeleted={(_id) => {
+            refresh();
+          }}
         />
       )}
 
