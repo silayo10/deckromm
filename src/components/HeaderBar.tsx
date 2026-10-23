@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Menu, Search, Wifi, WifiOff, Battery, BatteryCharging, Download, HardDrive } from 'lucide-react';
+import { Menu, Search, Wifi, WifiOff, Battery, BatteryCharging, Download, HardDrive, CloudOff } from 'lucide-react';
 
 interface HeaderBarProps {
   title: string;
@@ -9,6 +9,8 @@ interface HeaderBarProps {
   onOpenMenu: () => void;
   onOpenDownloads: () => void;
   onOpenStorage?: () => void;
+  offlineMode?: boolean;
+  onToggleOfflineMode?: () => void;
   activeDownloads: number;
   connected: boolean;
   serverLabel: string;
@@ -55,6 +57,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   activeDownloads,
   connected,
   serverLabel,
+  offlineMode = false,
+  onToggleOfflineMode,
 }) => {
   const clock = useClock();
   const battery = useBattery();
@@ -89,6 +93,30 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
       </label>
 
       <div className="ml-auto flex items-center gap-3 text-sm text-deck-dim">
+        {onToggleOfflineMode && (
+          <button
+            data-focusable
+            id="header-offline-toggle"
+            onClick={onToggleOfflineMode}
+            className={`h-11 px-3.5 flex items-center gap-2 rounded-xl border transition-all ${
+              offlineMode
+                ? 'bg-amber-500/25 hover:bg-amber-500/35 border-amber-500/50 text-amber-300 shadow-sm'
+                : 'bg-deck-panel-2 hover:bg-white/10 border-deck-line text-deck-dim hover:text-white'
+            }`}
+            aria-label={offlineMode ? 'Offline Mode Active' : 'Online Mode Active'}
+            title={
+              offlineMode
+                ? 'Offline Mode Active: Showing downloaded games only. Click to switch to Online.'
+                : 'Click to enable Offline Mode (show downloaded games only)'
+            }
+          >
+            {offlineMode ? <CloudOff size={16} className="text-amber-400" /> : <Wifi size={16} className="text-deck-ok" />}
+            <span className="text-xs font-bold tracking-wide">
+              {offlineMode ? 'Offline Mode' : 'Online'}
+            </span>
+          </button>
+        )}
+
         {onOpenStorage && (
           <button
             data-focusable
@@ -116,8 +144,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           )}
         </button>
         <span className="flex items-center gap-1.5 max-w-[200px] truncate" title={serverLabel}>
-          {connected ? <Wifi size={16} className="text-deck-ok" /> : <WifiOff size={16} className="text-deck-danger" />}
-          <span className="truncate">{serverLabel}</span>
+          {offlineMode ? (
+            <span className="text-amber-400 font-bold text-xs">Offline</span>
+          ) : connected ? (
+            <Wifi size={16} className="text-deck-ok" />
+          ) : (
+            <WifiOff size={16} className="text-deck-danger" />
+          )}
+          <span className="truncate">{offlineMode ? 'Local Games' : serverLabel}</span>
         </span>
         {battery && (
           <span className="flex items-center gap-1">

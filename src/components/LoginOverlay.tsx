@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KeyRound, Link2, Loader2, LogIn, Power, Server, ShieldCheck, User, Hash, PlayCircle } from 'lucide-react';
+import { KeyRound, Link2, Loader2, LogIn, Power, Server, ShieldCheck, User, Hash, PlayCircle, CloudOff } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { rommApi } from '../services/rommApi';
 import { bridge, isNativeApp } from '../services/bridge';
@@ -16,6 +16,7 @@ interface LoginOverlayProps {
   onCancel: () => void;
   onLoggedIn: () => void;
   onDemo: () => void;
+  onPlayOffline?: () => void;
 }
 
 /**
@@ -23,7 +24,7 @@ interface LoginOverlayProps {
  * on-screen keyboard on A; LB/RB switch the auth method; Start submits.
  * Also offers "Exit to Steam" so a user is never trapped here in Game Mode.
  */
-export const LoginOverlay: React.FC<LoginOverlayProps> = ({ initialUrl, initialUsername, reason, canCancel, onCancel, onLoggedIn, onDemo }) => {
+export const LoginOverlay: React.FC<LoginOverlayProps> = ({ initialUrl, initialUsername, reason, canCancel, onCancel, onLoggedIn, onDemo, onPlayOffline }) => {
   const [url, setUrl] = useState(initialUrl);
   const [method, setMethod] = useState<Method>('password');
   const [username, setUsername] = useState(initialUsername || '');
@@ -213,10 +214,21 @@ export const LoginOverlay: React.FC<LoginOverlayProps> = ({ initialUrl, initialU
           </div>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button id="login-submit" data-focusable onClick={login} disabled={busy !== null} className="h-12 px-6 rounded-xl bg-deck-accent text-white font-bold flex items-center gap-2">
             {busy === 'login' ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} />} Sign in
           </button>
+          {onPlayOffline && (
+            <button
+              id="login-play-offline"
+              data-focusable
+              onClick={onPlayOffline}
+              className="h-12 px-5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 font-bold flex items-center gap-2 transition-all active:scale-95"
+              title="Play games downloaded to this Steam Deck without an internet connection"
+            >
+              <CloudOff size={18} className="text-amber-400" /> Play Downloaded (Offline)
+            </button>
+          )}
           <button data-focusable onClick={onDemo} className="h-12 px-5 rounded-xl bg-deck-panel-2 border border-deck-line font-semibold flex items-center gap-2">
             <PlayCircle size={18} /> Demo library
           </button>

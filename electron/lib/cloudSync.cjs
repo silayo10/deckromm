@@ -202,13 +202,14 @@ class CloudSync {
     return this.downloadState(downloadPath);
   }
 
-  /** Upload the current SRAM, the way RomM's own web player does (autosave slot). */
-  uploadSave({ romId, emulator, baseName, save, screenshot, screenshotType }) {
+  /** Upload the current SRAM or memory card, the way RomM's own web player does (autosave slot). */
+  uploadSave({ romId, emulator, baseName, fileName, save, screenshot, screenshotType }) {
     return this.envelope(async () => {
       const bytes = save instanceof Uint8Array ? save : new Uint8Array(save || []);
       if (!bytes.byteLength) return { ok: false, status: 400, message: 'Refusing to upload an empty save' };
       const safeBase = String(baseName || `rom-${romId}`).replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 150) || `rom-${romId}`;
-      const parts = [{ name: 'saveFile', fileName: `${safeBase}.srm`, data: bytes }];
+      const actualFileName = fileName || `${safeBase}.srm`;
+      const parts = [{ name: 'saveFile', fileName: actualFileName, data: bytes }];
       if (screenshot && screenshot.byteLength) {
         const ext = /png/.test(screenshotType || '') ? 'png' : 'jpg';
         parts.push({ name: 'screenshotFile', fileName: `${safeBase}.${ext}`, data: screenshot, type: screenshotType || 'image/jpeg' });

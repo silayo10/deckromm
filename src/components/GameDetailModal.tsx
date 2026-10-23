@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders } from 'lucide-react';
+import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders, CloudOff } from 'lucide-react';
 import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, getActiveCoreForGame, getStandaloneEmulatorForPlatform } from '../types';
 import { FocusScope } from './FocusScope';
 import { PlatformBadge } from './PlatformBadge';
@@ -7,6 +7,7 @@ import { formatBytes } from './GameCard';
 import { rommApi } from '../services/rommApi';
 import { CoreSelectorModal } from './CoreSelectorModal';
 import { RomPatcherModal } from './RomPatcherModal';
+import { Pcsx2MemcardManager } from './Pcsx2MemcardManager';
 import { bridge, isNativeApp } from '../services/bridge';
 import { soundService } from '../services/soundService';
 
@@ -17,6 +18,7 @@ interface GameDetailModalProps {
   emulatorRunning: boolean;
   config: RommConfig;
   onUpdateConfig?: (patch: Partial<RommConfig>) => void;
+  offlineMode?: boolean;
   onClose: () => void;
   onLaunch: (game: Game) => void;
   onDownload: (game: Game) => void;
@@ -27,6 +29,7 @@ interface GameDetailModalProps {
   onGameUpdated: (game: Game) => void;
   onSelectGenre?: (genre: string) => void;
   onOpenBiosModal?: (platformSlug?: string) => void;
+  onToast?: (msg: string, tone?: 'ok' | 'error' | 'info') => void;
 }
 
 /**
@@ -41,6 +44,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   emulatorRunning,
   config,
   onUpdateConfig,
+  offlineMode,
   onClose,
   onLaunch,
   onDownload,
@@ -51,6 +55,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   onGameUpdated,
   onSelectGenre,
   onOpenBiosModal,
+  onToast,
 }) => {
   const [game, setGame] = useState<Game>(initial);
   const [loadingDetails, setLoadingDetails] = useState(true);
@@ -224,6 +229,11 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
             {installed && (
               <span className="flex items-center gap-1 text-deck-ok font-semibold">
                 <CheckCircle2 size={16} /> Installed
+              </span>
+            )}
+            {offlineMode && (
+              <span className="flex items-center gap-1 text-amber-300 font-semibold text-xs bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/30">
+                <CloudOff size={13} className="text-amber-400" /> Offline Play
               </span>
             )}
           </div>
@@ -408,6 +418,16 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               >
                 <Square size={18} /> Cancel ({Math.round(progress!)}%)
               </button>
+            ) : offlineMode ? (
+              <button
+                data-focusable
+                disabled
+                className={`${btn} bg-deck-panel-2/50 border-deck-line text-deck-dim opacity-70 cursor-not-allowed flex items-center gap-2`}
+                title="RomM server is offline; downloading requires an active network connection"
+              >
+                <CloudOff size={18} className="text-amber-400" />
+                <span>Offline ({installed ? 'Installed' : 'Unavailable'})</span>
+              </button>
             ) : (
               <button
                 data-focusable
@@ -522,6 +542,10 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
           )}
 
           <div className="mt-6 flex flex-col gap-4">
+            {/* PCSX2 Memory Card Sync (PlayStation 2) */}
+            {game.platformSlug === 'ps2' && (
+              <Pcsx2MemcardManager game={game} onToast={onToast || ((msg) => {})} />
+            )}
             {/* Server Tags */}
             {game.tags && game.tags.length > 0 && (
               <div className="flex items-center gap-2 flex-wrap">

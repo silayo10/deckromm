@@ -18,6 +18,7 @@ const EVENTS = new Set([
   'bios:progress',
   'app:update-progress',
   'app:update-available',
+  'pcsx2:memcard-uploaded',
 ]);
 
 function on(channel, listener) {
@@ -96,6 +97,12 @@ const api = {
     check: invoke('app:check-update'),
     perform: invoke('app:perform-update'),
     relaunch: invoke('app:relaunch'),
+  },
+  pcsx2: {
+    listMemcards: invoke('pcsx2:list-memcards'),
+    uploadMemcard: invoke('pcsx2:upload-memcard'),
+    downloadMemcard: invoke('pcsx2:download-memcard'),
+    setAutoSync: invoke('pcsx2:set-auto-sync'),
   },
   on,
 };

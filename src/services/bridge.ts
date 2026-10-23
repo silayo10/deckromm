@@ -203,8 +203,8 @@ function createBrowserFallback(): DeckRommBridge {
       list: async () => [],
       status: async (list: any[]) => Object.fromEntries(list.map((i) => [String(i.id), { exists: false, path: '', size: 0 }])),
       download: async (req: any) => ({ ok: true, message: `Simulated BIOS download for ${req.fileName}` }),
-      syncPlatform: async (slug: string) => ({ ok: true, synced: 0, message: `Simulated BIOS sync for ${slug}` }),
-      syncAll: async () => ({ ok: true, synced: 0, totalMissing: 0, message: 'Simulated BIOS sync for all platforms' }),
+      syncPlatform: async (slug: string) => ({ ok: true, synced: 1, totalMissing: 1, message: `Simulated BIOS sync for ${slug || 'all'}: installed missing BIOS` }),
+      syncAll: async () => ({ ok: true, synced: 2, totalMissing: 2, message: 'Simulated BIOS sync for all platforms: installed 2 files' }),
       cancel: async () => ({ ok: true }),
       openFolder: async () => ({ ok: false, message: 'Only available in desktop app' }),
       xboxStatus: async () => ({
@@ -252,6 +252,47 @@ function createBrowserFallback(): DeckRommBridge {
       }),
       perform: async () => ({ ok: true, message: 'Simulated upgrade complete' }),
       relaunch: async () => {},
+    },
+    pcsx2: {
+      listMemcards: async () => ({
+        available: true,
+        memcardsDir: '/home/deck/.var/app/net.pcsx2.PCSX2/config/PCSX2/memcards',
+        cards: [
+          {
+            fileName: 'Mcd001.ps2',
+            fullPath: '/home/deck/.var/app/net.pcsx2.PCSX2/config/PCSX2/memcards/Mcd001.ps2',
+            sizeBytes: 8650752,
+            mtime: Date.now() - 3600000,
+            isSlot1: true,
+            isSlot2: false,
+            isDefault: true,
+          },
+          {
+            fileName: 'Mcd002.ps2',
+            fullPath: '/home/deck/.var/app/net.pcsx2.PCSX2/config/PCSX2/memcards/Mcd002.ps2',
+            sizeBytes: 8650752,
+            mtime: Date.now() - 86400000,
+            isSlot1: false,
+            isSlot2: true,
+            isDefault: false,
+          },
+        ],
+        autoSync: true,
+      }),
+      uploadMemcard: async (req: any) => ({
+        ok: true,
+        fileName: req.fileName || 'Mcd001.ps2',
+        sizeBytes: 8650752,
+        updatedAt: Date.now(),
+        message: `Uploaded ${req.fileName || 'Mcd001.ps2'} to RomM`,
+      }),
+      downloadMemcard: async (req: any) => ({
+        ok: true,
+        targetPath: `/home/deck/.var/app/net.pcsx2.PCSX2/config/PCSX2/memcards/${req.targetFileName || 'Mcd001.ps2'}`,
+        sizeBytes: 8650752,
+        fileName: req.targetFileName || 'Mcd001.ps2',
+      }),
+      setAutoSync: async (enabled: boolean) => ({ ok: true, autoSync: enabled }),
     },
     on: ((channel: string, cb: Listener) => {
       if (!listeners.has(channel)) listeners.set(channel, new Set());

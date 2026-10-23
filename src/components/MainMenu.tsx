@@ -1,5 +1,5 @@
 import React from 'react';
-import { Library, Search, RefreshCw, Download, HardDrive, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders, Cpu, ArrowUpCircle } from 'lucide-react';
+import { Library, Search, RefreshCw, Download, HardDrive, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders, Cpu, ArrowUpCircle, CloudOff } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { isNativeApp } from '../services/bridge';
 
@@ -7,6 +7,8 @@ interface MainMenuProps {
   username: string | null;
   serverLabel: string;
   authenticated: boolean;
+  offlineMode?: boolean;
+  onToggleOfflineMode?: () => void;
   onClose: () => void;
   onLibrary: () => void;
   onSearch: () => void;
@@ -61,6 +63,17 @@ export const MainMenu: React.FC<MainMenuProps> = (p) => {
         {p.onBios && <Item icon={<Cpu size={22} />} label="BIOS & Firmware" onClick={p.onBios} />}
         {p.onUpdate && <Item icon={<ArrowUpCircle size={22} />} label="Check for Updates" onClick={p.onUpdate} />}
         {p.onStorage && <Item id="menu-storage" icon={<HardDrive size={22} />} label="Storage & Downloaded Games" onClick={p.onStorage} />}
+        {p.onToggleOfflineMode && (
+          <Item
+            id="menu-offline-mode"
+            icon={<CloudOff size={22} className={p.offlineMode ? 'text-amber-400' : 'text-deck-dim'} />}
+            label={p.offlineMode ? 'Offline Mode: ON (Local)' : 'Offline Mode: OFF'}
+            onClick={() => {
+              p.onToggleOfflineMode?.();
+              p.onClose();
+            }}
+          />
+        )}
         {isNativeApp && <Item icon={<Download size={22} />} label="Downloads" onClick={p.onDownloads} />}
         <Item icon={<Settings size={22} />} label="Server & settings" onClick={p.onSettings} />
         {p.authenticated ? (

@@ -1,5 +1,5 @@
 import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Square } from 'lucide-react';
+import { Loader2, Square, CloudOff } from 'lucide-react';
 import { Collection, DownloadItem, FilterTag, Game, LibraryViewMode, NavigationAction, Platform, RommConfig, SortOption, matchGameGenre, normalizeGenre } from './types';
 import { AuthStatus, EmulatorStateEvent, RomProgressEvent } from './env/electron';
 import { rommApi } from './services/rommApi';
@@ -115,12 +115,20 @@ export default function App() {
   const [exiting, setExiting] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  // Offline Mode: Only show downloaded games stored locally on this Steam Deck
+  const [offlineMode, setOfflineMode] = useState<boolean>(() => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return true;
+    const stored = localStorage.getItem('deckromm_offline_mode');
+    if (stored !== null) return stored === 'true';
+    return Boolean(rommApi.getConfig().offlineOnlyMode);
+  });
+
   const rootRef = useRef<HTMLDivElement>(null);
   const focusGridOnLoad = useRef(true);
   const gamesRef = useRef<Game[]>([]);
   gamesRef.current = games;
 
-  const ready = booted && (auth.authenticated || config.isDemoMode);
+  const ready = booted && (auth.authenticated || config.isDemoMode || offlineMode);
 
   // ------------------------------------------------------------ toasts
   const toast = useCallback((text: string, tone: Toast['tone'] = 'info') => {
@@ -128,6 +136,56 @@ export default function App() {
     setToasts((t) => [...t.slice(-3), { id, text, tone }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === 'error' ? 6000 : 3500);
   }, []);
+
+  const toggleOfflineMode = useCallback((forced?: boolean) => {
+    setOfflineMode((prev) => {
+      const next = forced !== undefined ? forced : !prev;
+      localStorage.setItem('deckromm_offline_mode', String(next));
+      if (forced !== undefined) {
+        localStorage.setItem('deckromm_offline_mode_manual', String(forced));
+      } else {
+        localStorage.setItem('deckromm_offline_mode_manual', String(next));
+      }
+      rommApi.saveConfig({ offlineOnlyMode: next });
+      setConfig((c) => ({ ...c, offlineOnlyMode: next }));
+      soundService.playTick();
+      if (next) {
+        toast('Offline Mode active • Showing downloaded games that can be played locally', 'info');
+      } else {
+        toast('Online Mode active • Connecting to RomM server', 'ok');
+      }
+      setReloadToken((t) => t + 1);
+      return next;
+    });
+  }, [toast]);
+
+  // Monitor system network connectivity to automatically switch to/from offline mode
+  useEffect(() => {
+    const handleOnline = () => {
+      const userManual = localStorage.getItem('deckromm_offline_mode_manual') === 'true';
+      if (!userManual) {
+        setOfflineMode(false);
+        rommApi.saveConfig({ offlineOnlyMode: false });
+        setConfig((c) => ({ ...c, offlineOnlyMode: false }));
+        toast('Network reconnected • Switched to Online Mode', 'ok');
+        setReloadToken((t) => t + 1);
+      }
+    };
+    const handleOffline = () => {
+      setOfflineMode(true);
+      rommApi.saveConfig({ offlineOnlyMode: true });
+      setConfig((c) => ({ ...c, offlineOnlyMode: true }));
+      toast('Network connection lost • Switched to Offline Mode (showing downloaded games)', 'info');
+      setReloadToken((t) => t + 1);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [toast]);
 
   // ------------------------------------------------------------ boot
   useEffect(() => {
@@ -147,7 +205,9 @@ export default function App() {
         if (cfg.genreFilter) {
           setSelectedGenre(cfg.genreFilter);
         }
-        if (!a.authenticated && !cfg.isDemoMode) setLogin({ open: true });
+        if (!a.authenticated && !cfg.isDemoMode && !cfg.offlineOnlyMode && (typeof navigator === 'undefined' || navigator.onLine)) {
+          setLogin({ open: true });
+        }
       })
       .catch((e) => {
         console.error('init failed', e);
@@ -223,6 +283,11 @@ export default function App() {
       toast(`New version on GitHub (${info.latestCommit}): "${info.message}". Press Menu to upgrade in place.`, 'info');
     });
 
+    const offPcsx2 = bridge.on('pcsx2:memcard-uploaded', (ev: any) => {
+      soundService.playSuccess();
+      toast(`PCSX2 Memory Card (${ev.fileName}) uploaded to RomM server!`, 'ok');
+    });
+
     if (isNativeApp) bridge.emulator.status().then(setEmulator).catch(() => {});
     return () => {
       offProgress();
@@ -230,6 +295,7 @@ export default function App() {
       offFocus();
       offQuit();
       offUpdate();
+      offPcsx2();
     };
   }, [toast]);
 
@@ -237,17 +303,44 @@ export default function App() {
   useEffect(() => {
     if (!ready) return;
     let alive = true;
-    Promise.all([rommApi.getPlatforms(), rommApi.getCollections()]).then(([p, c]) => {
+    Promise.all([
+      rommApi.getPlatforms(),
+      offlineMode ? Promise.resolve([]) : rommApi.getCollections(),
+    ]).then(async ([p, c]) => {
       if (!alive) return;
+      let finalPlatforms = p;
+      if (offlineMode) {
+        // In offline mode, only include platforms that have downloaded games
+        const downloadedGames = await rommApi.getOfflineGames();
+        const activeSlugs = new Set(downloadedGames.map((g) => g.platformSlug));
+        finalPlatforms = p.filter((plat) => activeSlugs.has(plat.slug));
+        for (const g of downloadedGames) {
+          if (!finalPlatforms.some((plat) => plat.slug === g.platformSlug)) {
+            finalPlatforms.push({
+              id: g.platformSlug,
+              slug: g.platformSlug,
+              name: g.platformName || g.platformSlug.toUpperCase(),
+              shortName: g.platformSlug.toUpperCase().slice(0, 8),
+              manufacturer: '',
+              generation: '',
+              color: '#3b82f6',
+              gameCount: downloadedGames.filter((x) => x.platformSlug === g.platformSlug).length,
+              extensions: [],
+              emulatorCore: 'auto',
+              canStreamOnline: false,
+            });
+          }
+        }
+      }
       startTransition(() => {
-        setPlatforms(p);
+        setPlatforms(finalPlatforms);
         setCollections(c);
       });
     });
     return () => {
       alive = false;
     };
-  }, [ready, reloadToken]);
+  }, [ready, reloadToken, offlineMode]);
 
   const activeKey = sourceKey(source);
   useEffect(() => {
@@ -264,7 +357,10 @@ export default function App() {
         : source.kind === 'collection'
         ? { collectionId: source.collection.id }
         : {};
-    (source.kind === 'recent'
+
+    const loadPromise = offlineMode
+      ? rommApi.getOfflineGames(q)
+      : source.kind === 'recent'
       ? rommApi.getRecentlyPlayed(30, ctrl.signal)
       : rommApi.getGamesPaged({
           ...q,
@@ -272,22 +368,31 @@ export default function App() {
           onPage: (list) => {
             if (!ctrl.signal.aborted) startTransition(() => setGames(list));
           },
-        }))
+        });
+
+    loadPromise
       .then((list) => {
         if (!ctrl.signal.aborted) startTransition(() => setGames(list));
       })
-      .catch((e) => {
+      .catch(async (e) => {
         if (ctrl.signal.aborted || e?.name === 'AbortError') return;
         const err = rommApi.getLastError();
         if (!err?.requiresAuth) {
-          setLoadError(e?.message || 'Could not load games');
-          toast(`Library error: ${e?.message || e}`, 'error');
+          console.warn('Server connection failed, falling back to offline mode', e);
+          const offlineList = await rommApi.getOfflineGames(q);
+          if (!ctrl.signal.aborted) {
+            startTransition(() => setGames(offlineList));
+            if (!offlineMode) {
+              setOfflineMode(true);
+              toast('RomM server unreachable • Switched to Offline Mode (showing downloaded games)', 'info');
+            }
+          }
         }
       })
       .finally(() => !ctrl.signal.aborted && setLoading(false));
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, activeKey, reloadToken, config.hideInfoFiles]);
+  }, [ready, activeKey, reloadToken, config.hideInfoFiles, offlineMode]);
 
   const availableGenres = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -349,8 +454,13 @@ export default function App() {
   const visibleGames = useMemo(() => {
     const term = deferredSearch.trim().toLowerCase();
     let list = games;
+    // In Offline Mode, strictly only show downloaded games that can be played locally!
+    if (offlineMode) {
+      list = list.filter((g) => g.isInstalled || g.isCached);
+    } else {
+      if (source.kind === 'installed') list = list.filter((g) => g.isInstalled || g.isCached);
+    }
     if (source.kind === 'favorites') list = list.filter((g) => g.isFavorite);
-    if (source.kind === 'installed') list = list.filter((g) => g.isInstalled || g.isCached);
     if (term) {
       list = list.filter(
         (g) =>
@@ -389,7 +499,7 @@ export default function App() {
       default: sorted.sort(byTitle);
     }
     return sorted;
-  }, [games, deferredSearch, filter, selectedGenre, selectedLanguage, sortBy, source.kind]);
+  }, [games, deferredSearch, filter, selectedGenre, selectedLanguage, sortBy, source.kind, offlineMode]);
 
   // Land on the first cover after boot / platform switch.
   useEffect(() => {
@@ -410,7 +520,7 @@ export default function App() {
       { kind: 'all' },
       { kind: 'favorites' },
     ];
-    if (isNativeApp) list.push({ kind: 'installed' });
+    if (isNativeApp && !offlineMode) list.push({ kind: 'installed' });
 
     for (const fam of platformFamilies) {
       if (fam.platforms.length > 1) {
@@ -428,12 +538,14 @@ export default function App() {
       }
     }
 
-    for (const c of collections) {
-      list.push({ kind: 'collection', collection: c });
+    if (!offlineMode) {
+      for (const c of collections) {
+        list.push({ kind: 'collection', collection: c });
+      }
     }
 
     return list;
-  }, [platformFamilies, collections]);
+  }, [platformFamilies, collections, offlineMode]);
 
   const selectSource = useCallback((s: LibrarySource) => {
     focusGridOnLoad.current = !document.activeElement?.closest('[data-focus-memory="platforms"]');
@@ -725,17 +837,34 @@ export default function App() {
       <div ref={rootRef} className="flex-1 min-h-0 flex flex-col">
         <HeaderBar
           title={sourceLabel(source)}
-          subtitle={auth.username ? `Signed in as ${auth.username}` : config.isDemoMode ? 'Demo mode' : undefined}
+          subtitle={
+            offlineMode
+              ? `Offline Mode • Showing Downloaded Games (${visibleGames.length})`
+              : auth.username
+              ? `Signed in as ${auth.username}`
+              : config.isDemoMode
+              ? 'Demo mode'
+              : undefined
+          }
           searchQuery={search}
           onSearchChange={setSearch}
           onOpenMenu={() => setMenuOpen(true)}
           onOpenDownloads={() => setDownloadsOpen(true)}
           onOpenStorage={() => setStorageModalOpen(true)}
+          offlineMode={offlineMode}
+          onToggleOfflineMode={() => toggleOfflineMode()}
           activeDownloads={activeDownloads}
-          connected={auth.authenticated || config.isDemoMode}
-          serverLabel={serverLabel}
+          connected={!offlineMode && (auth.authenticated || config.isDemoMode)}
+          serverLabel={offlineMode ? 'Offline Mode' : serverLabel}
         />
-        <PlatformBar sources={sources} active={source} onSelect={selectSource} platforms={platforms} collections={collections} />
+        <PlatformBar
+          sources={sources}
+          active={source}
+          onSelect={selectSource}
+          platforms={platforms}
+          collections={collections}
+          offlineMode={offlineMode}
+        />
         <SearchFilterBar
           filter={filter}
           onFilterChange={(f) => updateConfig({ filterTag: f })}
@@ -758,6 +887,7 @@ export default function App() {
           loading={loading}
           onRefresh={refresh}
           onOpenStorage={() => setStorageModalOpen(true)}
+          offlineMode={offlineMode}
         />
         <GameGrid
           games={visibleGames}
@@ -768,17 +898,45 @@ export default function App() {
           listKey={listKey}
           selectedGameId={selectedGame ? String(selectedGame.id) : null}
           emptyMessage={
-            loadError
-              ? `Could not load the library: ${loadError}. Press X to retry.`
-              : search
-              ? `No games match "${search}"`
-              : selectedLanguage === 'no-ja' && selectedGenre && selectedGenre !== 'all'
-              ? `No non-Japanese ${selectedGenre} games found. Try clearing filters.`
-              : selectedLanguage === 'no-ja'
-              ? `No non-Japanese games found in ${sourceLabel(source)}.`
-              : selectedGenre && selectedGenre !== 'all'
-              ? `No ${selectedGenre} games found in ${sourceLabel(source)}. Try selecting "All Genres".`
-              : 'No games here yet'
+            offlineMode ? (
+              <div className="flex flex-col items-center gap-3 max-w-md text-center py-12">
+                <div className="h-16 w-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <CloudOff size={32} />
+                </div>
+                <div className="text-xl font-bold text-white">No Downloaded Games Found</div>
+                <p className="text-sm text-deck-dim">
+                  Offline Mode only shows games downloaded to this Steam Deck that can be played locally without an internet connection.
+                </p>
+                <div className="flex items-center gap-3 mt-3">
+                  <button
+                    data-focusable
+                    onClick={() => toggleOfflineMode(false)}
+                    className="px-4 py-2 rounded-xl bg-deck-accent hover:bg-deck-accent-hover text-white font-bold text-sm transition-transform active:scale-95"
+                  >
+                    Go Online
+                  </button>
+                  <button
+                    data-focusable
+                    onClick={() => selectSource({ kind: 'all' })}
+                    className="px-4 py-2 rounded-xl bg-deck-panel-2 border border-deck-line text-white font-semibold text-sm hover:border-deck-dim transition-transform active:scale-95"
+                  >
+                    All Downloaded
+                  </button>
+                </div>
+              </div>
+            ) : loadError ? (
+              `Could not load the library: ${loadError}. Press X to retry.`
+            ) : search ? (
+              `No games match "${search}"`
+            ) : selectedLanguage === 'no-ja' && selectedGenre && selectedGenre !== 'all' ? (
+              `No non-Japanese ${selectedGenre} games found. Try clearing filters.`
+            ) : selectedLanguage === 'no-ja' ? (
+              `No non-Japanese games found in ${sourceLabel(source)}.`
+            ) : selectedGenre && selectedGenre !== 'all' ? (
+              `No ${selectedGenre} games found in ${sourceLabel(source)}. Try selecting "All Genres".`
+            ) : (
+              'No games here yet'
+            )
           }
         />
       </div>
@@ -805,10 +963,12 @@ export default function App() {
           onToggleFavorite={handleFavorite}
           onGameUpdated={(g) => patchGame(g.id, { summary: g.summary, screenshots: g.screenshots, isInstalled: g.isInstalled, localPath: g.localPath })}
           onSelectGenre={handleGenreChange}
+          offlineMode={offlineMode}
           onOpenBiosModal={(slug) => {
             setBiosPlatformFilter(slug);
             setBiosModalOpen(true);
           }}
+          onToast={toast}
         />
       )}
 
@@ -842,6 +1002,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           onSignIn={() => setLogin({ open: true })}
           onLogout={logout}
+          onToast={toast}
           onOpenEmulatorsModal={() => {
             setSettingsOpen(false);
             setStandaloneEmulatorsModalOpen(true);
@@ -876,6 +1037,8 @@ export default function App() {
           username={auth.username}
           serverLabel={serverLabel}
           authenticated={auth.authenticated || config.isDemoMode}
+          offlineMode={offlineMode}
+          onToggleOfflineMode={() => toggleOfflineMode()}
           onClose={() => setMenuOpen(false)}
           onLibrary={() => setMenuOpen(false)}
           onSearch={() => {
@@ -930,10 +1093,14 @@ export default function App() {
           initialUrl={auth.baseUrl || config.serverUrl || ''}
           initialUsername={auth.username || ''}
           reason={login.reason}
-          canCancel={auth.authenticated || config.isDemoMode}
+          canCancel={auth.authenticated || config.isDemoMode || offlineMode}
           onCancel={() => setLogin({ open: false })}
           onLoggedIn={onLoggedIn}
           onDemo={onDemo}
+          onPlayOffline={() => {
+            toggleOfflineMode(true);
+            setLogin({ open: false });
+          }}
         />
       )}
 

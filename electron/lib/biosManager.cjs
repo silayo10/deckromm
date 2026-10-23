@@ -447,7 +447,9 @@ class BiosManager {
    */
   async syncPlatformBios(platformSlug) {
     const slug = String(platformSlug || '').toLowerCase().trim();
-    if (!slug) return { ok: true, synced: 0 };
+    if (!slug || slug === 'all') {
+      return this.syncAllMissing();
+    }
 
     const isPs2 = ['ps2', 'playstation-2', 'playstation2', 'sony-playstation-2'].includes(slug);
     const isPs1 = ['psx', 'ps1', 'playstation'].includes(slug);
@@ -456,24 +458,7 @@ class BiosManager {
     const isSegaCd = ['segacd', 'sega-cd', 'mega-cd'].includes(slug);
     const isXbox = ['xbox', 'og-xbox', 'original-xbox'].includes(slug);
 
-    if (!isPs2 && !isPs1 && !isDc && !isSaturn && !isSegaCd && !isXbox) {
-      return { ok: true, synced: 0, message: 'Platform does not require external BIOS' };
-    }
-
-    const localFiles = await this.listLocalBios();
-    const hasPs2 = localFiles.some((f) => /scph|ps2|erom|rom1/i.test(f.fileName) && f.sizeBytes > 100000);
-    const hasPs1 = localFiles.some((f) => /scph[1-9]00|ps-?x/i.test(f.fileName));
-    const hasDc = localFiles.some((f) => /dc_boot|boot\.bin/i.test(f.fileName));
-    const hasSaturn = localFiles.some((f) => /saturn.*bin|sega_106/i.test(f.fileName));
-    const hasXbox = localFiles.some((f) => /mcpx|complex|xbox.*bios/i.test(f.fileName));
-
-    if (isPs2 && hasPs2) return { ok: true, synced: 0, message: 'PS2 BIOS already present locally' };
-    if (isPs1 && hasPs1) return { ok: true, synced: 0, message: 'PS1 BIOS already present locally' };
-    if (isDc && hasDc) return { ok: true, synced: 0, message: 'Dreamcast BIOS already present locally' };
-    if (isSaturn && hasSaturn) return { ok: true, synced: 0, message: 'Saturn BIOS already present locally' };
-    if (isXbox && hasXbox) return { ok: true, synced: 0, message: 'Xbox BIOS already present locally' };
-
-    this.log(`[bios] Missing BIOS for ${slug}, checking RomM server...`);
+    this.log(`[bios] Checking RomM server for ${slug} BIOS files...`);
     const serverItems = await this.fetchServerFirmware();
     if (!serverItems.length) {
       return { ok: false, synced: 0, message: 'No firmware found on RomM server' };
@@ -482,6 +467,7 @@ class BiosManager {
     const matches = serverItems.filter((item) => {
       const itemSlug = String(item.platform_slug || item.platformSlug || '').toLowerCase();
       const name = String(item.file_name || item.fileName || '').toLowerCase();
+      if (itemSlug === slug) return true;
       if (isPs2) {
         return (
           ['ps2', 'playstation-2', 'playstation2', 'sony-playstation-2'].includes(itemSlug) ||
@@ -489,27 +475,48 @@ class BiosManager {
         );
       }
       if (isPs1) {
-        return ['psx', 'ps1', 'playstation'].includes(itemSlug) || /scph[1-9]00/i.test(name);
+        return ['psx', 'ps1', 'playstation'].includes(itemSlug) || /scph[1-9]00|ps-?x/i.test(name);
       }
       if (isDc) {
         return ['dc', 'dreamcast'].includes(itemSlug) || /dc_|boot\.bin/i.test(name);
       }
       if (isSaturn) {
-        return ['saturn', 'sega-saturn'].includes(itemSlug) || /saturn/i.test(name);
+        return ['saturn', 'sega-saturn'].includes(itemSlug) || /saturn|sega_106/i.test(name);
+      }
+      if (isSegaCd) {
+        return ['segacd', 'sega-cd', 'mega-cd'].includes(itemSlug) || /bios_cd|us_scd|eu_scd|jp_scd/i.test(name);
       }
       if (isXbox) {
         return ['xbox', 'og-xbox', 'original-xbox'].includes(itemSlug) || /mcpx|complex|xbox/i.test(name);
       }
-      return false;
+      return itemSlug.includes(slug) || slug.includes(itemSlug);
     });
 
     if (!matches.length) {
       this.log(`[bios] No matching BIOS files on RomM for platform ${slug}`);
-      return { ok: false, synced: 0, message: `No matching BIOS found on server for ${slug}` };
+      return { ok: false, synced: 0, message: `No matching BIOS found on server for ${slug.toUpperCase()}` };
     }
 
+    const localFiles = await this.listLocalBios();
+    const localNames = new Set(localFiles.map((f) => f.fileName.toLowerCase()));
+
+    const missing = matches.filter((item) => {
+      const name = String(item.file_name || item.fileName || '').toLowerCase();
+      return !localNames.has(name);
+    });
+
+    if (!missing.length) {
+      return {
+        ok: true,
+        synced: 0,
+        totalMissing: 0,
+        message: `All ${matches.length} ${slug.toUpperCase()} BIOS file(s) are already installed locally`,
+      };
+    }
+
+    this.log(`[bios] Found ${missing.length} missing BIOS file(s) on server for ${slug}. Downloading...`);
     let downloadedCount = 0;
-    for (const item of matches) {
+    for (const item of missing) {
       const res = await this.download({
         id: item.id,
         firmwareId: item.id,
@@ -523,7 +530,8 @@ class BiosManager {
     return {
       ok: downloadedCount > 0,
       synced: downloadedCount,
-      message: `Downloaded ${downloadedCount} BIOS file(s) for ${slug}`,
+      totalMissing: missing.length,
+      message: `Successfully synced ${downloadedCount} missing BIOS file(s) for ${slug.toUpperCase()}`,
     };
   }
 

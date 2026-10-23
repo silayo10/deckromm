@@ -8,6 +8,7 @@ import { soundService } from '../services/soundService';
 import { rommApi } from '../services/rommApi';
 import { formatBytes } from './GameCard';
 import { CoreSelectorModal } from './CoreSelectorModal';
+import { Pcsx2MemcardManager } from './Pcsx2MemcardManager';
 
 interface SettingsScreenProps {
   config: RommConfig;
@@ -20,6 +21,7 @@ interface SettingsScreenProps {
   onOpenBiosModal?: () => void;
   onOpenUpdateModal?: () => void;
   onOpenStorage?: () => void;
+  onToast?: (msg: string, tone?: 'ok' | 'error' | 'info') => void;
 }
 
 const CONFIGURABLE_PLATFORMS = [
@@ -77,6 +79,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onOpenBiosModal,
   onOpenUpdateModal,
   onOpenStorage,
+  onToast,
 }) => {
   const [storage, setStorage] = useState<NativeStorage | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -475,6 +478,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </div>
             </Section>
 
+            <Section icon={<HardDrive size={16} />} title="PlayStation 2 (PCSX2) Memory Cards">
+              <Pcsx2MemcardManager onToast={onToast || ((msg) => {})} />
+            </Section>
+
             <Section icon={<ArrowUpCircle size={16} />} title="App Updates & GitHub">
               <div className="rounded-xl bg-deck-panel/70 p-4 border border-deck-line space-y-3">
                 <div className="text-sm text-deck-dim">
@@ -532,6 +539,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </Section>
 
             <Section icon={<SlidersHorizontal size={16} />} title="Library">
+              <Toggle
+                label="Offline Mode (Downloaded Games Only)"
+                hint="Only display games downloaded to this Steam Deck that can be played locally without an internet connection"
+                value={Boolean(config.offlineOnlyMode)}
+                onChange={(v) => onChange({ offlineOnlyMode: v })}
+              />
               <Toggle
                 label="Hide Japanese ROMs by default"
                 hint="Exclude untranslated Japanese releases from library lists"

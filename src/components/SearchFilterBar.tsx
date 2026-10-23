@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownAZ, LayoutGrid, List, GalleryHorizontal, RefreshCw, Filter, X, ChevronDown, Globe, HardDrive } from 'lucide-react';
+import { ArrowDownAZ, LayoutGrid, List, GalleryHorizontal, RefreshCw, Filter, X, ChevronDown, Globe, HardDrive, CloudOff } from 'lucide-react';
 import { FilterTag, LibraryViewMode, SortOption } from '../types';
 import { getGenreIcon } from './GenrePickerModal';
 import { LanguageCountOption } from './LanguagePickerModal';
@@ -31,6 +31,7 @@ interface SearchFilterBarProps {
   loading: boolean;
   onRefresh: () => void;
   onOpenStorage?: () => void;
+  offlineMode?: boolean;
 }
 
 const FILTERS: Array<{ id: FilterTag; label: string }> = [
@@ -72,6 +73,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   loading,
   onRefresh,
   onOpenStorage,
+  offlineMode,
 }) => {
   const nextSort = () => {
     const i = SORTS.findIndex((s) => s.id === sortBy);
@@ -91,7 +93,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
     // Sort genres: RPG first, then by count descending
     const sorted = [...availableGenres].sort((a, b) => {
       if (a.name.toLowerCase() === 'rpg') return -1;
-      if (b.name.toLowerCase() === 'rpg') return 1;
+      if (a.name.toLowerCase() === 'rpg') return 1;
       return b.count - a.count;
     });
 
@@ -108,6 +110,17 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
     <div className="shrink-0 flex flex-col gap-2 px-5 pb-2.5">
       {/* Top Filter & Tools Row */}
       <div data-focus-memory="filters" className="flex items-center gap-2">
+        {offlineMode && (
+          <div
+            id="filter-offline-indicator"
+            className="deck-chip h-9 px-3 rounded-lg text-xs font-bold border border-amber-500/50 bg-amber-950/60 text-amber-300 flex items-center gap-1.5 shadow-sm shrink-0"
+            title="Offline Mode: Only showing downloaded games that can be played locally"
+          >
+            <CloudOff size={13} className="text-amber-400" />
+            <span>Offline Mode • Downloaded Only</span>
+          </div>
+        )}
+
         {FILTERS.map((f) => (
           <button
             key={f.id}

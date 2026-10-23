@@ -42,6 +42,23 @@ export interface ServerProbe {
   message: string;
 }
 
+export interface Pcsx2MemoryCard {
+  fileName: string;
+  fullPath: string;
+  sizeBytes: number;
+  mtime: number;
+  isSlot1: boolean;
+  isSlot2: boolean;
+  isDefault: boolean;
+}
+
+export interface Pcsx2MemcardStatus {
+  available: boolean;
+  memcardsDir: string;
+  cards: Pcsx2MemoryCard[];
+  autoSync: boolean;
+}
+
 export interface RomFileRequest {
   romId: string | number;
   platformSlug: string;
@@ -233,6 +250,12 @@ export interface DeckRommBridge {
     perform(opts?: { repo?: string; branch?: string }): Promise<{ ok: boolean; message?: string; commit?: string }>;
     relaunch(): Promise<void>;
   };
+  pcsx2: {
+    listMemcards(): Promise<Pcsx2MemcardStatus>;
+    uploadMemcard(req: { romId: string | number; fileName?: string; gameTitle?: string; cardPath?: string }): Promise<{ ok: boolean; fileName?: string; sizeBytes?: number; updatedAt?: number; save?: CloudSave; message?: string }>;
+    downloadMemcard(req: { downloadPath: string; targetFileName?: string }): Promise<{ ok: boolean; targetPath?: string; sizeBytes?: number; fileName?: string; message?: string }>;
+    setAutoSync(enabled: boolean): Promise<{ ok: boolean; autoSync: boolean }>;
+  };
   on(channel: 'auth:required', cb: (info: { status: number; message: string }) => void): Unsubscribe;
   on(channel: 'rom:progress', cb: (ev: RomProgressEvent) => void): Unsubscribe;
   on(channel: 'emulator:state', cb: (ev: EmulatorStateEvent) => void): Unsubscribe;
@@ -242,6 +265,7 @@ export interface DeckRommBridge {
   on(channel: 'bios:progress', cb: (ev: any) => void): Unsubscribe;
   on(channel: 'app:update-progress', cb: (ev: any) => void): Unsubscribe;
   on(channel: 'app:update-available', cb: (ev: any) => void): Unsubscribe;
+  on(channel: 'pcsx2:memcard-uploaded', cb: (ev: { romId: string | number; title: string; fileName: string; sizeBytes: number; time: number }) => void): Unsubscribe;
 }
 
 declare global {

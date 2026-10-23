@@ -38,6 +38,7 @@ const { RommClient, normalizeBaseUrl } = require('./lib/rommClient.cjs');
 const { detectEmulationRoot, storageStats, DownloadManager, EmulatorManager, getFlatpakStatus, installFlatpak } = require('./lib/emulation.cjs');
 const { CloudSync } = require('./lib/cloudSync.cjs');
 const { BiosManager } = require('./lib/biosManager.cjs');
+const { Pcsx2Manager } = require('./lib/pcsx2Manager.cjs');
 const { AppUpdater } = require('./lib/appUpdater.cjs');
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,13 @@ const bios = new BiosManager({
   log,
 });
 
+const pcsx2 = new Pcsx2Manager({
+  cloud,
+  configStore,
+  emit,
+  log,
+});
+
 const emulators = new EmulatorManager({
   getConfig: () => configStore.get(),
   emit,
@@ -176,7 +184,12 @@ const emulators = new EmulatorManager({
     if (GAME_MODE) mainWindow.hide();
     else mainWindow.minimize();
   },
-  onGameEnd: () => restoreWindow(),
+  onGameEnd: (info) => {
+    restoreWindow();
+    if (info && (info.platformSlug === 'ps2' || info.flatpakId === 'net.pcsx2.PCSX2')) {
+      pcsx2.onPcsx2GameExited(info).catch((e) => log('[pcsx2] post-game sync error:', e.message));
+    }
+  },
 });
 
 const updater = new AppUpdater({
@@ -525,6 +538,12 @@ function registerIpc() {
   handle('bios:xbox-status', () => bios.getXboxStatus());
   handle('bios:xbox-setup', () => bios.autoSetupXbox());
   handle('bios:xbox-create-hdd', (customPath) => bios.createXboxHdd(customPath));
+
+  // PCSX2 Memory Card Sync
+  handle('pcsx2:list-memcards', () => pcsx2.listMemcards());
+  handle('pcsx2:upload-memcard', (req) => pcsx2.uploadMemcard(req || {}));
+  handle('pcsx2:download-memcard', (req) => pcsx2.downloadMemcard(req || {}));
+  handle('pcsx2:set-auto-sync', (enabled) => pcsx2.setAutoSync(enabled));
 
   // App Updater & GitHub in-place upgrade
   handle('app:check-update', () => updater.checkForUpdates());

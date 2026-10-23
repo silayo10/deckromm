@@ -109,6 +109,7 @@ export interface RommConfig {
   password?: string;
   /** @deprecated all RomM traffic is proxied by the Electron main process now */
   useProxy?: boolean;
+  offlineOnlyMode?: boolean;
 }
 
 export interface Collection {

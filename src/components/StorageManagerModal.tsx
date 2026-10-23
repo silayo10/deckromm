@@ -130,6 +130,21 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
   const handleDelete = async (item: DownloadedRomItem) => {
     soundService.playTick();
     setDeletingId(item.id);
+
+    // Determine the next game down before removing item from displayItems
+    const currentIndex = displayItems.findIndex((i) => String(i.id) === String(item.id));
+    let nextItemToFocus: DownloadedRomItem | null = null;
+    if (currentIndex !== -1) {
+      if (currentIndex + 1 < displayItems.length) {
+        // Move to the next game down
+        nextItemToFocus = displayItems[currentIndex + 1];
+      } else if (currentIndex > 0) {
+        // If deleting the last game in the list, move to the one above
+        nextItemToFocus = displayItems[currentIndex - 1];
+      }
+    }
+    const nextTargetSelector = nextItemToFocus ? `#storage-item-${nextItemToFocus.id}` : null;
+
     try {
       const reqGame: Game = item.game || {
         id: item.id,
@@ -157,9 +172,27 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
         soundService.playSuccess();
         onToast(`Deleted ${item.title} (freed ${formatBytes(item.sizeBytes)})`, 'ok');
         onGameDeleted?.(item.id);
-        setItems((prev) => prev.filter((i) => i.id !== item.id));
+
+        setItems((prev) => prev.filter((i) => String(i.id) !== String(item.id)));
         setTotalSizeBytes((prev) => Math.max(0, prev - item.sizeBytes));
         setDeleteConfirmId(null);
+
+        // Advance cursor to the next game down (not back to the top or search bar!)
+        requestAnimationFrame(() => {
+          if (nextTargetSelector) {
+            const nextEl = document.querySelector<HTMLElement>(nextTargetSelector);
+            if (nextEl) {
+              focusManager.focus(nextEl, { scroll: true, instant: true });
+              return;
+            }
+          }
+          const anyItem = document.querySelector<HTMLElement>('[data-item-id]');
+          if (anyItem) {
+            focusManager.focus(anyItem, { scroll: true, instant: true });
+          } else {
+            focusManager.focusSelector('#storage-refresh');
+          }
+        });
       } else {
         soundService.playBack();
         onToast(`Could not delete file`, 'error');
@@ -201,13 +234,8 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
 
   const handleOpenFolder = async () => {
     soundService.playTick();
-    if (!isNativeApp) {
-      onToast('Folder opening is only supported in native SteamOS app', 'info');
-      return;
-    }
-    const folder = romsRoot || (storage?.emulationRoot ? `${storage.emulationRoot}/roms` : '');
-    const res = await bridge.system.selectDirectory();
-    if (res) onToast(`ROMs location: ${folder}`, 'ok');
+    const folder = romsRoot || (storage?.emulationRoot ? `${storage.emulationRoot}/roms` : '~/Emulation/roms');
+    onToast(`ROMs location: ${folder}`, 'ok');
   };
 
   const cycleSort = () => {
@@ -241,7 +269,7 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
     >
       <FocusScope
         name="storage-manager-modal"
-        initialFocus="#storage-search-input"
+        initialFocus="[data-item-id]"
         onBack={onClose}
         onAction={(a) => {
           if (a === 'BACK') {
@@ -253,16 +281,32 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
             return true;
           }
           if (a === 'ACTION_X') {
-            // Find currently focused item and prompt delete!
             const cur = focusManager.getCurrent();
             const itemId = cur?.getAttribute('data-item-id') || cur?.closest('[data-item-id]')?.getAttribute('data-item-id');
             if (itemId) {
+              if (String(deleteConfirmId) === String(itemId)) {
+                // If already confirming delete for this item, pressing X confirms delete!
+                const target = displayItems.find((i) => String(i.id) === String(itemId));
+                if (target) handleDelete(target);
+                return true;
+              }
               soundService.playTick();
               setDeleteConfirmId(itemId);
-              setTimeout(() => {
-                focusManager.focusSelector(`#confirm-del-${itemId}`);
-              }, 50);
+              const row = document.getElementById(`storage-item-${itemId}`);
+              if (row) focusManager.focus(row);
               return true;
+            }
+          }
+          if (a === 'SELECT') {
+            const cur = focusManager.getCurrent();
+            const itemId = cur?.getAttribute('data-item-id') || cur?.closest('[data-item-id]')?.getAttribute('data-item-id');
+            if (itemId && String(deleteConfirmId) === String(itemId)) {
+              // Pressing A confirms delete when in delete confirmation state
+              const target = displayItems.find((i) => String(i.id) === String(itemId));
+              if (target) {
+                handleDelete(target);
+                return true;
+              }
             }
           }
           return false;
@@ -385,6 +429,7 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
             <input
               id="storage-search-input"
               data-focusable
+              data-nav-down="[data-item-id]"
               type="text"
               placeholder="Filter by title..."
               value={searchQuery}
@@ -528,23 +573,39 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
                   </div>
 
                   {/* Right: Actions */}
-                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-2 shrink-0">
                     {isConfirming ? (
-                      <div className="flex items-center gap-2 bg-red-900/60 p-1.5 rounded-xl border border-red-500/40 animate-in fade-in">
-                        <span className="text-xs font-bold text-red-200 px-1">Free {formatBytes(item.sizeBytes)}?</span>
+                      <div
+                        className="flex items-center gap-2 bg-red-950/80 p-1.5 rounded-xl border border-red-500/60 shadow-lg animate-in fade-in"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-xs font-bold text-red-200 px-1">
+                          Delete & Free {formatBytes(item.sizeBytes)}?
+                        </span>
                         <button
+                          type="button"
                           data-focusable
                           id={`confirm-del-${item.id}`}
                           disabled={isDeleting}
-                          onClick={() => handleDelete(item)}
-                          className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs shadow active:scale-95 disabled:opacity-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(item);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs shadow active:scale-95 disabled:opacity-50 cursor-pointer"
                         >
-                          {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                          {isDeleting ? 'Deleting...' : 'Confirm'}
                         </button>
                         <button
+                          type="button"
                           data-focusable
-                          onClick={() => setDeleteConfirmId(null)}
-                          className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-semibold"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            soundService.playTick();
+                            setDeleteConfirmId(null);
+                            const row = document.getElementById(`storage-item-${item.id}`);
+                            if (row) focusManager.focus(row);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-semibold cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -552,7 +613,8 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
                     ) : (
                       <>
                         <button
-                          data-focusable
+                          type="button"
+                          tabIndex={-1}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleLaunch(item);
@@ -564,13 +626,15 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
                           <span>Play</span>
                         </button>
                         <button
-                          data-focusable
+                          type="button"
+                          tabIndex={-1}
                           onClick={(e) => {
                             e.stopPropagation();
+                            e.preventDefault();
+                            soundService.playTick();
                             setDeleteConfirmId(item.id);
-                            setTimeout(() => {
-                              focusManager.focusSelector(`#confirm-del-${item.id}`);
-                            }, 50);
+                            const row = document.getElementById(`storage-item-${item.id}`);
+                            if (row) focusManager.focus(row);
                           }}
                           className="p-2 rounded-xl bg-white/5 hover:bg-red-500/20 hover:text-red-300 text-slate-400 border border-white/10 hover:border-red-500/30 transition-colors cursor-pointer"
                           title="Delete game to free up space (X)"
@@ -593,9 +657,18 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
             <span>All files are stored in <code className="text-slate-300">~/Emulation/roms/&lt;platform&gt;</code></span>
           </div>
           <div className="flex items-center gap-4">
-            <span><b className="text-white">A</b> Select / Play</span>
-            <span><b className="text-white">X</b> Delete</span>
-            <span><b className="text-white">B</b> Back</span>
+            {deleteConfirmId !== null ? (
+              <>
+                <span className="text-red-400 font-bold">Press <b className="text-white">A</b> or <b className="text-white">X</b> to Confirm Delete</span>
+                <span><b className="text-white">B</b> Cancel</span>
+              </>
+            ) : (
+              <>
+                <span><b className="text-white">A</b> Play</span>
+                <span><b className="text-white">X</b> Delete</span>
+                <span><b className="text-white">B</b> Back</span>
+              </>
+            )}
           </div>
         </div>
       </FocusScope>

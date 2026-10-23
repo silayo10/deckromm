@@ -143,23 +143,41 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
     }
   };
 
-  const [syncingAll, setSyncingAll] = useState(false);
+  const [syncingMissing, setSyncingMissing] = useState(false);
 
-  const handleSyncAllServer = async () => {
-    setSyncingAll(true);
-    onToast('Syncing all missing BIOS files from RomM server...', 'info');
+  const handleSyncMissing = async () => {
+    if (syncingMissing) return;
+    setSyncingMissing(true);
+
+    const platformLabel =
+      selectedPlatform === 'all'
+        ? 'All Systems'
+        : firmwareList.find((f) => f.platformSlug === selectedPlatform)?.platformName || selectedPlatform.toUpperCase();
+
+    onToast(`Identifying and pulling missing BIOS files for ${platformLabel} from RomM server...`, 'info');
+
     try {
-      const res = await rommApi.syncAllBios();
+      let res: { ok: boolean; synced: number; totalMissing?: number; message?: string };
+      if (selectedPlatform === 'all') {
+        res = await rommApi.syncAllBios();
+      } else {
+        res = await rommApi.syncPlatformBios(selectedPlatform);
+      }
+
       if (res.ok) {
-        onToast(res.message || `Successfully synced ${res.synced} BIOS files`, 'ok');
+        if (res.synced > 0) {
+          onToast(res.message || `Successfully synced ${res.synced} missing BIOS file(s) for ${platformLabel}`, 'ok');
+        } else {
+          onToast(res.message || `All BIOS files for ${platformLabel} are already installed and up to date`, 'ok');
+        }
         await loadData();
       } else {
-        onToast(res.message || 'Server sync failed', 'error');
+        onToast(res.message || `No missing BIOS files found on server for ${platformLabel}`, 'info');
       }
     } catch (e: any) {
-      onToast(`Sync error: ${e.message}`, 'error');
+      onToast(`Failed to sync BIOS for ${platformLabel}: ${e.message}`, 'error');
     } finally {
-      setSyncingAll(false);
+      setSyncingMissing(false);
     }
   };
 
@@ -429,15 +447,15 @@ export const BiosManagerModal: React.FC<BiosManagerModalProps> = ({
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
               <button
-                id="bios-sync-all-server"
+                id="bios-sync-missing"
                 data-focusable
-                onClick={handleSyncAllServer}
-                disabled={syncingAll}
+                onClick={handleSyncMissing}
+                disabled={syncingMissing}
                 className="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md transition-all active:scale-95 disabled:opacity-50"
-                title="Automatically pull all missing server BIOS to ~/Emulation/bios and emulators"
+                title="Identify and pull missing BIOS files for selected platform from RomM server"
               >
-                <RefreshCw size={14} className={syncingAll ? 'animate-spin' : ''} />
-                <span>{syncingAll ? 'Syncing...' : 'Sync All Server BIOS'}</span>
+                <RefreshCw size={14} className={syncingMissing ? 'animate-spin' : ''} />
+                <span>{syncingMissing ? 'Syncing...' : 'Sync Missing BIOS'}</span>
               </button>
               <button
                 id="bios-download-all"

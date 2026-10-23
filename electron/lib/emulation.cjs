@@ -752,7 +752,16 @@ class EmulatorManager {
     }
 
     const startedAt = Date.now();
-    this.current = { child, pgid: child.pid, romId: req.romId, title: req.title || path.basename(req.romPath), startedAt, command: resolved.label, flatpakId: resolved.flatpakId };
+    this.current = {
+      child,
+      pgid: child.pid,
+      romId: req.romId,
+      title: req.title || path.basename(req.romPath),
+      platformSlug: req.platformSlug || '',
+      startedAt,
+      command: resolved.label,
+      flatpakId: resolved.flatpakId,
+    };
 
     const finish = (code, signal, error) => {
       if (!this.current || this.current.child !== child) return;
@@ -761,7 +770,18 @@ class EmulatorManager {
       } catch {
         /* ignore */
       }
-      const info = { running: false, romId: req.romId, code, signal, error: error ? error.message : null, playedMs: Date.now() - startedAt };
+      const info = {
+        running: false,
+        romId: req.romId,
+        title: this.current.title,
+        platformSlug: this.current.platformSlug,
+        flatpakId: this.current.flatpakId,
+        startedAt,
+        code,
+        signal,
+        error: error ? error.message : null,
+        playedMs: Date.now() - startedAt,
+      };
       this.current = null;
       this.log(`[launch] emulator exited code=${code} signal=${signal}`);
       this.emit('emulator:state', info);

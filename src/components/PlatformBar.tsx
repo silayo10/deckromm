@@ -31,11 +31,12 @@ interface PlatformBarProps {
   onSelect: (s: LibrarySource) => void;
   platforms?: Platform[];
   collections?: Collection[];
+  offlineMode?: boolean;
 }
 
-function quickSourceLabel(kind: 'all' | 'recent' | 'favorites' | 'installed') {
+function quickSourceLabel(kind: 'all' | 'recent' | 'favorites' | 'installed', offlineMode?: boolean) {
   switch (kind) {
-    case 'all': return { label: 'All Games', icon: <Library size={16} /> };
+    case 'all': return { label: offlineMode ? 'All Downloaded' : 'All Games', icon: <Library size={16} /> };
     case 'recent': return { label: 'Recently Played', icon: <History size={16} /> };
     case 'favorites': return { label: 'Favorites', icon: <Star size={16} /> };
     case 'installed': return { label: 'On this Deck', icon: <HardDrive size={16} /> };
@@ -43,7 +44,7 @@ function quickSourceLabel(kind: 'all' | 'recent' | 'favorites' | 'installed') {
 }
 
 /** Horizontal platform bar with family dropdowns for multi-system platforms (e.g. Sega, Nintendo, Sony, Microsoft). */
-export const PlatformBar: React.FC<PlatformBarProps> = ({ sources, active, onSelect, platforms = [], collections = [] }) => {
+export const PlatformBar: React.FC<PlatformBarProps> = ({ sources, active, onSelect, platforms = [], collections = [], offlineMode }) => {
   const activeRef = useRef<HTMLButtonElement>(null);
   const activeKey = sourceKey(active);
   useScrollIntoView(activeRef, activeKey);
@@ -115,7 +116,7 @@ export const PlatformBar: React.FC<PlatformBarProps> = ({ sources, active, onSel
           const exists = sources.some((s) => s.kind === kind);
           if (!exists) return null;
           const isActive = active.kind === kind;
-          const { label, icon } = quickSourceLabel(kind);
+          const { label, icon } = quickSourceLabel(kind, offlineMode);
           return (
             <button
               key={kind}

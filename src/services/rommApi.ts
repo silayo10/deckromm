@@ -12,7 +12,7 @@
  * libraries with thousands of ROMs.
  */
 import { Collection, Game, Platform, RommConfig, getActiveCoreForGame, RommFirmwareItem, normalizeGenre } from '../types';
-import type { AuthResult, AuthStatus, RomFileRequest, RommRequest, ServerProbe, XboxEmulatorStatus, NativeStorage } from '../env/electron';
+import type { AuthResult, AuthStatus, RomFileRequest, RommRequest, ServerProbe, XboxEmulatorStatus, NativeStorage, Pcsx2MemcardStatus } from '../env/electron';
 import { DEMO_GAMES, DEMO_PLATFORMS } from './rommData';
 import { assetUrl, bridge, isNativeApp } from './bridge';
 import { parseRomFileName } from '../utils/languageUtils';
@@ -145,6 +145,8 @@ export const DEMO_FIRMWARE: RommFirmwareItem[] = [
 
 const LEGACY_CONFIG_KEY = 'deckromm_config_v1';
 const FAVORITES_KEY = 'deckromm_favorites_v2';
+const LIBRARY_CACHE_KEY = 'deckromm_library_cache_v1';
+const PLATFORMS_CACHE_KEY = 'deckromm_platforms_cache_v1';
 const PAGE_SIZE = 250;
 const MAP_CHUNK = 60;
 
@@ -159,6 +161,7 @@ export const STREAMABLE_PLATFORM_SLUGS = new Set([
 export const DEFAULT_CONFIG: RommConfig = {
   serverUrl: '',
   isDemoMode: !isNativeApp,
+  offlineOnlyMode: false,
   autoCacheBoxArt: true,
   emulationPath: '',
   audioFeedback: true,
@@ -383,12 +386,36 @@ class RommApiService {
   }
 
   // ------------------------------------------------------------------ catalog
+  private savePlatformsCache(platforms: Platform[]) {
+    try {
+      localStorage.setItem(PLATFORMS_CACHE_KEY, JSON.stringify(platforms));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  getCachedOrLocalPlatforms(): Platform[] {
+    try {
+      const raw = localStorage.getItem(PLATFORMS_CACHE_KEY);
+      if (raw) {
+        const list: Platform[] = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) return list;
+      }
+    } catch {
+      /* ignore */
+    }
+    return [...DEMO_PLATFORMS];
+  }
+
   async getPlatforms(): Promise<Platform[]> {
+    if (this.config.offlineOnlyMode) {
+      return this.getCachedOrLocalPlatforms();
+    }
     if (this.config.isDemoMode) return [...DEMO_PLATFORMS];
     try {
       const data = await this.request<any>({ path: '/api/platforms' });
       const list: any[] = Array.isArray(data) ? data : data?.items || [];
-      return list
+      const plats = list
         .map((p): Platform => {
           const slug = normalizeSlug(p.slug || p.fs_slug || p.name);
           return {
@@ -407,9 +434,12 @@ class RommApiService {
         })
         .filter((p) => p.gameCount > 0)
         .sort((a, b) => a.name.localeCompare(b.name));
+
+      if (plats.length > 0) this.savePlatformsCache(plats);
+      return plats;
     } catch (e) {
-      console.warn('getPlatforms failed', e);
-      return [];
+      console.warn('getPlatforms failed, falling back to cached platforms', e);
+      return this.getCachedOrLocalPlatforms();
     }
   }
 
@@ -529,6 +559,10 @@ class RommApiService {
   }
 
   async getGamesPaged(q: GameQuery = {}): Promise<Game[]> {
+    if (this.config.offlineOnlyMode) {
+      return this.getOfflineGames(q);
+    }
+
     if (this.config.isDemoMode) {
       let demo = [...DEMO_GAMES];
       if (q.platform && q.platform.slug !== 'all') {
@@ -541,38 +575,45 @@ class RommApiService {
       return demo.map((g) => ({ ...g, isFavorite: this.favorites.has(String(g.id)) }));
     }
 
-    const query: RommRequest['query'] = { limit: PAGE_SIZE, order_by: 'name', order_dir: 'asc' };
-    if (q.platform && q.platform.slug !== 'all' && q.platform.id != null) {
-      // RomM 5.x uses platform_ids, 4.x uses platform_id - unknown params are ignored.
-      query.platform_ids = [q.platform.id as number];
-      query.platform_id = q.platform.id as number;
-    } else if (q.platforms && q.platforms.length > 0) {
-      query.platform_ids = q.platforms.map((p) => p.id as number);
-    }
-    if (q.collectionId != null) query.collection_id = q.collectionId as number;
-    if (q.search && q.search.trim()) query.search_term = q.search.trim();
-
-    const all: Game[] = [];
-    let offset = 0;
-    let total = Infinity;
-    while (offset < total) {
-      if (q.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      const data = await this.request<any>({ path: '/api/roms', query: { ...query, offset }, timeoutMs: 45000 });
-      const items: any[] = Array.isArray(data) ? data : data?.items || [];
-      total = Array.isArray(data) ? items.length : Number(data?.total ?? items.length);
-      let mapped = await this.annotateInstalled(await this.mapChunked(items, q.signal));
-      if (q.platforms && q.platforms.length > 0) {
-        const allowed = new Set(q.platforms.map((p) => p.slug));
-        if (mapped.some((g) => !allowed.has(g.platformSlug))) {
-          mapped = mapped.filter((g) => allowed.has(g.platformSlug));
-        }
+    try {
+      const query: RommRequest['query'] = { limit: PAGE_SIZE, order_by: 'name', order_dir: 'asc' };
+      if (q.platform && q.platform.slug !== 'all' && q.platform.id != null) {
+        // RomM 5.x uses platform_ids, 4.x uses platform_id - unknown params are ignored.
+        query.platform_ids = [q.platform.id as number];
+        query.platform_id = q.platform.id as number;
+      } else if (q.platforms && q.platforms.length > 0) {
+        query.platform_ids = q.platforms.map((p) => p.id as number);
       }
-      all.push(...mapped);
-      q.onPage?.(all.slice(), total);
-      if (items.length === 0 || Array.isArray(data)) break;
-      offset += items.length;
+      if (q.collectionId != null) query.collection_id = q.collectionId as number;
+      if (q.search && q.search.trim()) query.search_term = q.search.trim();
+
+      const all: Game[] = [];
+      let offset = 0;
+      let total = Infinity;
+      while (offset < total) {
+        if (q.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        const data = await this.request<any>({ path: '/api/roms', query: { ...query, offset }, timeoutMs: 45000 });
+        const items: any[] = Array.isArray(data) ? data : data?.items || [];
+        total = Array.isArray(data) ? items.length : Number(data?.total ?? items.length);
+        let mapped = await this.annotateInstalled(await this.mapChunked(items, q.signal));
+        if (q.platforms && q.platforms.length > 0) {
+          const allowed = new Set(q.platforms.map((p) => p.slug));
+          if (mapped.some((g) => !allowed.has(g.platformSlug))) {
+            mapped = mapped.filter((g) => allowed.has(g.platformSlug));
+          }
+        }
+        all.push(...mapped);
+        q.onPage?.(all.slice(), total);
+        if (items.length === 0 || Array.isArray(data)) break;
+        offset += items.length;
+      }
+      this.saveLibraryCache(all);
+      return all;
+    } catch (e: any) {
+      if (q.signal?.aborted || e?.name === 'AbortError') throw e;
+      console.warn('getGamesPaged error, falling back to local offline games:', e);
+      return this.getOfflineGames(q);
     }
-    return all;
   }
 
   /**
@@ -584,6 +625,10 @@ class RommApiService {
   async getRecentlyPlayed(limit = 30, signal?: AbortSignal): Promise<Game[]> {
     const ts = (g: Game) => (g.lastPlayed ? Date.parse(g.lastPlayed) || 0 : 0);
     const finish = (list: Game[]) => list.filter((g) => ts(g) > 0).sort((a, b) => ts(b) - ts(a)).slice(0, limit);
+    if (this.config.offlineOnlyMode) {
+      const offline = await this.getOfflineGames();
+      return finish(offline);
+    }
     if (this.config.isDemoMode) return finish(DEMO_GAMES.map((g) => ({ ...g, isFavorite: this.favorites.has(String(g.id)) })));
     try {
       const data = await this.request<any>({
@@ -597,6 +642,9 @@ class RommApiService {
       if (!filterIgnored) return finish(mapped);
     } catch (e: any) {
       if (e?.name === 'AbortError') throw e;
+      console.warn('getRecentlyPlayed failed, falling back to offline games:', e);
+      const offline = await this.getOfflineGames();
+      return finish(offline);
     }
     return finish(await this.getGamesPaged({ signal }));
   }
@@ -958,6 +1006,123 @@ class RommApiService {
     };
   }
 
+  private saveLibraryCache(newGames: Game[]) {
+    try {
+      const raw = localStorage.getItem(LIBRARY_CACHE_KEY);
+      const existing: Game[] = raw ? JSON.parse(raw) : [];
+      const map = new Map<string, Game>();
+      for (const g of existing) {
+        map.set(`${g.platformSlug}:${g.id}`, g);
+      }
+      for (const g of newGames) {
+        map.set(`${g.platformSlug}:${g.id}`, g);
+      }
+      const slice = Array.from(map.values()).slice(0, 2000);
+      localStorage.setItem(LIBRARY_CACHE_KEY, JSON.stringify(slice));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
+   * Scan local downloaded games from disk (~/Emulation/roms) and match with metadata cache
+   * to provide a rich, playable library strictly for offline local play.
+   */
+  async getOfflineGames(q: GameQuery = {}): Promise<Game[]> {
+    const report = await this.getDownloadedRomsReport().catch(() => null);
+    const diskItems = report?.items || [];
+
+    // Load cached metadata
+    let cached: Game[] = [];
+    try {
+      const raw = localStorage.getItem(LIBRARY_CACHE_KEY);
+      if (raw) cached = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+
+    const gamesMap = new Map<string, Game>();
+    const byFileName = new Map<string, Game>();
+    const byPlatformTitle = new Map<string, Game>();
+
+    // Index all known cached games & DEMO_GAMES
+    for (const g of [...cached, ...DEMO_GAMES]) {
+      if (g.fileName) byFileName.set(g.fileName.toLowerCase(), g);
+      const cleanTitleKey = `${g.platformSlug.toLowerCase()}:${g.title.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      byPlatformTitle.set(cleanTitleKey, g);
+      if (g.isInstalled || g.isCached) {
+        gamesMap.set(String(g.id), { ...g, isInstalled: true, isCached: true });
+      }
+    }
+
+    // Process all disk items discovered in ~/Emulation/roms/
+    for (const item of diskItems) {
+      const fnLower = item.fileName.toLowerCase();
+      const ptKey = `${item.platformSlug.toLowerCase()}:${item.title.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      const match = byFileName.get(fnLower) || byPlatformTitle.get(ptKey) || item.game;
+
+      if (match) {
+        gamesMap.set(String(match.id), {
+          ...match,
+          isInstalled: true,
+          isCached: true,
+          localPath: item.fullPath,
+          fileSizeBytes: item.sizeBytes || match.fileSizeBytes,
+          fileName: item.fileName || match.fileName,
+          isFavorite: this.favorites.has(String(match.id)),
+        });
+      } else {
+        const id = `offline-${item.platformSlug}-${item.fileName}`;
+        gamesMap.set(id, {
+          id,
+          title: item.title,
+          platformSlug: item.platformSlug,
+          platformName: item.platformName || item.platformSlug.toUpperCase(),
+          releaseYear: 0,
+          developer: '',
+          publisher: '',
+          rating: 0,
+          summary: '',
+          coverUrl: '',
+          fileName: item.fileName,
+          localPath: item.fullPath,
+          fileSizeBytes: item.sizeBytes,
+          isInstalled: true,
+          isCached: true,
+          genres: [],
+          playableOnline: false,
+          isFavorite: this.favorites.has(id),
+        });
+      }
+    }
+
+    let list = Array.from(gamesMap.values());
+
+    // Strictly ensure only installed / cached games that can be played locally
+    list = list.filter((g) => g.isInstalled || g.isCached);
+
+    // Apply query filters if requested
+    if (q.platform && q.platform.slug !== 'all') {
+      list = list.filter((g) => g.platformSlug === q.platform!.slug);
+    } else if (q.platforms && q.platforms.length > 0) {
+      const allowed = new Set(q.platforms.map((p) => p.slug));
+      list = list.filter((g) => allowed.has(g.platformSlug));
+    }
+
+    if (q.search && q.search.trim()) {
+      const term = q.search.trim().toLowerCase();
+      list = list.filter(
+        (g) =>
+          g.title.toLowerCase().includes(term) ||
+          g.fileName?.toLowerCase().includes(term) ||
+          g.genres?.some((gen) => gen.toLowerCase().includes(term))
+      );
+    }
+
+    q.onPage?.(list.slice(), list.length);
+    return list;
+  }
+
   /** Download if needed, then launch the matching emulator from the main process. */
   async launchNative(game: Game, core?: string): Promise<{ success: boolean; message: string; command?: string }> {
     if (!isNativeApp) return { success: false, message: 'Native launch requires the DeckRomM desktop app' };
@@ -1036,6 +1201,32 @@ class RommApiService {
     } finally {
       off();
     }
+  }
+
+  /**
+   * PCSX2 Memory Card Sync:
+   */
+  async getPcsx2Memcards(): Promise<Pcsx2MemcardStatus> {
+    return bridge.pcsx2.listMemcards();
+  }
+
+  async uploadPcsx2Memcard(game: Game, fileName?: string): Promise<{ ok: boolean; fileName?: string; sizeBytes?: number; message?: string }> {
+    return bridge.pcsx2.uploadMemcard({
+      romId: game.id,
+      fileName,
+      gameTitle: game.title,
+    });
+  }
+
+  async downloadPcsx2Memcard(downloadPath: string, targetFileName?: string): Promise<{ ok: boolean; targetPath?: string; sizeBytes?: number; message?: string }> {
+    return bridge.pcsx2.downloadMemcard({
+      downloadPath,
+      targetFileName,
+    });
+  }
+
+  async setPcsx2AutoSync(enabled: boolean): Promise<{ ok: boolean; autoSync: boolean }> {
+    return bridge.pcsx2.setAutoSync(enabled);
   }
 }
 
