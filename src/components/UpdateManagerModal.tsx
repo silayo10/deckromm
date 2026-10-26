@@ -93,9 +93,9 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
   useEffect(() => {
     if (upgradeFinished) {
       const timer = setTimeout(() => {
-        const focused = focusManager.focusSelector('#reboot-deckromm-top') || focusManager.focusSelector('#relaunch-app');
+        const focused = focusManager.focusSelector('#relaunch-app');
         if (!focused) {
-          const btn = document.getElementById('reboot-deckromm-top') || document.getElementById('relaunch-app');
+          const btn = document.getElementById('relaunch-app');
           if (btn) btn.focus();
         }
       }, 60);
@@ -150,7 +150,7 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
     <div className="fixed inset-0 z-[230] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
       <FocusScope
         name="update-manager"
-        initialFocus={upgradeFinished ? '#reboot-deckromm-top' : (updateInfo?.hasUpdate ? '#upgrade-now' : '#check-updates')}
+        initialFocus={upgradeFinished ? '#relaunch-app' : (updateInfo?.hasUpdate ? '#upgrade-now' : '#check-updates')}
         onAction={(a) => {
           if (a === 'BACK') {
             if (!upgrading) onClose();
@@ -262,28 +262,16 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
                 </div>
               </div>
 
-              {upgradeFinished ? (
-                <button
-                  id="reboot-deckromm-top"
-                  data-focusable
-                  onClick={handleRelaunch}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 border border-emerald-400 text-white text-xs font-extrabold flex items-center gap-2 shadow-lg transition-transform active:scale-95 ring-2 ring-emerald-400/50 flex-shrink-0 animate-pulse"
-                >
-                  <RotateCcw size={15} />
-                  <span>Reboot DeckRomM</span>
-                </button>
-              ) : (
-                <button
-                  id="check-updates"
-                  data-focusable
-                  disabled={checking || upgrading}
-                  onClick={checkUpdates}
-                  className="px-4 py-2 rounded-xl bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-xs font-bold text-white flex items-center gap-2 transition-colors flex-shrink-0"
-                >
-                  <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
-                  <span>{checking ? 'Checking GitHub...' : 'Check Again'}</span>
-                </button>
-              )}
+              <button
+                id="check-updates"
+                data-focusable
+                disabled={checking || upgrading}
+                onClick={checkUpdates}
+                className="px-4 py-2 rounded-xl bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-xs font-bold text-white flex items-center gap-2 transition-colors flex-shrink-0"
+              >
+                <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+                <span>{checking ? 'Checking GitHub...' : 'Check Again'}</span>
+              </button>
             </div>
 
             {/* Completion & Relaunch Banner - placed prominently at the top */}
