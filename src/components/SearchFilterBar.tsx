@@ -109,7 +109,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   return (
     <div className="shrink-0 flex flex-col gap-2 px-5 pb-2.5">
       {/* Top Filter & Tools Row */}
-      <div data-focus-memory="filters" className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
+      <div data-focus-memory="filters" className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-1.5 px-0.5">
         {offlineMode && (
           <div
             id="filter-offline-indicator"
@@ -199,7 +199,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
       </div>
 
       {/* Genre & Language Filter Row */}
-      <div data-focus-memory="genres" className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+      <div data-focus-memory="genres" className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1.5 px-0.5">
         {/* Language Filter Button */}
         <button
           data-focusable

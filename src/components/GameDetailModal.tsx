@@ -220,16 +220,16 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   };
 
   const btn = 'h-11 px-3.5 sm:px-4 rounded-xl flex items-center gap-2 font-bold text-xs sm:text-sm border whitespace-nowrap shrink-0 transition-all cursor-pointer';
-  const section = 'rounded-xl p-4 bg-deck-panel/80 border border-deck-line';
+  const section = 'rounded-2xl p-5 bg-deck-panel/90 border border-deck-line shadow-sm';
 
   return (
     <div className="fixed inset-0 z-[100] bg-deck-bg deck-enter">
       {game.coverUrl && (
         <img src={game.coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-2xl scale-110 pointer-events-none" />
       )}
-      <FocusScope name="game-detail" onBack={onClose} onAction={onAction} initialFocus="#detail-primary" className="relative h-full flex gap-8 px-10 pt-8 pb-14">
-        <div className="w-[300px] shrink-0 flex flex-col gap-4">
-          <div className="rounded-2xl overflow-hidden shadow-2xl aspect-[3/4] bg-deck-panel-2 relative flex items-center justify-center">
+      <FocusScope name="game-detail" onBack={onClose} onAction={onAction} initialFocus="#detail-primary" className="relative h-full flex gap-6 px-8 pt-6 pb-12">
+        <div className="w-[280px] sm:w-[300px] shrink-0 flex flex-col gap-4">
+          <div className="rounded-2xl overflow-hidden shadow-2xl aspect-[3/4] bg-deck-panel-2 relative flex items-center justify-center border border-deck-line/60">
             {game.coverUrl && !coverError ? (
               <img
                 src={game.coverUrl}
@@ -253,31 +253,41 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 text-sm text-deck-dim">
+          <div className="flex items-center gap-2 text-sm text-deck-dim flex-wrap">
             <PlatformBadge platformSlug={game.platformSlug} platformName={game.platformName} size="md" />
             {installed && (
-              <span className="flex items-center gap-1 text-deck-ok font-semibold">
-                <CheckCircle2 size={16} /> Installed
+              <span className="flex items-center gap-1 text-deck-ok font-bold text-xs bg-deck-ok/10 border border-deck-ok/30 px-2 py-0.5 rounded-md">
+                <CheckCircle2 size={14} /> Installed
               </span>
             )}
             {offlineMode && (
-              <span className="flex items-center gap-1 text-amber-300 font-semibold text-xs bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/30">
+              <span className="flex items-center gap-1 text-amber-300 font-bold text-xs bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/30">
                 <CloudOff size={13} className="text-amber-400" /> Offline Play
               </span>
             )}
           </div>
         </div>
 
-        <div data-scroll-primary className="deck-scroll flex-1 min-w-0 pr-3 pb-6">
+        <div data-scroll-primary className="deck-scroll flex-1 min-w-0 px-4 pt-1 pb-10">
           <div className="flex items-start justify-between gap-4">
-            <h1 className="text-4xl font-extrabold leading-tight">{game.title}</h1>
-            <button data-focusable onClick={onClose} className="h-11 w-11 shrink-0 rounded-xl bg-deck-panel-2 border border-deck-line flex items-center justify-center" aria-label="Close">
-              <X size={22} />
+            <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight text-white tracking-tight">{game.title}</h1>
+            <button data-focusable onClick={onClose} className="h-10 w-10 shrink-0 rounded-xl bg-deck-panel-2 hover:bg-white/10 border border-deck-line flex items-center justify-center text-deck-dim hover:text-white transition-colors" aria-label="Close (B)">
+              <X size={20} />
             </button>
           </div>
           <div className="mt-2 flex items-center flex-wrap gap-2 text-deck-dim text-sm">
-            {game.releaseYear && <span className="font-semibold text-white/90">{game.releaseYear}</span>}
-            {game.developer && <span>· {game.developer}</span>}
+            {Boolean(game.releaseYear && game.releaseYear > 0) && (
+              <span className="font-semibold text-white/90">{game.releaseYear}</span>
+            )}
+            {Boolean(game.releaseYear && game.releaseYear > 0 && game.developer) && (
+              <span className="text-deck-dim/60">·</span>
+            )}
+            {game.developer && (
+              <span className="text-deck-dim font-medium">{game.developer}</span>
+            )}
+            {game.publisher && game.publisher !== game.developer && (
+              <span className="text-deck-dim/70 text-xs">({game.publisher})</span>
+            )}
             {game.genres && game.genres.length > 0 && (
               <div className="flex items-center flex-wrap gap-1.5 ml-1">
                 {game.genres.map((g) => (
@@ -379,142 +389,164 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
             </div>
           )}
 
-          {/* Action Row */}
-          <div className="mt-6 flex flex-wrap gap-3">
-            {/* Primary Action Button */}
-            <button
-              id="detail-primary"
-              data-focusable
-              disabled={emulatorRunning || launching}
-              onClick={handlePrimaryPlay}
-              className={`${btn} bg-deck-ok border-deck-ok text-white shadow-lg disabled:opacity-70 transition-all`}
-            >
-              {launching ? (
-                <>
-                  <Loader2 size={18} className="animate-spin text-white" />
-                  <span>Starting {activeCoreName}...</span>
-                </>
-              ) : downloading ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  <span>Downloading ({Math.round(progress || 0)}%)...</span>
-                </>
-              ) : installed ? (
-                <>
-                  <Play size={18} className="fill-white" />
-                  <span>{offlineMode ? 'Play Offline' : 'Play Game'}</span>
-                </>
-              ) : streamable ? (
-                <>
-                  <Globe size={18} />
-                  <span>Play (Stream)</span>
-                </>
+          {/* Action Rows: Primary Actions + Secondary Tools */}
+          <div className="mt-5 space-y-3">
+            {/* Primary Action Row */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Primary Action Button */}
+              <button
+                id="detail-primary"
+                data-focusable
+                disabled={emulatorRunning || launching}
+                onClick={handlePrimaryPlay}
+                className={`${btn} bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-white shadow-xl ring-1 ring-emerald-400/30 font-extrabold disabled:opacity-70 transition-all`}
+              >
+                {launching ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin text-white" />
+                    <span>Starting {activeCoreName}...</span>
+                  </>
+                ) : downloading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Downloading ({Math.round(progress || 0)}%)...</span>
+                  </>
+                ) : installed ? (
+                  <>
+                    <Play size={18} className="fill-white" />
+                    <span>{offlineMode ? 'Play Offline' : 'Play Game'}</span>
+                    <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
+                  </>
+                ) : streamable ? (
+                  <>
+                    <Globe size={18} />
+                    <span>Play (Stream)</span>
+                    <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
+                  </>
+                ) : (
+                  <>
+                    <Play size={18} className="fill-white" />
+                    <span>Download & Play</span>
+                    <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
+                  </>
+                )}
+              </button>
+
+              {/* Core Selector Button */}
+              <button
+                data-focusable
+                id="detail-core-selector"
+                onClick={() => setCoreModalOpen(true)}
+                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-accent hover:text-white flex items-center gap-2`}
+                title="Select which core or emulator to use for this game"
+              >
+                <Cpu size={16} className="text-deck-accent shrink-0" />
+                <span className="text-xs uppercase text-deck-dim font-bold">Core:</span>
+                <span className="font-extrabold text-white text-xs">{activeCoreName}</span>
+                <ChevronDown size={14} className="opacity-70 ml-0.5 shrink-0" />
+              </button>
+
+              {/* Favorite Button */}
+              <button
+                data-focusable
+                id="detail-favorite"
+                onClick={() => onToggleFavorite(game)}
+                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-dim flex items-center gap-2`}
+                title="Toggle favorite (Y button shortcut)"
+              >
+                <Star size={16} className={game.isFavorite ? 'text-yellow-400 fill-yellow-400' : 'text-deck-dim'} />
+                <span>{game.isFavorite ? 'Favorited' : 'Favorite'}</span>
+                <span className="ml-0.5 px-1.5 py-0.5 rounded bg-deck-bg text-[10px] font-mono font-bold text-deck-dim">Y</span>
+              </button>
+
+              {/* Download / Status Button */}
+              {downloading ? (
+                <button
+                  data-focusable
+                  onClick={() => onCancelDownload(game)}
+                  className={`${btn} bg-deck-panel-2 border-deck-line text-deck-danger hover:bg-deck-danger/20 flex items-center gap-2`}
+                >
+                  <Square size={16} />
+                  <span>Cancel ({Math.round(progress!)}%)</span>
+                </button>
+              ) : offlineMode ? (
+                <div
+                  className={`${btn} bg-deck-panel-2/50 border-deck-line text-deck-dim opacity-75 cursor-default flex items-center gap-2`}
+                  title="RomM server is offline; downloading requires an active network connection"
+                >
+                  <CloudOff size={16} className="text-amber-400" />
+                  <span>Offline ({installed ? 'Installed' : 'Unavailable'})</span>
+                </div>
               ) : (
-                <>
-                  <Play size={18} className="fill-white" />
-                  <span>Download & Play</span>
-                </>
+                <button
+                  data-focusable
+                  id="detail-download"
+                  onClick={() => onDownload(game)}
+                  className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-dim flex items-center gap-2`}
+                  title="Download ROM locally (X button shortcut)"
+                >
+                  <Download size={16} />
+                  <span>{installed ? 'Re-download' : 'Download'}</span>
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded bg-deck-bg text-[10px] font-mono font-bold text-deck-dim">X</span>
+                </button>
               )}
-            </button>
+            </div>
 
-            {/* Core Selector Button */}
-            <button
-              data-focusable
-              id="detail-core-selector"
-              onClick={() => setCoreModalOpen(true)}
-              className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-accent flex items-center gap-2`}
-              title="Select which core or emulator to use for this game"
-            >
-              <Cpu size={18} className="text-deck-accent" />
-              <span className="text-xs uppercase text-deck-dim font-bold">Core:</span>
-              <span className="font-extrabold text-sm text-white">{activeCoreName}</span>
-              <ChevronDown size={14} className="opacity-70 ml-0.5" />
-            </button>
+            {/* Secondary Tools & Standalone Emulator Row */}
+            <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
+              {/* Configure Standalone Emulator Directly */}
+              {standaloneEmu && (
+                <button
+                  data-focusable
+                  id="detail-configure-emulator"
+                  onClick={handleLaunchStandaloneConfig}
+                  className={`${btn} bg-sky-950/40 border-sky-500/40 text-sky-200 hover:bg-sky-900/50 hover:border-sky-400 flex items-center gap-2`}
+                  title={`Launch ${standaloneEmu.name} emulator directly to update settings, graphics, and controls`}
+                >
+                  <Sliders size={16} className="text-sky-400 shrink-0" />
+                  <span>Configure {standaloneEmu.name}</span>
+                </button>
+              )}
 
-            {/* Offline Play Option if streamable and installed */}
-            {streamable && isNative && installed && (
+              {/* Patch ROM / Hacks Button */}
               <button
                 data-focusable
-                disabled={emulatorRunning}
-                onClick={() => onLaunch(game)}
-                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text`}
+                id="detail-patch-rom"
+                onClick={() => setPatcherOpen(true)}
+                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-accent hover:border-deck-accent/50 flex items-center gap-2`}
+                title="Apply fan translations, color patches, or ROM hacks"
               >
-                <Play size={18} /> Launch Native
+                <Wand2 size={16} className="text-deck-accent shrink-0" />
+                <span>Patch ROM</span>
               </button>
-            )}
 
-            {/* Download Button */}
-            {downloading ? (
-              <button
-                data-focusable
-                onClick={() => onCancelDownload(game)}
-                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-danger hover:bg-deck-danger/20`}
-              >
-                <Square size={18} /> Cancel ({Math.round(progress!)}%)
-              </button>
-            ) : offlineMode ? (
-              <button
-                data-focusable
-                disabled
-                className={`${btn} bg-deck-panel-2/50 border-deck-line text-deck-dim opacity-70 cursor-not-allowed flex items-center gap-2`}
-                title="RomM server is offline; downloading requires an active network connection"
-              >
-                <CloudOff size={18} className="text-amber-400" />
-                <span>Offline ({installed ? 'Installed' : 'Unavailable'})</span>
-              </button>
-            ) : (
-              <button
-                data-focusable
-                onClick={() => onDownload(game)}
-                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-dim`}
-              >
-                <Download size={20} /> {installed ? 'Re-download' : 'Download'}
-              </button>
-            )}
+              {/* Offline Play Option if streamable and installed */}
+              {streamable && isNative && installed && (
+                <button
+                  data-focusable
+                  disabled={emulatorRunning}
+                  onClick={() => onLaunch(game)}
+                  className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text flex items-center gap-2`}
+                >
+                  <Play size={16} />
+                  <span>Launch Native</span>
+                </button>
+              )}
 
-            {/* Patch ROM / Hacks Button */}
-            <button
-              data-focusable
-              onClick={() => setPatcherOpen(true)}
-              className={`${btn} bg-deck-panel-2 border-deck-line text-deck-accent hover:border-deck-accent/50`}
-              title="Apply fan translations, color patches, or ROM hacks"
-            >
-              <Wand2 size={20} /> Patch ROM
-            </button>
-
-            {/* Configure Standalone Emulator Directly */}
-            {standaloneEmu && (
-              <button
-                data-focusable
-                onClick={handleLaunchStandaloneConfig}
-                className={`${btn} bg-deck-panel-2 border-deck-line text-sky-300 hover:border-sky-400/60 flex items-center gap-2`}
-                title={`Launch ${standaloneEmu.name} emulator directly to update settings and buttons`}
-              >
-                <Sliders size={18} className="text-sky-400" />
-                <span>Configure {standaloneEmu.name}</span>
-              </button>
-            )}
-
-            {/* Favorite Button */}
-            <button
-              data-focusable
-              onClick={() => onToggleFavorite(game)}
-              className={`${btn} bg-deck-panel-2 border-deck-line`}
-            >
-              <Star size={20} className={game.isFavorite ? 'text-yellow-400 fill-yellow-400' : ''} />
-              {game.isFavorite ? 'Favorited' : 'Favorite'}
-            </button>
-
-            {/* Delete button */}
-            {installed && (
-              <button
-                data-focusable
-                onClick={() => onDelete(game)}
-                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-danger hover:bg-red-950/30`}
-              >
-                <Trash2 size={20} /> Delete
-              </button>
-            )}
+              {/* Delete button */}
+              {installed && (
+                <button
+                  data-focusable
+                  id="detail-delete"
+                  onClick={() => onDelete(game)}
+                  className={`${btn} bg-deck-panel-2 border-deck-line text-red-400 hover:text-white hover:bg-red-950/40 hover:border-red-500/50 flex items-center gap-2`}
+                  title="Delete local ROM copy to free storage"
+                >
+                  <Trash2 size={16} className="text-red-400 shrink-0" />
+                  <span>Delete</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {standaloneLaunchMessage && (
@@ -597,29 +629,29 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
             )}
 
             <section data-focusable tabIndex={-1} className={section}>
-              <h2 className="text-sm font-bold uppercase tracking-wide text-deck-dim mb-2">About</h2>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent mb-2.5">About</h2>
               {loadingDetails && !game.summary ? (
                 <div className="flex items-center gap-2 text-deck-dim">
                   <Loader2 size={16} className="animate-spin" /> Loading details
                 </div>
               ) : (
-                <p className="text-base leading-relaxed whitespace-pre-line">{game.summary || 'No description available.'}</p>
+                <p className="text-sm sm:text-base leading-relaxed whitespace-pre-line text-deck-text/90">{game.summary || 'No description available.'}</p>
               )}
             </section>
 
             {/* Multi-File / Disc Browser */}
             {game.files && game.files.length > 1 && (
               <section data-focusable tabIndex={-1} className={section}>
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-sm font-bold uppercase tracking-wide text-deck-dim flex items-center gap-2">
-                    <Disc size={16} className="text-deck-accent" /> Associated Files & Discs ({game.files.length})
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent flex items-center gap-2">
+                    <Disc size={15} /> Associated Files & Discs ({game.files.length})
                   </h2>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   {game.files.map((file, idx) => (
                     <div
                       key={file.id || idx}
-                      className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-deck-panel-2 border border-deck-line text-xs"
+                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-deck-panel-2 border border-deck-line text-xs"
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="px-2 py-0.5 rounded font-mono font-bold bg-deck-bg text-deck-accent shrink-0">
@@ -636,8 +668,8 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               </section>
             )}
 
-            <section data-focusable tabIndex={-1} className={`${section} grid grid-cols-2 gap-x-8 gap-y-2 text-sm`}>
-              <h2 className="col-span-2 text-sm font-bold uppercase tracking-wide text-deck-dim mb-1">Details</h2>
+            <section data-focusable tabIndex={-1} className={`${section} grid grid-cols-2 gap-x-8 gap-y-2.5 text-sm`}>
+              <h2 className="col-span-2 text-xs font-bold uppercase tracking-wider text-deck-accent mb-1.5">Details</h2>
               {[
                 ['Emulator Core', `${activeCoreName} (${activeCoreObj?.type === 'standalone' ? 'Standalone' : 'RetroArch'})`],
                 ['File', game.fileName],
@@ -651,19 +683,19 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               ]
                 .filter(([, v]) => v)
                 .map(([k, v]) => (
-                  <div key={k} className="flex gap-3 min-w-0">
-                    <span className="w-28 shrink-0 text-deck-dim">{k}</span>
-                    <span className="truncate font-mono text-deck-text" title={String(v)}>{v}</span>
+                  <div key={k} className="flex gap-3 min-w-0 text-xs sm:text-sm">
+                    <span className="w-28 shrink-0 text-deck-dim font-medium">{k}</span>
+                    <span className="truncate font-mono text-deck-text font-medium" title={String(v)}>{v}</span>
                   </div>
                 ))}
             </section>
 
             {game.screenshots && game.screenshots.length > 0 && (
               <section className={section}>
-                <h2 className="text-sm font-bold uppercase tracking-wide text-deck-dim mb-2">Screenshots</h2>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent mb-3">Screenshots</h2>
                 <div className="grid grid-cols-3 gap-3">
                   {game.screenshots.slice(0, 9).map((s) => (
-                    <div key={s} data-focusable tabIndex={-1} className="rounded-lg overflow-hidden aspect-video bg-deck-panel-2">
+                    <div key={s} data-focusable tabIndex={-1} className="rounded-xl overflow-hidden aspect-video bg-deck-panel-2 border border-deck-line">
                       <img src={s} alt="" loading="lazy" className="w-full h-full object-cover" />
                     </div>
                   ))}

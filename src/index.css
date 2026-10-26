@@ -79,7 +79,7 @@ iframe:focus-visible,
 /* The single source of truth for "what is selected". Set by focusManager. */
 [data-focused="true"] {
   position: relative;
-  z-index: 2;
+  z-index: 10;
   outline: 3px solid var(--focus-ring) !important;
   outline-offset: 2px;
   box-shadow:
