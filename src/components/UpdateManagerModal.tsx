@@ -15,6 +15,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { FocusScope } from './FocusScope';
+import { focusManager } from '../services/focusManager';
 import { bridge, isNativeApp } from '../services/bridge';
 import { AppUpdateInfo, AppUpdateProgressEvent, RommConfig } from '../types';
 
@@ -89,6 +90,19 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
     return unsub;
   }, []);
 
+  useEffect(() => {
+    if (upgradeFinished) {
+      const timer = setTimeout(() => {
+        const focused = focusManager.focusSelector('#reboot-deckromm-top') || focusManager.focusSelector('#relaunch-app');
+        if (!focused) {
+          const btn = document.getElementById('reboot-deckromm-top') || document.getElementById('relaunch-app');
+          if (btn) btn.focus();
+        }
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [upgradeFinished]);
+
   if (!isOpen) return null;
 
   const handlePerformUpgrade = async () => {
@@ -136,7 +150,7 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
     <div className="fixed inset-0 z-[230] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
       <FocusScope
         name="update-manager"
-        initialFocus={updateInfo?.hasUpdate ? '#upgrade-now' : '#check-updates'}
+        initialFocus={upgradeFinished ? '#reboot-deckromm-top' : (updateInfo?.hasUpdate ? '#upgrade-now' : '#check-updates')}
         onAction={(a) => {
           if (a === 'BACK') {
             if (!upgrading) onClose();
@@ -248,20 +262,56 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
                 </div>
               </div>
 
-              <button
-                id="check-updates"
-                data-focusable
-                disabled={checking || upgrading}
-                onClick={checkUpdates}
-                className="px-4 py-2 rounded-xl bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-xs font-bold text-white flex items-center gap-2 transition-colors flex-shrink-0"
-              >
-                <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
-                <span>{checking ? 'Checking GitHub...' : 'Check Again'}</span>
-              </button>
+              {upgradeFinished ? (
+                <button
+                  id="reboot-deckromm-top"
+                  data-focusable
+                  onClick={handleRelaunch}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 border border-emerald-400 text-white text-xs font-extrabold flex items-center gap-2 shadow-lg transition-transform active:scale-95 ring-2 ring-emerald-400/50 flex-shrink-0 animate-pulse"
+                >
+                  <RotateCcw size={15} />
+                  <span>Reboot DeckRomM</span>
+                </button>
+              ) : (
+                <button
+                  id="check-updates"
+                  data-focusable
+                  disabled={checking || upgrading}
+                  onClick={checkUpdates}
+                  className="px-4 py-2 rounded-xl bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-xs font-bold text-white flex items-center gap-2 transition-colors flex-shrink-0"
+                >
+                  <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+                  <span>{checking ? 'Checking GitHub...' : 'Check Again'}</span>
+                </button>
+              )}
             </div>
 
-            {/* Update Info / Upgrade Action */}
-            {updateInfo?.hasUpdate ? (
+            {/* Completion & Relaunch Banner - placed prominently at the top */}
+            {upgradeFinished && (
+              <div className="p-5 rounded-xl bg-gradient-to-br from-emerald-950/70 via-deck-panel-2 to-emerald-950/30 border border-emerald-500/60 text-center space-y-4 shadow-xl">
+                <div className="flex items-center justify-center gap-2 text-emerald-300 font-extrabold text-base">
+                  <CheckCircle2 size={24} className="text-emerald-400" />
+                  <span>DeckRomM Upgraded Successfully!</span>
+                </div>
+                <p className="text-xs text-deck-dim max-w-md mx-auto">
+                  All latest files have been pulled and rebuilt. Relaunch the application to run the new version immediately.
+                </p>
+                <div className="flex justify-center">
+                  <button
+                    id="relaunch-app"
+                    data-focusable
+                    onClick={handleRelaunch}
+                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm inline-flex items-center gap-2 shadow-xl ring-2 ring-emerald-400/50 transition-transform active:scale-95"
+                  >
+                    <RotateCcw size={18} />
+                    <span>Restart DeckRomM Now</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Update Info / Upgrade Action (hidden after upgrade completes) */}
+            {!upgradeFinished && updateInfo?.hasUpdate ? (
               <div className="p-5 rounded-xl bg-gradient-to-br from-emerald-950/40 via-deck-panel-2 to-deck-panel border border-emerald-500/40 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-sm">
@@ -289,7 +339,7 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
                   This upgrade will pull the latest commits directly into this install and rebuild the application in place. No data or saved configurations will be lost.
                 </div>
 
-                {!upgrading && !upgradeFinished && (
+                {!upgrading && (
                   <button
                     id="upgrade-now"
                     data-focusable
@@ -301,7 +351,7 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
                   </button>
                 )}
               </div>
-            ) : updateInfo && !updateInfo.error && !checking ? (
+            ) : !upgradeFinished && updateInfo && !updateInfo.error && !checking ? (
               <div className="p-4 rounded-xl bg-deck-panel-2 border border-deck-line text-center space-y-2">
                 <div className="flex items-center justify-center gap-2 text-emerald-400 font-bold text-sm">
                   <CheckCircle2 size={18} />
@@ -311,7 +361,7 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
                   Your local installation matches the latest commit on <code className="text-deck-text font-mono">{updateInfo.repo}</code> ({updateInfo.branch}).
                 </p>
               </div>
-            ) : updateInfo?.error ? (
+            ) : !upgradeFinished && updateInfo?.error ? (
               <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs space-y-2">
                 <div className="flex items-center gap-2 font-bold">
                   <AlertTriangle size={16} />
@@ -330,13 +380,13 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
               </div>
             ) : null}
 
-            {/* Progress & Console while upgrading */}
+            {/* Progress & Console while upgrading or upon completion */}
             {(upgrading || upgradeProgress) && (
               <div className="p-4 rounded-xl bg-deck-panel-2 border border-deck-line space-y-3">
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-white flex items-center gap-2">
                     {upgrading && <RefreshCw size={14} className="animate-spin text-deck-accent" />}
-                    <span>{upgradeProgress?.message || 'Upgrading in place...'}</span>
+                    <span>{upgradeProgress?.message || (upgradeFinished ? 'Upgrade Completed' : 'Upgrading in place...')}</span>
                   </span>
                   <span className="text-deck-accent font-mono">{upgradeProgress?.percent || 0}%</span>
                 </div>
@@ -355,28 +405,6 @@ export const UpdateManagerModal: React.FC<UpdateManagerModalProps> = ({
                     ))}
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* Completion & Relaunch */}
-            {upgradeFinished && (
-              <div className="p-5 rounded-xl bg-emerald-950/50 border border-emerald-500/50 text-center space-y-4">
-                <div className="flex items-center justify-center gap-2 text-emerald-300 font-extrabold text-base">
-                  <CheckCircle2 size={22} />
-                  <span>DeckRomM Upgraded Successfully!</span>
-                </div>
-                <p className="text-xs text-deck-dim max-w-md mx-auto">
-                  All latest files have been pulled and rebuilt. Relaunch the application to run the new version.
-                </p>
-                <button
-                  id="relaunch-app"
-                  data-focusable
-                  onClick={handleRelaunch}
-                  className="px-6 py-3 rounded-xl bg-deck-accent hover:bg-deck-accent-hover text-white font-extrabold text-sm inline-flex items-center gap-2 shadow-lg transition-transform active:scale-95"
-                >
-                  <RotateCcw size={18} />
-                  <span>Restart DeckRomM Now</span>
-                </button>
               </div>
             )}
           </div>
