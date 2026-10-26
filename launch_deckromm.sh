@@ -62,7 +62,14 @@ if [[ "$APP" == *.AppImage ]] && ! { [[ -e /dev/fuse ]] && command -v fusermount
 fi
 
 ARGS=(--no-sandbox --disable-virtual-keyboard --disable-ime)
-if [[ -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" || "${SteamGamepadUI:-}" == "1" || "${XDG_CURRENT_DESKTOP:-}" == "gamescope" ]]; then
+IS_GAME_MODE=0
+if [[ -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" || "${SteamGamepadUI:-}" == "1" || "${SteamTenfoot:-}" == "1" || "${STEAM_DECK:-}" == "1" || "${XDG_CURRENT_DESKTOP:-}" == "gamescope" ]]; then
+  IS_GAME_MODE=1
+elif [[ -f /sys/devices/virtual/dmi/id/product_name ]] && grep -qE "Jupiter|Galileo" /sys/devices/virtual/dmi/id/product_name 2>/dev/null && [[ -z "${KDE_FULL_SESSION:-}" ]]; then
+  IS_GAME_MODE=1
+fi
+
+if [[ "$IS_GAME_MODE" -eq 1 ]]; then
   # gamescope exposes an Xwayland display; X11 ozone is the reliable path.
   ARGS+=(--gamemode --ozone-platform=x11)
   log "Game Mode detected"

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Play, Sliders, ArrowUpCircle } from 'lucide-react';
+import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Play, Sliders, ArrowUpCircle, Sparkles } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { PLATFORM_AVAILABLE_CORES, RommConfig, SUPPORTED_STANDALONE_EMULATORS } from '../types';
 import { AppInfo, AuthStatus, NativeStorage } from '../env/electron';
@@ -93,6 +93,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [scanningServer, setScanningServer] = useState(false);
   const [scanStatusMsg, setScanStatusMsg] = useState('');
+  const [syncingArt, setSyncingArt] = useState(false);
+  const [artSyncMsg, setArtSyncMsg] = useState<string | null>(null);
 
   const handleTriggerScan = async (type: 'quick' | 'full' = 'quick') => {
     setScanningServer(true);
@@ -553,6 +555,38 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               />
               <Toggle label="Hide BIOS / info files" hint="Skip .txt, .nfo, .jpg and similar entries" value={config.hideInfoFiles !== false} onChange={(v) => onChange({ hideInfoFiles: v })} />
               <Toggle label="Navigation sounds" value={config.audioFeedback !== false} onChange={(v) => onChange({ audioFeedback: v })} />
+
+              <div className="pt-3 pb-1 border-t border-white/10 flex items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-white text-sm">Download All Offline Covers</div>
+                  <div className="text-xs text-deck-dim">Pre-cache box art for all downloaded games on disk so everything is visible while offline</div>
+                  {artSyncMsg && <div className="text-xs font-bold text-emerald-400 mt-1 animate-in fade-in">{artSyncMsg}</div>}
+                </div>
+                <button
+                  data-focusable
+                  onClick={async () => {
+                    soundService.playTick();
+                    setSyncingArt(true);
+                    try {
+                      const res = await rommApi.syncAllOfflineArtwork();
+                      soundService.playSuccess();
+                      setArtSyncMsg(res.message);
+                      setTimeout(() => setArtSyncMsg(null), 5000);
+                    } catch (e: any) {
+                      soundService.playBack();
+                      setArtSyncMsg(`Failed: ${e.message}`);
+                      setTimeout(() => setArtSyncMsg(null), 5000);
+                    } finally {
+                      setSyncingArt(false);
+                    }
+                  }}
+                  disabled={syncingArt}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+                >
+                  <Sparkles size={14} className={syncingArt ? 'animate-spin' : ''} />
+                  <span>{syncingArt ? 'Downloading...' : 'Sync Offline Art'}</span>
+                </button>
+              </div>
             </Section>
 
             {storage && (

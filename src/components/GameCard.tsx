@@ -25,11 +25,17 @@ const Cover: React.FC<{ game: Game; className?: string }> = ({ game, className }
   if (!game.coverUrl || failed) {
     return (
       <div
-        className={`flex flex-col items-center justify-center gap-2 p-3 text-center ${className}`}
-        style={{ background: `linear-gradient(160deg, ${accent}55, #121826 70%)` }}
+        className={`flex flex-col items-center justify-center gap-1.5 p-3 text-center relative overflow-hidden select-none ${className}`}
+        style={{ background: `linear-gradient(160deg, ${accent}44 0%, #121826 75%)` }}
       >
-        <Gamepad2 size={34} className="text-white/70" />
-        <span className="text-sm font-bold text-white/90 line-clamp-3">{game.title}</span>
+        <Gamepad2 size={32} className="text-white/70" />
+        <span className="text-xs font-bold text-white/90 line-clamp-3 leading-snug">{game.title}</span>
+        <span className="text-[10px] font-mono text-deck-accent uppercase tracking-wider">{game.platformName || game.platformSlug}</span>
+        {(game.isInstalled || game.isCached) && (
+          <span className="text-[9px] font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 rounded">
+            Local
+          </span>
+        )}
       </div>
     );
   }
@@ -49,17 +55,17 @@ const Cover: React.FC<{ game: Game; className?: string }> = ({ game, className }
 const Badges: React.FC<{ game: Game }> = ({ game }) => (
   <div className="absolute top-2 right-2 flex gap-1">
     {game.isFavorite && (
-      <span className="h-7 w-7 rounded-full bg-black/70 flex items-center justify-center">
+      <span className="h-7 w-7 rounded-full bg-black/75 flex items-center justify-center shadow">
         <Star size={15} className="text-yellow-400 fill-yellow-400" />
       </span>
     )}
     {game.isMultiFile && (
-      <span className="h-7 w-7 rounded-full bg-black/70 flex items-center justify-center" title="Multi-file / Multi-disc">
+      <span className="h-7 w-7 rounded-full bg-black/75 flex items-center justify-center shadow" title="Multi-file / Multi-disc">
         <Disc size={15} className="text-deck-accent" />
       </span>
     )}
     {(game.isInstalled || game.isCached) && (
-      <span className="h-7 w-7 rounded-full bg-black/70 flex items-center justify-center" title="Installed on this Deck">
+      <span className="h-7 w-7 rounded-full bg-black/75 flex items-center justify-center shadow" title="Installed on this Deck (Offline Ready)">
         <CheckCircle2 size={16} className="text-deck-ok" />
       </span>
     )}

@@ -46,11 +46,28 @@ const { AppUpdater } = require('./lib/appUpdater.cjs');
 // ---------------------------------------------------------------------------
 const argv = process.argv.slice(1);
 const IS_DEV = Boolean(process.env.VITE_DEV_SERVER_URL);
-const GAME_MODE =
-  argv.includes('--gamemode') ||
-  process.env.SteamGamepadUI === '1' ||
-  process.env.XDG_CURRENT_DESKTOP === 'gamescope' ||
-  Boolean(process.env.GAMESCOPE_WAYLAND_DISPLAY);
+
+function isGameModeDetected() {
+  if (
+    argv.includes('--gamemode') ||
+    process.env.SteamGamepadUI === '1' ||
+    process.env.SteamTenfoot === '1' ||
+    process.env.STEAM_DECK === '1' ||
+    process.env.XDG_CURRENT_DESKTOP === 'gamescope' ||
+    Boolean(process.env.GAMESCOPE_WAYLAND_DISPLAY)
+  ) {
+    return true;
+  }
+  try {
+    const dmi = fs.readFileSync('/sys/devices/virtual/dmi/id/product_name', 'utf8').trim();
+    if ((dmi === 'Jupiter' || dmi === 'Galileo') && !process.env.KDE_FULL_SESSION) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+const GAME_MODE = isGameModeDetected();
 const FORCE_FULLSCREEN = GAME_MODE || argv.includes('--fullscreen');
 
 // AppImages cannot ship a setuid chrome-sandbox; SteamOS has unprivileged userns
@@ -150,6 +167,7 @@ const getEmulationRoot = () => detectEmulationRoot(configStore.get().emulationPa
 const downloads = new DownloadManager({
   romm,
   getRoot: getEmulationRoot,
+  userDataDir,
   emit: (ch, payload) => {
     emit(ch, payload);
     updatePowerBlocker();
@@ -178,11 +196,9 @@ const emulators = new EmulatorManager({
   logDir: LOG_DIR,
   getBiosManager: () => bios,
   onGameStart: () => {
-    if (!mainWindow) return;
-    // Hand the screen to the emulator. In gamescope the most recently mapped
-    // window of the app is shown; hiding ours guarantees the game is in front.
-    if (GAME_MODE) mainWindow.hide();
-    else mainWindow.minimize();
+    // Unconditionally drop fullscreen grab, blur, minimize, and hide DeckRomM
+    // so Gamescope / X11 / Wayland gives exclusive front-most focus to the newly mapped emulator.
+    lowerAndHideMainWindow();
   },
   onGameEnd: (info) => {
     restoreWindow();
@@ -207,13 +223,40 @@ function updatePowerBlocker() {
   }
 }
 
+function lowerAndHideMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.setAlwaysOnTop(false);
+  } catch {}
+  try {
+    // Crucial for Xwayland/gamescope: release fullscreen grab before unmapping
+    mainWindow.setFullScreen(false);
+  } catch {}
+  try {
+    mainWindow.blur();
+  } catch {}
+  try {
+    mainWindow.minimize();
+  } catch {}
+  try {
+    // Hiding unmaps the X11 surface completely, letting Gamescope/KDE focus the newly mapped emulator
+    mainWindow.hide();
+  } catch {}
+}
+
 function restoreWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.show();
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  if (FORCE_FULLSCREEN) mainWindow.setFullScreen(true);
-  mainWindow.focus();
-  mainWindow.webContents.focus();
+  try {
+    mainWindow.show();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (FORCE_FULLSCREEN) mainWindow.setFullScreen(true);
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+    applyZoom();
+    emit('window:focus', { focused: true });
+  } catch (err) {
+    log('[window] error restoring window:', err && err.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -239,8 +282,25 @@ function registerProtocols() {
   });
 
   // romm-asset://img/?u=<path-or-url>  -> authenticated fetch + disk cache
+  // romm-asset://local-file/?p=<path>  -> local companion file stream
   protocol.handle('romm-asset', async (request) => {
-    const target = new URL(request.url).searchParams.get('u') || '';
+    const url = new URL(request.url);
+    if (url.pathname === '/local-file/' || url.pathname === '/local-file') {
+      const p = url.searchParams.get('p') || '';
+      if (!p) return new Response('Missing p', { status: 400 });
+      try {
+        const st = await fsp.stat(p);
+        if (!st.isFile()) return new Response('Not found', { status: 404 });
+        const ext = path.extname(p).toLowerCase();
+        const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : ext === '.avif' ? 'image/avif' : 'image/jpeg';
+        const buf = await fsp.readFile(p);
+        return new Response(buf, { headers: { 'Content-Type': mime, 'Cache-Control': 'max-age=31536000' } });
+      } catch (err) {
+        return new Response('File error: ' + err.message, { status: 404 });
+      }
+    }
+
+    const target = url.searchParams.get('u') || '';
     if (!target) return new Response('Missing u', { status: 400 });
     const hash = crypto.createHash('sha1').update(target).digest('hex');
     const cacheFile = path.join(COVER_CACHE_DIR, hash);
@@ -497,6 +557,8 @@ function registerIpc() {
   handle('rom:local-status', (list) => downloads.localStatus(list));
   handle('rom:delete', (req) => downloads.deleteLocal(req));
   handle('rom:list-downloaded', () => downloads.listDownloaded());
+  handle('rom:download-artwork', (req) => downloads.downloadArtwork(req));
+  handle('rom:sync-offline-artwork', () => downloads.syncAllOfflineArtwork());
   handle('rom:read', async (req) => {
     const p = downloads.localPath(req);
     const buf = await fsp.readFile(p);

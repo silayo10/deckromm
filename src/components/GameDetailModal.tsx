@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders, CloudOff } from 'lucide-react';
+import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders, CloudOff, Gamepad2 } from 'lucide-react';
 import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, getActiveCoreForGame, getStandaloneEmulatorForPlatform } from '../types';
 import { FocusScope } from './FocusScope';
 import { PlatformBadge } from './PlatformBadge';
@@ -61,8 +61,12 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   const [loadingDetails, setLoadingDetails] = useState(true);
   const [coreModalOpen, setCoreModalOpen] = useState(false);
   const [patcherOpen, setPatcherOpen] = useState(false);
+  const [coverError, setCoverError] = useState(false);
 
-  useEffect(() => setGame((g) => ({ ...g, ...initial })), [initial]);
+  useEffect(() => {
+    setGame((g) => ({ ...g, ...initial }));
+    setCoverError(false);
+  }, [initial]);
 
   useEffect(() => {
     let alive = true;
@@ -221,8 +225,29 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
       )}
       <FocusScope name="game-detail" onBack={onClose} onAction={onAction} initialFocus="#detail-primary" className="relative h-full flex gap-8 px-10 pt-8 pb-14">
         <div className="w-[300px] shrink-0 flex flex-col gap-4">
-          <div className="rounded-2xl overflow-hidden shadow-2xl aspect-[3/4] bg-deck-panel-2">
-            {game.coverUrl ? <img src={game.coverUrl} alt="" className="w-full h-full object-cover" /> : null}
+          <div className="rounded-2xl overflow-hidden shadow-2xl aspect-[3/4] bg-deck-panel-2 relative flex items-center justify-center">
+            {game.coverUrl && !coverError ? (
+              <img
+                src={game.coverUrl}
+                alt={game.title}
+                onError={() => setCoverError(true)}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div
+                className="w-full h-full flex flex-col items-center justify-center p-6 text-center gap-2.5 select-none"
+                style={{ background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)' }}
+              >
+                <Gamepad2 size={46} className="text-white/60" />
+                <span className="font-extrabold text-base text-white/90 line-clamp-3 leading-snug">{game.title}</span>
+                <span className="text-xs font-mono text-deck-accent uppercase tracking-wider">{game.platformName}</span>
+                {(installed || offlineMode) && (
+                  <span className="text-[10px] font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 rounded-full mt-1 flex items-center gap-1">
+                    <CloudOff size={11} className="text-amber-400" /> Offline Ready
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 text-sm text-deck-dim">
             <PlatformBadge platformSlug={game.platformSlug} platformName={game.platformName} size="md" />
@@ -368,7 +393,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               ) : installed ? (
                 <>
                   <Play size={20} className="fill-white" />
-                  <span>Play Game</span>
+                  <span>{offlineMode ? 'Play Offline' : 'Play Game'}</span>
                 </>
               ) : streamable ? (
                 <>

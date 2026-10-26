@@ -17,6 +17,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 
 const HOME = os.homedir();
@@ -71,19 +72,19 @@ const STANDALONE = {
   ngc: { flatpak: 'org.DolphinEmu.dolphin-emu', args: (rom) => ['-b', '-e', rom] },
   gamecube: { flatpak: 'org.DolphinEmu.dolphin-emu', args: (rom) => ['-b', '-e', rom] },
   wii: { flatpak: 'org.DolphinEmu.dolphin-emu', args: (rom) => ['-b', '-e', rom] },
-  psp: { flatpak: 'org.ppsspp.PPSSPP', args: (rom) => [rom] },
+  psp: { flatpak: 'org.ppsspp.PPSSPP', args: (rom) => ['-f', rom] },
   ps3: { flatpak: 'net.rpcs3.RPCS3', args: (rom) => ['--no-gui', rom] },
-  '3ds': { flatpak: 'io.github.lime3ds.Lime3DS', args: (rom) => [rom] },
-  n3ds: { flatpak: 'io.github.lime3ds.Lime3DS', args: (rom) => [rom] },
+  '3ds': { flatpak: 'io.github.lime3ds.Lime3DS', fallbackFlatpak: 'org.citra_emu.citra', args: (rom) => ['-f', rom] },
+  n3ds: { flatpak: 'io.github.lime3ds.Lime3DS', fallbackFlatpak: 'org.citra_emu.citra', args: (rom) => ['-f', rom] },
   wiiu: { flatpak: 'info.cemu.Cemu', args: (rom) => ['-f', '-g', rom] },
   switch: { flatpak: 'org.ryujinx.Ryujinx', args: (rom) => ['--fullscreen', rom] },
   dc: { flatpak: 'org.flycast.Flycast', args: (rom) => [rom] },
   dreamcast: { flatpak: 'org.flycast.Flycast', args: (rom) => [rom] },
   saturn: { flatpak: 'org.yabasanshiro.YabaSanshiro', args: (rom) => [rom] },
   'sega-saturn': { flatpak: 'org.yabasanshiro.YabaSanshiro', args: (rom) => [rom] },
-  xbox: { flatpak: 'app.xemu.xemu', args: (rom) => ['-dvd_path', rom] },
-  'og-xbox': { flatpak: 'app.xemu.xemu', args: (rom) => ['-dvd_path', rom] },
-  'original-xbox': { flatpak: 'app.xemu.xemu', args: (rom) => ['-dvd_path', rom] },
+  xbox: { flatpak: 'app.xemu.xemu', args: (rom) => ['-full-screen', '-dvd_path', rom] },
+  'og-xbox': { flatpak: 'app.xemu.xemu', args: (rom) => ['-full-screen', '-dvd_path', rom] },
+  'original-xbox': { flatpak: 'app.xemu.xemu', args: (rom) => ['-full-screen', '-dvd_path', rom] },
   xbox360: { flatpak: 'jp.xenia.xenia', args: (rom) => [rom] },
   'xbox-360': { flatpak: 'jp.xenia.xenia', args: (rom) => [rom] },
   x360: { flatpak: 'jp.xenia.xenia', args: (rom) => [rom] },
@@ -347,13 +348,14 @@ async function storageStats(root) {
 // ---------------------------------------------------------------------------
 class DownloadManager {
   /**
-   * @param {{ romm: import('./rommClient.cjs').RommClient, getRoot: () => string, emit: (ch: string, payload: any) => void, log: Function }} deps
+   * @param {{ romm: import('./rommClient.cjs').RommClient, getRoot: () => string, emit: (ch: string, payload: any) => void, log: Function, userDataDir?: string }} deps
    */
-  constructor({ romm, getRoot, emit, log }) {
+  constructor({ romm, getRoot, emit, log, userDataDir }) {
     this.romm = romm;
     this.getRoot = getRoot;
     this.emit = emit;
     this.log = log;
+    this.userDataDir = userDataDir;
     this.active = new Map(); // romId -> AbortController
   }
 
@@ -386,9 +388,149 @@ class DownloadManager {
   }
 
   /**
+   * Download cover and backdrop artwork alongside the ROM on disk, and populate
+   * the Electron disk cache so artwork renders instantaneously offline.
+   */
+  async downloadArtwork(req, targetRomPath) {
+    const romPath = targetRomPath || this.localPath(req);
+    const baseWithoutExt = romPath.replace(/\.[^/.]+$/, '');
+    const dir = path.dirname(romPath);
+    await fsp.mkdir(dir, { recursive: true });
+
+    let localCoverPath = null;
+    let coverUrl = req.coverUrl;
+
+    // If coverUrl is not provided directly, try looking it up from RomM
+    if (!coverUrl && req.romId && this.romm) {
+      try {
+        const enc = encodeURIComponent(String(req.romId));
+        const res = await this.romm.authedFetch(`/api/roms/${enc}`, { timeoutMs: 12000, silent: true });
+        if (res && res.ok) {
+          const romData = await res.json();
+          coverUrl = romData.path_cover_large || romData.path_cover_small || romData.url_cover;
+          if (!req.title) req.title = romData.name || romData.fs_name;
+          if (!req.summary) req.summary = romData.summary;
+          if (!req.developer && romData.metadatum?.companies) req.developer = romData.metadatum.companies[0];
+          if (!req.releaseYear && (romData.metadatum?.first_release_date || romData.first_release_date)) {
+            const rawD = romData.metadatum?.first_release_date ?? romData.first_release_date;
+            const ms = rawD > 1e11 ? rawD : rawD * 1000;
+            req.releaseYear = new Date(ms).getFullYear();
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (coverUrl) {
+      try {
+        let res = null;
+        const creds = this.romm ? this.romm.getCreds() : null;
+        const isAbsolute = /^https?:\/\//i.test(coverUrl);
+        if (isAbsolute && !(creds && coverUrl.startsWith(creds.baseUrl))) {
+          res = await fetch(coverUrl);
+        } else {
+          const rel = isAbsolute ? coverUrl.slice(creds.baseUrl.length) : coverUrl.startsWith('/') ? coverUrl : `/${coverUrl}`;
+          res = await this.romm.authedFetch(rel, { headers: { Accept: 'image/*' }, timeoutMs: 20000, silent: true });
+        }
+
+        if (res && res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer());
+          const ctype = res.headers.get('content-type') || 'image/jpeg';
+          const ext = ctype.includes('png') ? '.png' : ctype.includes('webp') ? '.webp' : '.jpg';
+
+          localCoverPath = `${baseWithoutExt}.cover${ext}`;
+          const thumbPath = `${baseWithoutExt}-thumb${ext}`;
+
+          await Promise.all([
+            fsp.writeFile(localCoverPath, buf),
+            fsp.writeFile(thumbPath, buf),
+          ]);
+
+          // Also populate the global Electron cover cache
+          if (this.userDataDir) {
+            const cacheDir = path.join(this.userDataDir, 'cache', 'covers');
+            await fsp.mkdir(cacheDir, { recursive: true });
+            const hash = crypto.createHash('sha1').update(coverUrl).digest('hex');
+            const cacheFile = path.join(cacheDir, hash);
+            await Promise.all([
+              fsp.writeFile(cacheFile, buf),
+              fsp.writeFile(`${cacheFile}.type`, ctype),
+            ]).catch(() => {});
+          }
+
+          this.log(`[artwork] saved offline cover for ${req.title || req.fileName} -> ${localCoverPath}`);
+        }
+      } catch (err) {
+        this.log(`[artwork] error downloading cover: ${err.message}`);
+      }
+    }
+
+    // Save companion metadata JSON alongside ROM
+    try {
+      const meta = {
+        romId: req.romId,
+        title: req.title || path.basename(romPath).replace(/\.[^/.]+$/, ''),
+        platformSlug: req.platformSlug,
+        fileName: req.fileName || path.basename(romPath),
+        sizeBytes: req.sizeBytes,
+        releaseYear: req.releaseYear || 0,
+        developer: req.developer || '',
+        publisher: req.publisher || '',
+        genres: req.genres || [],
+        rating: req.rating || 0,
+        summary: req.summary || '',
+        coverUrl: coverUrl || '',
+        coverPath: localCoverPath || undefined,
+        backdropUrl: req.backdropUrl || '',
+        savedAt: Date.now(),
+      };
+      await fsp.writeFile(`${baseWithoutExt}.romm.json`, JSON.stringify(meta, null, 2), 'utf8');
+    } catch {
+      /* ignore */
+    }
+
+    return { ok: Boolean(localCoverPath), coverPath: localCoverPath };
+  }
+
+  /**
+   * Scan all downloaded games on disk, identify any missing offline covers,
+   * and download/cache them so the entire offline library has artwork.
+   */
+  async syncAllOfflineArtwork() {
+    const listRes = await this.listDownloaded();
+    const items = listRes.items || [];
+    let synced = 0;
+    for (const item of items) {
+      if (!item.hasLocalArtwork) {
+        try {
+          const req = {
+            romId: item.meta?.romId || item.fileName,
+            platformSlug: item.platformSlug,
+            fileName: item.fileName,
+            title: item.meta?.title || item.fileName.replace(/\.[^/.]+$/, ''),
+            coverUrl: item.meta?.coverUrl,
+          };
+          const r = await this.downloadArtwork(req, item.fullPath);
+          if (r && r.ok) synced++;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return {
+      ok: true,
+      total: items.length,
+      downloaded: synced,
+      message: synced > 0 ? `Downloaded offline artwork for ${synced} games` : 'All downloaded games already have offline covers',
+    };
+  }
+
+  /**
    * Stream `/api/roms/{id}/content/{fileName}` to disk with progress events.
    * Writes to `<file>.part` and renames on success, so a half-finished download
    * is never mistaken for a complete ROM.
+   * Automatically downloads companion artwork and metadata for offline mode.
    */
   async download(req) {
     const romId = String(req.romId);
@@ -400,6 +542,8 @@ class DownloadManager {
       // Multi-file ROMs arrive as a zip whose size differs from fs_size_bytes, so any
       // non-empty completed file (no .part suffix) counts as present unless forced.
       if (!req.force && st.size > 0) {
+        // Ensure companion artwork is downloaded if missing
+        void this.downloadArtwork(req, target).catch(() => {});
         this.emit('rom:progress', { romId, status: 'completed', loaded: st.size, total: st.size, speedMbps: 0, path: target });
         return { ok: true, path: target, cached: true };
       }
@@ -437,6 +581,14 @@ class DownloadManager {
       await handle.close();
       handle = null;
       await fsp.rename(part, target);
+
+      // Download cover and metadata alongside the ROM for complete offline self-containment
+      try {
+        await this.downloadArtwork(req, target);
+      } catch (err) {
+        this.log(`[artwork] warning: could not download cover for ${req.fileName}: ${err.message}`);
+      }
+
       this.emit('rom:progress', { romId, status: 'completed', loaded, total: total || loaded, speedMbps: 0, path: target });
       return { ok: true, path: target };
     } catch (e) {
@@ -515,12 +667,24 @@ class DownloadManager {
   async deleteLocal(req) {
     const p = this.localPath(req);
     await fsp.rm(p, { force: true });
+    // Also remove companion artwork and metadata
+    const base = p.replace(/\.[^/.]+$/, '');
+    const cleanups = [
+      `${base}.cover.jpg`, `${base}.cover.png`, `${base}.cover.webp`,
+      `${base}-thumb.jpg`, `${base}-thumb.png`, `${base}-thumb.webp`,
+      `${base}.backdrop.jpg`, `${base}.backdrop.png`,
+      `${base}.romm.json`,
+    ];
+    for (const f of cleanups) {
+      await fsp.rm(f, { force: true }).catch(() => {});
+    }
     return { ok: true };
   }
 
   /**
    * Scan ~/Emulation/roms/ (or configured root) for all downloaded ROM files.
-   * Returns each ROM file with platform slug, file name, path, sizeBytes, and mtime.
+   * Returns each ROM file with platform slug, file name, path, sizeBytes, mtime,
+   * companion coverPath, coverUrl, hasLocalArtwork, and companion metadata.
    */
   async listDownloaded() {
     const romsRoot = path.join(this.getRoot(), 'roms');
@@ -536,17 +700,57 @@ class DownloadManager {
         try {
           const files = await fsp.readdir(subPath, { withFileTypes: true });
           for (const file of files) {
-            if (!file.isFile() || file.name.startsWith('.') || file.name.endsWith('.part')) continue;
+            if (!file.isFile() || file.name.startsWith('.')) continue;
+            // Skip companion artwork, metadata, and incomplete downloads
+            if (
+              file.name.endsWith('.part') ||
+              file.name.endsWith('.romm.json') ||
+              file.name.includes('.cover.') ||
+              file.name.includes('-thumb.') ||
+              file.name.includes('.backdrop.')
+            ) continue;
+
             const fullPath = path.join(subPath, file.name);
             const st = await fsp.stat(fullPath).catch(() => null);
             if (st && st.size > 0) {
               totalSizeBytes += st.size;
+              const baseWithoutExt = fullPath.replace(/\.[^/.]+$/, '');
+
+              // Check for companion cover
+              let coverPath = null;
+              for (const ext of ['.cover.jpg', '.cover.png', '.cover.webp', '-thumb.jpg', '-thumb.png', '.jpg', '.png']) {
+                const candidate = `${baseWithoutExt}${ext}`;
+                if (fs.existsSync(candidate)) {
+                  coverPath = candidate;
+                  break;
+                }
+              }
+
+              // Check for companion metadata JSON
+              let meta = null;
+              const jsonPath = `${baseWithoutExt}.romm.json`;
+              if (fs.existsSync(jsonPath)) {
+                try {
+                  meta = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+                } catch {
+                  /* ignore */
+                }
+              }
+
+              const coverUrl = coverPath
+                ? `romm-asset://local-file/?p=${encodeURIComponent(coverPath)}`
+                : (meta?.coverUrl || undefined);
+
               items.push({
                 platformSlug,
                 fileName: file.name,
                 fullPath,
                 sizeBytes: st.size,
                 mtime: st.mtimeMs,
+                coverPath: coverPath || undefined,
+                coverUrl,
+                hasLocalArtwork: Boolean(coverPath),
+                meta: meta || undefined,
               });
             }
           }
@@ -627,6 +831,58 @@ function childEnv() {
   return env;
 }
 
+/** Check if a flatpak app is actively running via `flatpak ps`. */
+async function isFlatpakRunning(flatpakId) {
+  if (!flatpakId || !which('flatpak')) return false;
+  try {
+    const out = await execFileP('flatpak', ['ps', '--columns=application'], 2000);
+    if (!out) return false;
+    return out.split('\n').some((line) => line.trim() === flatpakId);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensures the newly mapped emulator window gets focus and is brought to the top.
+ * Uses xdotool and/or wmctrl if present on SteamOS or Linux desktop.
+ */
+function activateEmulatorWindow(flatpakId, label) {
+  const searchTerms = [];
+  if (flatpakId) {
+    searchTerms.push(flatpakId);
+    const shortName = flatpakId.split('.').pop();
+    if (shortName && !searchTerms.includes(shortName)) searchTerms.push(shortName);
+  }
+  if (label && typeof label === 'string') {
+    const cleanLabel = label.split(' ')[0].replace(/[^a-zA-Z0-9_-]/g, '');
+    if (cleanLabel && !searchTerms.includes(cleanLabel)) {
+      searchTerms.push(cleanLabel);
+    }
+  }
+
+  const hasWmctrl = Boolean(which('wmctrl'));
+  const hasXdotool = Boolean(which('xdotool'));
+  if (!hasWmctrl && !hasXdotool) return;
+
+  const tryActivate = () => {
+    for (const term of searchTerms) {
+      if (hasWmctrl) {
+        execFileP('wmctrl', ['-x', '-a', term], 800).catch(() => {});
+        execFileP('wmctrl', ['-a', term], 800).catch(() => {});
+      }
+      if (hasXdotool) {
+        execFileP('xdotool', ['search', '--onlyvisible', '--class', term, 'windowactivate'], 800).catch(() => {});
+        execFileP('xdotool', ['search', '--onlyvisible', '--name', term, 'windowactivate'], 800).catch(() => {});
+      }
+    }
+  };
+
+  setTimeout(tryActivate, 600);
+  setTimeout(tryActivate, 1400);
+  setTimeout(tryActivate, 2600);
+}
+
 class EmulatorManager {
   /**
    * @param {{ getConfig: () => any, emit: Function, onGameStart: Function, onGameEnd: Function, log: Function, logDir: string }} deps
@@ -674,6 +930,9 @@ class EmulatorManager {
         if (flatpaks.has(sa.flatpak)) {
           return { cmd: 'flatpak', args: ['run', sa.flatpak, ...sa.args(romPath)], label: sa.flatpak, flatpakId: sa.flatpak };
         }
+        if (sa.fallbackFlatpak && flatpaks.has(sa.fallbackFlatpak)) {
+          return { cmd: 'flatpak', args: ['run', sa.fallbackFlatpak, ...sa.args(romPath)], label: sa.fallbackFlatpak, flatpakId: sa.fallbackFlatpak };
+        }
       }
     }
 
@@ -713,6 +972,9 @@ class EmulatorManager {
       const flatpaks = await installedFlatpaks();
       if (flatpaks.has(sa.flatpak)) {
         return { cmd: 'flatpak', args: ['run', sa.flatpak, ...sa.args(romPath)], label: sa.flatpak, flatpakId: sa.flatpak };
+      }
+      if (sa.fallbackFlatpak && flatpaks.has(sa.fallbackFlatpak)) {
+        return { cmd: 'flatpak', args: ['run', sa.fallbackFlatpak, ...sa.args(romPath)], label: sa.fallbackFlatpak, flatpakId: sa.fallbackFlatpak };
       }
     }
 
@@ -761,10 +1023,15 @@ class EmulatorManager {
       startedAt,
       command: resolved.label,
       flatpakId: resolved.flatpakId,
+      monitorInterval: null,
     };
 
     const finish = (code, signal, error) => {
       if (!this.current || this.current.child !== child) return;
+      if (this.current.monitorInterval) {
+        clearInterval(this.current.monitorInterval);
+        this.current.monitorInterval = null;
+      }
       try {
         fs.closeSync(out);
       } catch {
@@ -787,13 +1054,49 @@ class EmulatorManager {
       this.emit('emulator:state', info);
       this.onGameEnd(info);
     };
-    child.once('exit', (code, signal) => finish(code, signal, null));
+
+    const handleExit = async (code, signal) => {
+      if (!this.current || this.current.child !== child) return;
+      const elapsed = Date.now() - startedAt;
+      const flatpakId = resolved.flatpakId;
+
+      // If flatpak run exited cleanly in < 3500ms (e.g. flatpak daemon or sub-process handoff),
+      // verify if the flatpak application is actually still active in the background before
+      // prematurely popping DeckRomM back to the foreground.
+      if (code === 0 && elapsed < 3500 && flatpakId) {
+        const stillRunning = await isFlatpakRunning(flatpakId);
+        if (stillRunning) {
+          this.log(`[launch] initial runner exited in ${elapsed}ms, but flatpak ${flatpakId} is running. Monitoring background instance...`);
+          const interval = setInterval(async () => {
+            if (!this.current || this.current.child !== child) {
+              clearInterval(interval);
+              return;
+            }
+            const active = await isFlatpakRunning(flatpakId);
+            if (!active) {
+              clearInterval(interval);
+              this.log(`[launch] background flatpak ${flatpakId} finished.`);
+              finish(code, signal, null);
+            }
+          }, 1000);
+          if (this.current) this.current.monitorInterval = interval;
+          return;
+        }
+      }
+
+      finish(code, signal, null);
+    };
+
+    child.once('exit', (code, signal) => handleExit(code, signal));
     child.once('error', (err) => finish(null, null, err));
 
     // xdg-open returns immediately; do not hide the UI for it.
     const tracksGame = resolved.cmd !== 'xdg-open';
     this.emit('emulator:state', { running: tracksGame, romId: req.romId, title: this.current.title, command: resolved.label });
-    if (tracksGame) this.onGameStart(this.current);
+    if (tracksGame) {
+      this.onGameStart(this.current);
+      activateEmulatorWindow(resolved.flatpakId, resolved.label);
+    }
     return { ok: true, command: resolved.label, pid: child.pid };
   }
 
@@ -857,10 +1160,15 @@ class EmulatorManager {
       startedAt,
       command: label,
       flatpakId,
+      monitorInterval: null,
     };
 
     const finish = (code, signal, error) => {
       if (!this.current || this.current.child !== child) return;
+      if (this.current.monitorInterval) {
+        clearInterval(this.current.monitorInterval);
+        this.current.monitorInterval = null;
+      }
       try {
         fs.closeSync(out);
       } catch {}
@@ -870,11 +1178,41 @@ class EmulatorManager {
       this.emit('emulator:state', info);
       this.onGameEnd(info);
     };
-    child.once('exit', (code, signal) => finish(code, signal, null));
+
+    const handleExit = async (code, signal) => {
+      if (!this.current || this.current.child !== child) return;
+      const elapsed = Date.now() - startedAt;
+
+      if (code === 0 && elapsed < 3500 && flatpakId) {
+        const stillRunning = await isFlatpakRunning(flatpakId);
+        if (stillRunning) {
+          this.log(`[launch] standalone initial runner exited in ${elapsed}ms, but flatpak ${flatpakId} is running. Monitoring background instance...`);
+          const interval = setInterval(async () => {
+            if (!this.current || this.current.child !== child) {
+              clearInterval(interval);
+              return;
+            }
+            const active = await isFlatpakRunning(flatpakId);
+            if (!active) {
+              clearInterval(interval);
+              this.log(`[launch] standalone flatpak ${flatpakId} finished.`);
+              finish(code, signal, null);
+            }
+          }, 1000);
+          if (this.current) this.current.monitorInterval = interval;
+          return;
+        }
+      }
+
+      finish(code, signal, null);
+    };
+
+    child.once('exit', (code, signal) => handleExit(code, signal));
     child.once('error', (err) => finish(null, null, err));
 
     this.emit('emulator:state', { running: true, romId: null, title: this.current.title, command: label });
     this.onGameStart(this.current);
+    activateEmulatorWindow(flatpakId, label);
     return { ok: true, command: label, pid: child.pid };
   }
 
@@ -883,6 +1221,10 @@ class EmulatorManager {
     const cur = this.current;
     if (!cur) return { ok: true };
     const { pgid, child, flatpakId } = cur;
+    if (cur.monitorInterval) {
+      clearInterval(cur.monitorInterval);
+      cur.monitorInterval = null;
+    }
     const signalGroup = (sig) => {
       try {
         process.kill(-pgid, sig);

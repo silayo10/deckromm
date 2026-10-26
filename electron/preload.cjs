@@ -67,6 +67,8 @@ const api = {
     remove: invoke('rom:delete'),
     listDownloaded: invoke('rom:list-downloaded'),
     read: invoke('rom:read'),
+    downloadArtwork: invoke('rom:download-artwork'),
+    syncAllOfflineArtwork: invoke('rom:sync-offline-artwork'),
   },
   emulator: {
     launch: invoke('emulator:launch'),

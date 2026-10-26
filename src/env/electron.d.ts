@@ -67,6 +67,27 @@ export interface RomFileRequest {
   title?: string;
   force?: boolean;
   emulatorCore?: string;
+  coverUrl?: string;
+  backdropUrl?: string;
+  screenshots?: string[];
+  summary?: string;
+  developer?: string;
+  publisher?: string;
+  releaseYear?: number;
+  genres?: string[];
+  rating?: number;
+}
+
+export interface DownloadedDiskRom {
+  platformSlug: string;
+  fileName: string;
+  fullPath: string;
+  sizeBytes: number;
+  mtime: number;
+  coverPath?: string;
+  coverUrl?: string;
+  hasLocalArtwork?: boolean;
+  meta?: any;
 }
 
 export interface RomProgressEvent {
@@ -214,10 +235,12 @@ export interface DeckRommBridge {
     localStatus(list: RomFileRequest[]): Promise<Record<string, { exists: boolean; path: string; size: number }>>;
     remove(req: RomFileRequest): Promise<{ ok: boolean }>;
     listDownloaded(): Promise<{
-      items: Array<{ platformSlug: string; fileName: string; fullPath: string; sizeBytes: number; mtime: number }>;
+      items: DownloadedDiskRom[];
       totalSizeBytes: number;
       romsRoot: string;
     }>;
+    downloadArtwork(req: { romId: string | number; platformSlug: string; fileName: string; coverUrl?: string; backdropUrl?: string; title?: string }): Promise<{ ok: boolean; coverPath?: string; message?: string }>;
+    syncAllOfflineArtwork(): Promise<{ ok: boolean; total: number; downloaded: number; message: string }>;
     read(req: RomFileRequest): Promise<Uint8Array>;
   };
   emulator: {

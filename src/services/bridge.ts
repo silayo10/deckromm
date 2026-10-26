@@ -159,15 +159,17 @@ function createBrowserFallback(): DeckRommBridge {
       remove: async () => ({ ok: true }),
       listDownloaded: async () => ({
         items: [
-          { platformSlug: 'xbox', fileName: 'Halo - Combat Evolved (USA).iso', fullPath: '/home/deck/Emulation/roms/xbox/Halo - Combat Evolved (USA).iso', sizeBytes: 2450000000, mtime: Date.now() - 3600000 },
-          { platformSlug: 'xbox', fileName: 'Star Wars - Knights of the Old Republic (USA).iso', fullPath: '/home/deck/Emulation/roms/xbox/Star Wars - Knights of the Old Republic (USA).iso', sizeBytes: 3850000000, mtime: Date.now() - 7200000 },
-          { platformSlug: 'ps2', fileName: 'Shadow of the Colossus (USA).iso', fullPath: '/home/deck/Emulation/roms/ps2/Shadow of the Colossus (USA).iso', sizeBytes: 2845679616, mtime: Date.now() - 14400000 },
-          { platformSlug: 'ps2', fileName: 'Metal Gear Solid 3 - Snake Eater (USA).chd', fullPath: '/home/deck/Emulation/roms/ps2/Metal Gear Solid 3 - Snake Eater (USA).chd', sizeBytes: 4294967296, mtime: Date.now() - 28800000 },
-          { platformSlug: 'gamecube', fileName: 'Super Smash Bros. Melee (USA) (v1.02).iso', fullPath: '/home/deck/Emulation/roms/gc/Super Smash Bros. Melee (USA) (v1.02).iso', sizeBytes: 1459978240, mtime: Date.now() - 86400000 },
+          { platformSlug: 'xbox', fileName: 'Halo - Combat Evolved (USA).iso', fullPath: '/home/deck/Emulation/roms/xbox/Halo - Combat Evolved (USA).iso', sizeBytes: 2450000000, mtime: Date.now() - 3600000, coverUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co1x4k.jpg', hasLocalArtwork: true },
+          { platformSlug: 'xbox', fileName: 'Star Wars - Knights of the Old Republic (USA).iso', fullPath: '/home/deck/Emulation/roms/xbox/Star Wars - Knights of the Old Republic (USA).iso', sizeBytes: 3850000000, mtime: Date.now() - 7200000, coverUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co20ee.jpg', hasLocalArtwork: true },
+          { platformSlug: 'ps2', fileName: 'Shadow of the Colossus (USA).iso', fullPath: '/home/deck/Emulation/roms/ps2/Shadow of the Colossus (USA).iso', sizeBytes: 2845679616, mtime: Date.now() - 14400000, coverUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co1r4h.jpg', hasLocalArtwork: true },
+          { platformSlug: 'ps2', fileName: 'Metal Gear Solid 3 - Snake Eater (USA).chd', fullPath: '/home/deck/Emulation/roms/ps2/Metal Gear Solid 3 - Snake Eater (USA).chd', sizeBytes: 4294967296, mtime: Date.now() - 28800000, coverUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co1x9r.jpg', hasLocalArtwork: true },
+          { platformSlug: 'gamecube', fileName: 'Super Smash Bros. Melee (USA) (v1.02).iso', fullPath: '/home/deck/Emulation/roms/gc/Super Smash Bros. Melee (USA) (v1.02).iso', sizeBytes: 1459978240, mtime: Date.now() - 86400000, coverUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co1x76.jpg', hasLocalArtwork: true },
         ],
         totalSizeBytes: 14900625152,
         romsRoot: '/home/deck/Emulation/roms',
       }),
+      downloadArtwork: async (req: any) => ({ ok: true, coverPath: `/home/deck/Emulation/roms/${req.platformSlug}/${req.fileName}.cover.jpg`, message: 'Simulated artwork download' }),
+      syncAllOfflineArtwork: async () => ({ ok: true, total: 5, downloaded: 0, message: 'All downloaded games have offline covers' }),
       read: async () => {
         throw new Error('Not available in browser mode');
       },

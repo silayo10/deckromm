@@ -34,6 +34,8 @@ export interface DownloadedRomItem {
   sizeBytes: number;
   mtime: number;
   coverUrl?: string;
+  coverPath?: string;
+  hasLocalArtwork?: boolean;
   game?: Game;
 }
 
@@ -59,6 +61,7 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
   const [romsRoot, setRomsRoot] = useState('');
   const [storage, setStorage] = useState<NativeStorage | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncingArtwork, setSyncingArtwork] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
   const [sortBy, setSortBy] = useState<SortKey>('size-desc');
@@ -77,6 +80,28 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
       onToast(`Failed to load storage report: ${e.message}`, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSyncArtwork = async () => {
+    soundService.playTick();
+    setSyncingArtwork(true);
+    onToast('Syncing offline covers for downloaded games...', 'info');
+    try {
+      const res = await rommApi.syncAllOfflineArtwork();
+      if (res.ok) {
+        soundService.playSuccess();
+        onToast(res.message || 'Offline artwork synced!', 'ok');
+        await loadData();
+      } else {
+        soundService.playBack();
+        onToast(res.message || 'Could not sync artwork', 'error');
+      }
+    } catch (e: any) {
+      soundService.playBack();
+      onToast(`Artwork sync error: ${e.message}`, 'error');
+    } finally {
+      setSyncingArtwork(false);
     }
   };
 
@@ -335,6 +360,17 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
 
           <div className="flex items-center gap-2">
             <button
+              id="storage-sync-artwork"
+              data-focusable
+              onClick={handleSyncArtwork}
+              disabled={syncingArtwork}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-xs font-semibold text-amber-300 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              title="Download & cache missing cover art for offline play"
+            >
+              <Sparkles size={14} className={syncingArtwork ? 'animate-spin' : ''} />
+              <span>{syncingArtwork ? 'Syncing...' : 'Sync Offline Covers'}</span>
+            </button>
+            <button
               id="storage-open-folder"
               data-focusable
               onClick={handleOpenFolder}
@@ -562,7 +598,7 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Middle: Size Badge */}
+                  {/* Middle: Size Badge & Artwork Status */}
                   <div className="flex flex-col items-end shrink-0 px-2 text-right">
                     <span className="text-base font-extrabold text-white font-mono tabular-nums">
                       {formatBytes(item.sizeBytes)}
@@ -570,6 +606,15 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
                     <span className="text-[10px] text-sky-300 font-mono">
                       {pctOfRoms}% of ROMs
                     </span>
+                    {item.hasLocalArtwork || item.coverPath ? (
+                      <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
+                        <CheckCircle2 size={11} /> Offline Art
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-amber-400 font-medium mt-0.5">
+                        No Offline Art
+                      </span>
+                    )}
                   </div>
 
                   {/* Right: Actions */}

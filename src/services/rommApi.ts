@@ -907,6 +907,15 @@ class RommApiService {
       title: game.title,
       force,
       emulatorCore: chosenCore && chosenCore !== 'auto' ? chosenCore : undefined,
+      coverUrl: game.coverUrl,
+      backdropUrl: game.backdropUrl,
+      screenshots: game.screenshots,
+      summary: game.summary,
+      developer: game.developer,
+      publisher: game.publisher,
+      releaseYear: game.releaseYear,
+      genres: game.genres,
+      rating: game.rating,
     };
   }
 
@@ -945,12 +954,24 @@ class RommApiService {
       sizeBytes: number;
       mtime: number;
       coverUrl?: string;
+      coverPath?: string;
+      hasLocalArtwork?: boolean;
+      meta?: any;
       game?: Game;
     }>;
     totalSizeBytes: number;
     romsRoot: string;
     storage: NativeStorage;
   }> {
+    let cached: Game[] = [];
+    try {
+      const raw = localStorage.getItem(LIBRARY_CACHE_KEY);
+      if (raw) cached = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    const allKnown = [...cached, ...DEMO_GAMES];
+
     const [downloaded, storage, platforms] = await Promise.all([
       bridge.roms.listDownloaded().catch(() => ({ items: [], totalSizeBytes: 0, romsRoot: '' })),
       bridge.system.storage().catch(() => ({
@@ -975,17 +996,39 @@ class RommApiService {
     }
 
     const items = downloaded.items.map((file) => {
-      const match = DEMO_GAMES.find(
-        (g) => g.fileName.toLowerCase() === file.fileName.toLowerCase() ||
+      const fnLower = file.fileName.toLowerCase();
+      const match = allKnown.find(
+        (g) => (g.fileName && g.fileName.toLowerCase() === fnLower) ||
                (g.platformSlug.toLowerCase() === file.platformSlug.toLowerCase() &&
-                file.fileName.toLowerCase().includes(g.title.toLowerCase().replace(/[^a-z0-9]/g, '')))
+                fnLower.includes(g.title.toLowerCase().replace(/[^a-z0-9]/g, '')))
       );
 
-      const title = match?.title || file.fileName.replace(/\.[^/.]+$/, '').replace(/[_.]/g, ' ');
-      const platformName = platMap.get(file.platformSlug.toLowerCase()) || match?.platformName || file.platformSlug.toUpperCase();
+      const meta = file.meta || {};
+      const title = meta.title || match?.title || file.fileName.replace(/\.[^/.]+$/, '').replace(/[_.]/g, ' ');
+      const platformName = platMap.get(file.platformSlug.toLowerCase()) || meta.platformName || match?.platformName || file.platformSlug.toUpperCase();
+      const coverUrl = file.coverUrl || meta.coverUrl || match?.coverUrl;
+
+      const gameObj: Game | undefined = match
+        ? {
+            ...match,
+            title,
+            coverUrl: coverUrl || match.coverUrl,
+            backdropUrl: meta.backdropUrl || match.backdropUrl || coverUrl,
+            summary: meta.summary || match.summary || '',
+            developer: meta.developer || match.developer || '',
+            publisher: meta.publisher || match.publisher || '',
+            releaseYear: meta.releaseYear || match.releaseYear || 0,
+            genres: meta.genres || match.genres || [],
+            rating: meta.rating || match.rating || 0,
+            isInstalled: true,
+            isCached: true,
+            localPath: file.fullPath,
+            fileSizeBytes: file.sizeBytes,
+          }
+        : undefined;
 
       return {
-        id: match?.id || `${file.platformSlug}-${file.fileName}`,
+        id: meta.romId || match?.id || `${file.platformSlug}-${file.fileName}`,
         title,
         platformSlug: file.platformSlug,
         platformName,
@@ -993,8 +1036,11 @@ class RommApiService {
         fullPath: file.fullPath,
         sizeBytes: file.sizeBytes,
         mtime: file.mtime,
-        coverUrl: match?.coverUrl,
-        game: match ? { ...match, isInstalled: true, localPath: file.fullPath, fileSizeBytes: file.sizeBytes } : undefined,
+        coverUrl,
+        coverPath: file.coverPath,
+        hasLocalArtwork: Boolean(file.hasLocalArtwork || file.coverPath),
+        meta: file.meta,
+        game: gameObj,
       };
     });
 
@@ -1022,6 +1068,13 @@ class RommApiService {
     } catch {
       /* ignore */
     }
+  }
+
+  /**
+   * Scan all downloaded games and ensure their cover art is downloaded and cached locally.
+   */
+  async syncAllOfflineArtwork(): Promise<{ ok: boolean; total: number; downloaded: number; message: string }> {
+    return bridge.roms.syncAllOfflineArtwork();
   }
 
   /**
@@ -1062,8 +1115,11 @@ class RommApiService {
       const match = byFileName.get(fnLower) || byPlatformTitle.get(ptKey) || item.game;
 
       if (match) {
+        const cover = item.coverUrl || match.coverUrl || '';
         gamesMap.set(String(match.id), {
           ...match,
+          coverUrl: cover,
+          backdropUrl: item.meta?.backdropUrl || match.backdropUrl || cover,
           isInstalled: true,
           isCached: true,
           localPath: item.fullPath,
@@ -1072,24 +1128,27 @@ class RommApiService {
           isFavorite: this.favorites.has(String(match.id)),
         });
       } else {
-        const id = `offline-${item.platformSlug}-${item.fileName}`;
+        const meta = item.meta || {};
+        const id = String(meta.romId || `offline-${item.platformSlug}-${item.fileName}`);
+        const cover = item.coverUrl || meta.coverUrl || '';
         gamesMap.set(id, {
           id,
-          title: item.title,
+          title: meta.title || item.title,
           platformSlug: item.platformSlug,
           platformName: item.platformName || item.platformSlug.toUpperCase(),
-          releaseYear: 0,
-          developer: '',
-          publisher: '',
-          rating: 0,
-          summary: '',
-          coverUrl: '',
+          releaseYear: meta.releaseYear || 0,
+          developer: meta.developer || '',
+          publisher: meta.publisher || '',
+          rating: meta.rating || 0,
+          summary: meta.summary || '',
+          coverUrl: cover,
+          backdropUrl: meta.backdropUrl || cover,
           fileName: item.fileName,
           localPath: item.fullPath,
           fileSizeBytes: item.sizeBytes,
           isInstalled: true,
           isCached: true,
-          genres: [],
+          genres: meta.genres || [],
           playableOnline: false,
           isFavorite: this.favorites.has(id),
         });
