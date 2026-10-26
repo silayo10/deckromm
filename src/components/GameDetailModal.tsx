@@ -182,22 +182,26 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
     }
   };
 
-  const handlePrimaryPlay = () => {
-    if (installed) {
-      if (isNative) onLaunch(game);
-      else onPlayInBrowser(game);
-      return;
-    }
+  const [launching, setLaunching] = useState(false);
 
-    if (streamable) {
-      onPlayInBrowser(game);
-    } else {
-      // For non-streamable games, trigger seamless download & launch
-      if (isNative) {
-        onLaunch(game);
-      } else {
-        onPlayInBrowser(game);
+  const handlePrimaryPlay = async () => {
+    soundService.playSelect();
+    setLaunching(true);
+    try {
+      if (installed) {
+        if (isNative) await onLaunch(game);
+        else onPlayInBrowser(game);
+        return;
       }
+
+      if (streamable) {
+        onPlayInBrowser(game);
+      } else {
+        if (isNative) await onLaunch(game);
+        else onPlayInBrowser(game);
+      }
+    } finally {
+      setTimeout(() => setLaunching(false), 2500);
     }
   };
 
@@ -215,7 +219,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
     return a === 'PREV_PLATFORM' || a === 'NEXT_PLATFORM' || a === 'FILTER' || a === 'VIEW_MODE_TOGGLE';
   };
 
-  const btn = 'h-12 px-5 rounded-xl flex items-center gap-2 font-bold text-base border';
+  const btn = 'h-11 px-3.5 sm:px-4 rounded-xl flex items-center gap-2 font-bold text-xs sm:text-sm border whitespace-nowrap shrink-0 transition-all cursor-pointer';
   const section = 'rounded-xl p-4 bg-deck-panel/80 border border-deck-line';
 
   return (
@@ -381,28 +385,33 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
             <button
               id="detail-primary"
               data-focusable
-              disabled={emulatorRunning}
+              disabled={emulatorRunning || launching}
               onClick={handlePrimaryPlay}
-              className={`${btn} bg-deck-ok border-deck-ok text-white shadow-lg disabled:opacity-50 transition-all`}
+              className={`${btn} bg-deck-ok border-deck-ok text-white shadow-lg disabled:opacity-70 transition-all`}
             >
-              {downloading ? (
+              {launching ? (
                 <>
-                  <Loader2 size={20} className="animate-spin" />
+                  <Loader2 size={18} className="animate-spin text-white" />
+                  <span>Starting {activeCoreName}...</span>
+                </>
+              ) : downloading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
                   <span>Downloading ({Math.round(progress || 0)}%)...</span>
                 </>
               ) : installed ? (
                 <>
-                  <Play size={20} className="fill-white" />
+                  <Play size={18} className="fill-white" />
                   <span>{offlineMode ? 'Play Offline' : 'Play Game'}</span>
                 </>
               ) : streamable ? (
                 <>
-                  <Globe size={20} />
+                  <Globe size={18} />
                   <span>Play (Stream)</span>
                 </>
               ) : (
                 <>
-                  <Play size={20} className="fill-white" />
+                  <Play size={18} className="fill-white" />
                   <span>Download & Play</span>
                 </>
               )}

@@ -50,6 +50,8 @@ export interface Pcsx2MemoryCard {
   isSlot1: boolean;
   isSlot2: boolean;
   isDefault: boolean;
+  isFolder?: boolean;
+  saveCount?: number;
 }
 
 export interface Pcsx2MemcardStatus {
@@ -282,6 +284,7 @@ export interface DeckRommBridge {
   on(channel: 'auth:required', cb: (info: { status: number; message: string }) => void): Unsubscribe;
   on(channel: 'rom:progress', cb: (ev: RomProgressEvent) => void): Unsubscribe;
   on(channel: 'emulator:state', cb: (ev: EmulatorStateEvent) => void): Unsubscribe;
+  on(channel: 'emulator:launching', cb: (ev: { romId?: string | number; title?: string; command?: string; platformSlug?: string }) => void): Unsubscribe;
   on(channel: 'app:shutting-down', cb: (ev: { reason: string }) => void): Unsubscribe;
   on(channel: 'window:focus', cb: (ev: { focused: boolean }) => void): Unsubscribe;
   on(channel: 'flatpak:progress', cb: (ev: FlatpakProgressEvent) => void): Unsubscribe;

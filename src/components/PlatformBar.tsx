@@ -195,14 +195,14 @@ export const PlatformBar: React.FC<PlatformBarProps> = ({ sources, active, onSel
                     className="w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: fam.color }}
                   />
-                  <span>{displayLabel}</span>
+                  <span className="truncate max-w-[150px] sm:max-w-[210px]">{displayLabel}</span>
                   <ChevronDown
                     size={14}
-                    className={`transition-transform duration-200 opacity-70 ${isOpen ? 'rotate-180' : ''}`}
+                    className={`transition-transform duration-200 opacity-70 shrink-0 ${isOpen ? 'rotate-180' : ''}`}
                   />
                   {displayCount > 0 && (
                     <span
-                      className={`text-xs ml-0.5 tabular-nums ${
+                      className={`text-xs ml-0.5 tabular-nums shrink-0 ${
                         isFamilyActive ? 'text-deck-bg/75' : 'text-deck-dim'
                       }`}
                     >
@@ -236,9 +236,9 @@ export const PlatformBar: React.FC<PlatformBarProps> = ({ sources, active, onSel
               }`}
             >
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: fam.color }} />
-              <span>{singlePlat.name}</span>
+              <span className="truncate max-w-[150px] sm:max-w-[210px]">{singlePlat.name}</span>
               {singlePlat.gameCount != null && singlePlat.gameCount > 0 && (
-                <span className={`text-xs tabular-nums ${isSingleActive ? 'text-deck-bg/75' : 'text-deck-dim'}`}>
+                <span className={`text-xs tabular-nums shrink-0 ${isSingleActive ? 'text-deck-bg/75' : 'text-deck-dim'}`}>
                   {singlePlat.gameCount}
                 </span>
               )}

@@ -12,6 +12,7 @@ const EVENTS = new Set([
   'auth:required',
   'rom:progress',
   'emulator:state',
+  'emulator:launching',
   'app:shutting-down',
   'window:focus',
   'flatpak:progress',

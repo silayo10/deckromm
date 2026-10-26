@@ -186,7 +186,7 @@ export const Pcsx2MemcardManager: React.FC<Pcsx2MemcardManagerProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-300">
-              Upload local PS2 memory card (.ps2) to your RomM server, or restore cloud saves
+              Upload local PS2 memory card (.ps2 or folder card) to your RomM server, or restore cloud saves
             </p>
           </div>
         </div>
@@ -196,7 +196,7 @@ export const Pcsx2MemcardManager: React.FC<Pcsx2MemcardManagerProps> = ({
           <button
             data-focusable
             onClick={handleToggleAutoSync}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               status?.autoSync !== false
                 ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30'
                 : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
@@ -237,15 +237,16 @@ export const Pcsx2MemcardManager: React.FC<Pcsx2MemcardManagerProps> = ({
               {/* Select card if multiple */}
               {status.cards.length > 1 ? (
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-400">Card:</label>
+                  <label className="text-xs text-slate-400 shrink-0">Card:</label>
                   <select
                     value={selectedCard}
                     onChange={(e) => setSelectedCard(e.target.value)}
-                    className="flex-1 h-8 px-2.5 rounded-lg bg-slate-900 border border-white/20 text-xs text-white focus:outline-none focus:border-indigo-400"
+                    className="flex-1 h-8 px-2.5 rounded-lg bg-slate-900 border border-white/20 text-xs text-white focus:outline-none focus:border-indigo-400 truncate"
                   >
                     {status.cards.map((c) => (
                       <option key={c.fileName} value={c.fileName}>
-                        {c.fileName} ({formatBytes(c.sizeBytes)}) {c.isDefault ? '- Default' : ''}
+                        {c.isFolder ? '📁 ' : '💾 '}
+                        {c.fileName} ({formatBytes(c.sizeBytes)}) {c.isFolder ? `[Folder${c.saveCount ? ` - ${c.saveCount} items` : ''}]` : ''} {c.isDefault ? '- Default' : ''}
                       </option>
                     ))}
                   </select>
@@ -253,17 +254,22 @@ export const Pcsx2MemcardManager: React.FC<Pcsx2MemcardManagerProps> = ({
               ) : null}
 
               {activeCard && (
-                <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5 gap-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-sm text-white font-mono">{activeCard.fileName}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-sm text-white font-mono truncate max-w-[200px]">{activeCard.fileName}</span>
+                      {activeCard.isFolder && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center gap-1 shrink-0">
+                          <Folder size={10} /> Folder Card {activeCard.saveCount ? `(${activeCard.saveCount} saves)` : ''}
+                        </span>
+                      )}
                       {activeCard.isDefault && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 shrink-0">
                           Slot 1 (Standard)
                         </span>
                       )}
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                    <div className="text-[11px] text-slate-400 mt-0.5 font-mono truncate">
                       Size: <strong className="text-slate-200">{formatBytes(activeCard.sizeBytes)}</strong> · Modified:{' '}
                       <span className="text-slate-300">{new Date(activeCard.mtime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
                     </div>
@@ -294,7 +300,7 @@ export const Pcsx2MemcardManager: React.FC<Pcsx2MemcardManagerProps> = ({
               {lastUploaded && (
                 <div className="text-[11px] text-emerald-300 font-mono flex items-center gap-1.5 bg-emerald-950/40 p-2 rounded-lg border border-emerald-500/30">
                   <CheckCircle2 size={13} className="shrink-0" />
-                  <span>
+                  <span className="truncate">
                     Uploaded <strong>{lastUploaded.fileName}</strong> ({formatBytes(lastUploaded.size)}) at{' '}
                     {new Date(lastUploaded.time).toLocaleTimeString()}
                   </span>
@@ -304,9 +310,9 @@ export const Pcsx2MemcardManager: React.FC<Pcsx2MemcardManagerProps> = ({
           ) : (
             <div className="p-3 text-center text-xs text-slate-400 bg-white/5 rounded-lg border border-white/5 flex flex-col gap-2">
               <AlertCircle size={20} className="mx-auto text-amber-400" />
-              <span>No .ps2 memory cards found in PCSX2 directory.</span>
-              <span className="text-[11px] text-slate-500">
-                Launch any PS2 game once or open PCSX2 settings to create Mcd001.ps2.
+              <span className="font-semibold text-white">No PCSX2 memory cards or folder cards found.</span>
+              <span className="text-[11px] text-slate-400">
+                Play any PS2 game once or open PCSX2 settings to initialize your memory card or folder.
               </span>
             </div>
           )}

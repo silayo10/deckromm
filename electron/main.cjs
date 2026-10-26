@@ -187,6 +187,7 @@ const pcsx2 = new Pcsx2Manager({
   configStore,
   emit,
   log,
+  getRoot: getEmulationRoot,
 });
 
 const emulators = new EmulatorManager({
@@ -195,10 +196,21 @@ const emulators = new EmulatorManager({
   log,
   logDir: LOG_DIR,
   getBiosManager: () => bios,
-  onGameStart: () => {
-    // Unconditionally drop fullscreen grab, blur, minimize, and hide DeckRomM
-    // so Gamescope / X11 / Wayland gives exclusive front-most focus to the newly mapped emulator.
-    lowerAndHideMainWindow();
+  onGameStart: (info) => {
+    // Notify the renderer immediately so the user sees the crisp "Launching Game..." screen
+    emit('emulator:launching', {
+      romId: info?.romId,
+      title: info?.title,
+      command: info?.command,
+      platformSlug: info?.platformSlug,
+    });
+
+    // Provide a brief window (1100ms) for the loading confirmation screen to display,
+    // then cleanly drop fullscreen, blur, and hide right as the standalone emulator
+    // finishes compiling shaders and mapping its window in Gamescope.
+    setTimeout(() => {
+      lowerAndHideMainWindow();
+    }, 1100);
   },
   onGameEnd: (info) => {
     restoreWindow();

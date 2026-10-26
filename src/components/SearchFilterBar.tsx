@@ -109,15 +109,15 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   return (
     <div className="shrink-0 flex flex-col gap-2 px-5 pb-2.5">
       {/* Top Filter & Tools Row */}
-      <div data-focus-memory="filters" className="flex items-center gap-2">
+      <div data-focus-memory="filters" className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
         {offlineMode && (
           <div
             id="filter-offline-indicator"
-            className="deck-chip h-9 px-3 rounded-lg text-xs font-bold border border-amber-500/50 bg-amber-950/60 text-amber-300 flex items-center gap-1.5 shadow-sm shrink-0"
+            className="deck-chip h-9 px-2.5 rounded-lg text-xs font-bold border border-amber-500/50 bg-amber-950/60 text-amber-300 flex items-center gap-1.5 shadow-sm shrink-0 whitespace-nowrap"
             title="Offline Mode: Only showing downloaded games that can be played locally"
           >
-            <CloudOff size={13} className="text-amber-400" />
-            <span>Offline Mode • Downloaded Only</span>
+            <CloudOff size={13} className="text-amber-400 shrink-0" />
+            <span className="truncate max-w-[140px]">Offline (Installed)</span>
           </div>
         )}
 
@@ -127,7 +127,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             data-focusable
             id={`filter-${f.id}`}
             onClick={() => onFilterChange(f.id)}
-            className={`deck-chip h-9 px-3.5 rounded-lg text-sm font-semibold border transition-colors ${
+            className={`deck-chip h-9 px-2.5 sm:px-3 rounded-lg text-xs sm:text-sm font-semibold border transition-colors whitespace-nowrap shrink-0 ${
               filter === f.id
                 ? 'bg-deck-accent/25 border-deck-accent text-white shadow-sm'
                 : 'bg-transparent border-deck-line text-deck-dim hover:text-deck-text'
@@ -142,16 +142,16 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             data-focusable
             id="filter-manage-storage"
             onClick={onOpenStorage}
-            className="deck-chip h-9 px-3 rounded-lg text-xs font-bold border border-sky-400/30 bg-sky-950/40 text-sky-300 hover:text-white hover:border-sky-400/60 flex items-center gap-1.5 transition-colors"
+            className="deck-chip h-9 px-2.5 rounded-lg text-xs font-bold border border-sky-400/30 bg-sky-950/40 text-sky-300 hover:text-white hover:border-sky-400/60 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             title="View all downloaded games, file sizes, and free storage space"
           >
-            <HardDrive size={14} className="text-sky-400" />
-            <span>Storage & Space</span>
+            <HardDrive size={13} className="text-sky-400 shrink-0" />
+            <span>Storage</span>
           </button>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-sm text-deck-dim tabular-nums mr-2">
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <span className="text-xs text-deck-dim tabular-nums truncate max-w-[150px] sm:max-w-[210px] hidden sm:inline" title={isGenreActive ? `${resultCount} ${selectedGenre} games of ${totalCount}` : `${resultCount} of ${totalCount}`}>
             {loading ? 'Loading ' : ''}
             {isGenreActive ? (
               <span className="font-semibold text-deck-accent">
@@ -164,35 +164,36 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
               `${resultCount} of ${totalCount}`
             )}
             {selectedLanguage === 'no-ja' && (
-              <span className="text-amber-400 font-bold ml-1.5 text-xs">(JP hidden)</span>
+              <span className="text-amber-400 font-bold ml-1 text-xs">(JP off)</span>
             )}
             {isLangActive && selectedLanguage !== 'no-ja' && (
-              <span className="text-deck-accent font-semibold ml-1.5 text-xs">({currentLangLabel})</span>
+              <span className="text-deck-accent font-semibold ml-1 text-xs">({currentLangLabel})</span>
             )}
           </span>
           <button
             data-focusable
             onClick={nextSort}
-            className="deck-chip h-9 px-3 rounded-lg border border-deck-line bg-deck-panel text-sm font-semibold flex items-center gap-2 hover:border-deck-dim/50"
+            className="deck-chip h-9 px-2.5 rounded-lg border border-deck-line bg-deck-panel text-xs font-semibold flex items-center gap-1.5 hover:border-deck-dim/50 whitespace-nowrap shrink-0"
             title="Sort games"
           >
-            <ArrowDownAZ size={16} /> {SORTS.find((s) => s.id === sortBy)?.label}
+            <ArrowDownAZ size={14} className="shrink-0" />
+            <span className="truncate max-w-[110px]">{SORTS.find((s) => s.id === sortBy)?.label}</span>
           </button>
           <button
             data-focusable
             onClick={nextView}
-            className="deck-chip h-9 w-9 rounded-lg border border-deck-line bg-deck-panel flex items-center justify-center hover:border-deck-dim/50"
+            className="deck-chip h-9 w-9 rounded-lg border border-deck-line bg-deck-panel flex items-center justify-center hover:border-deck-dim/50 shrink-0"
             aria-label={`View: ${viewMode}`}
           >
-            <ViewIcon size={16} />
+            <ViewIcon size={15} />
           </button>
           <button
             data-focusable
             onClick={onRefresh}
-            className="deck-chip h-9 w-9 rounded-lg border border-deck-line bg-deck-panel flex items-center justify-center hover:border-deck-dim/50"
+            className="deck-chip h-9 w-9 rounded-lg border border-deck-line bg-deck-panel flex items-center justify-center hover:border-deck-dim/50 shrink-0"
             aria-label="Refresh library (X)"
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
@@ -204,19 +205,19 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
           data-focusable
           id="lang-picker-trigger"
           onClick={onOpenLanguagePicker}
-          className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
+          className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
             isLangActive
               ? 'bg-deck-accent/30 border-deck-accent text-white'
               : 'bg-deck-panel-2 border-deck-line text-deck-dim hover:text-white'
           }`}
           title="Open Language Filter Picker"
         >
-          <Globe size={13} className={isLangActive ? 'text-deck-accent' : ''} />
+          <Globe size={13} className={isLangActive ? 'text-deck-accent shrink-0' : 'shrink-0'} />
           <span>Lang:</span>
-          <span className="font-extrabold text-white">
+          <span className="font-extrabold text-white truncate max-w-[75px]">
             {currentLangLabel}
           </span>
-          <ChevronDown size={13} className="opacity-70" />
+          <ChevronDown size={12} className="opacity-70 shrink-0" />
         </button>
 
         <div className="h-4 w-px bg-deck-line/80 shrink-0 mx-0.5" />
@@ -226,19 +227,19 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
           data-focusable
           id="genre-picker-trigger"
           onClick={onOpenGenrePicker}
-          className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
+          className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
             isGenreActive
               ? 'bg-deck-accent/30 border-deck-accent text-white'
               : 'bg-deck-panel-2 border-deck-line text-deck-dim hover:text-white'
           }`}
           title="Open Genre Picker"
         >
-          <Filter size={13} className={isGenreActive ? 'text-deck-accent' : ''} />
+          <Filter size={13} className={isGenreActive ? 'text-deck-accent shrink-0' : 'shrink-0'} />
           <span>Genre:</span>
-          <span className="font-extrabold text-white">
+          <span className="font-extrabold text-white truncate max-w-[95px]">
             {isGenreActive ? selectedGenre : 'All'}
           </span>
-          <ChevronDown size={13} className="opacity-70" />
+          <ChevronDown size={12} className="opacity-70 shrink-0" />
         </button>
 
         {/* All Genres Chip */}
@@ -246,14 +247,14 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
           data-focusable
           id="genre-chip-all"
           onClick={() => onGenreChange('all')}
-          className={`deck-chip shrink-0 h-8 px-3 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+          className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
             !isGenreActive
               ? 'bg-deck-text text-deck-bg border-deck-text font-bold'
               : 'bg-deck-panel/60 border-deck-line text-deck-dim hover:text-deck-text'
           }`}
         >
-          All Genres
-          <span className={`text-[10px] tabular-nums ${!isGenreActive ? 'text-deck-bg/70' : 'text-deck-dim/70'}`}>
+          <span>All Genres</span>
+          <span className={`text-[10px] tabular-nums shrink-0 ${!isGenreActive ? 'text-deck-bg/70' : 'text-deck-dim/70'}`}>
             ({totalCount})
           </span>
         </button>
@@ -270,7 +271,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
               data-focusable
               id={`genre-chip-${g.name.toLowerCase()}`}
               onClick={() => onGenreChange(isActive ? 'all' : g.name)}
-              className={`deck-chip shrink-0 h-8 px-3 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              className={`deck-chip shrink-0 h-8 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
                 isActive
                   ? 'bg-deck-accent border-deck-accent text-white font-bold shadow-sm'
                   : isRpg
@@ -278,10 +279,10 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
                   : 'bg-deck-panel/60 border-deck-line text-deck-text hover:border-deck-dim/50'
               }`}
             >
-              <span>{icon}</span>
-              <span>{g.name}</span>
+              <span className="shrink-0">{icon}</span>
+              <span className="truncate max-w-[95px]">{g.name}</span>
               <span
-                className={`text-[10px] tabular-nums font-normal ${
+                className={`text-[10px] tabular-nums font-normal shrink-0 ${
                   isActive ? 'text-white/80' : isRpg ? 'text-purple-300/80' : 'text-deck-dim'
                 }`}
               >
@@ -296,10 +297,10 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
           <button
             data-focusable
             onClick={onOpenGenrePicker}
-            className="deck-chip shrink-0 h-8 px-2.5 rounded-lg border border-deck-line bg-deck-panel/40 text-xs font-semibold text-deck-dim hover:text-white flex items-center gap-1"
+            className="deck-chip shrink-0 h-8 px-2.5 rounded-lg border border-deck-line bg-deck-panel/40 text-xs font-semibold text-deck-dim hover:text-white flex items-center gap-1 whitespace-nowrap"
           >
             <span>More...</span>
-            <span className="text-[10px] text-deck-dim">({availableGenres.length - quickGenres.length})</span>
+            <span className="text-[10px] text-deck-dim shrink-0">({availableGenres.length - quickGenres.length})</span>
           </button>
         )}
 
@@ -311,10 +312,10 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
               onGenreChange('all');
               onLanguageChange('all');
             }}
-            className="deck-chip shrink-0 h-8 px-2.5 rounded-lg border border-red-900/50 bg-red-950/20 text-xs font-bold text-red-300 hover:bg-red-900/30 flex items-center gap-1 ml-1"
+            className="deck-chip shrink-0 h-8 px-2.5 rounded-lg border border-red-900/50 bg-red-950/20 text-xs font-bold text-red-300 hover:bg-red-900/30 flex items-center gap-1 ml-1 whitespace-nowrap"
             title="Clear active filters"
           >
-            <X size={13} />
+            <X size={13} className="shrink-0" />
             <span>Clear</span>
           </button>
         )}

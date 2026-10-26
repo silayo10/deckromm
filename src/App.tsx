@@ -1,6 +1,6 @@
 import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Square, CloudOff } from 'lucide-react';
-import { Collection, DownloadItem, FilterTag, Game, LibraryViewMode, NavigationAction, Platform, RommConfig, SortOption, matchGameGenre, normalizeGenre } from './types';
+import { Collection, DownloadItem, FilterTag, Game, LibraryViewMode, NavigationAction, Platform, RommConfig, SortOption, matchGameGenre, normalizeGenre, getActiveCoreForGame, PLATFORM_AVAILABLE_CORES } from './types';
 import { AuthStatus, EmulatorStateEvent, RomProgressEvent } from './env/electron';
 import { rommApi } from './services/rommApi';
 import { bridge, isNativeApp } from './services/bridge';
@@ -31,6 +31,7 @@ import { StandaloneEmulatorsModal } from './components/StandaloneEmulatorsModal'
 import { BiosManagerModal } from './components/BiosManagerModal';
 import { StorageManagerModal } from './components/StorageManagerModal';
 import { UpdateManagerModal } from './components/UpdateManagerModal';
+import { LaunchingOverlay } from './components/LaunchingOverlay';
 import { AppUpdateInfo } from './types';
 
 interface KeyboardRequest {
@@ -112,6 +113,7 @@ export default function App() {
   const [keyboard, setKeyboard] = useState<KeyboardRequest | null>(null);
   const [downloads, setDownloads] = useState<Record<string, DownloadItem>>({});
   const [emulator, setEmulator] = useState<EmulatorStateEvent>({ running: false });
+  const [launchingGame, setLaunchingGame] = useState<{ game: Game; emulatorName?: string } | null>(null);
   const [exiting, setExiting] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -264,8 +266,15 @@ export default function App() {
     const offEmu = bridge.on('emulator:state', (ev) => {
       setEmulator(ev);
       gamepadService.setSuspended(ev.running);
+      if (!ev.running) {
+        setLaunchingGame(null);
+      }
       if (!ev.running && ev.error) toast(`Emulator error: ${ev.error}`, 'error');
       else if (!ev.running && ev.title) toast(`Finished playing ${ev.title}`, 'info');
+    });
+
+    const offLaunching = bridge.on('emulator:launching', () => {
+      // Confirmed emulator launching in main process
     });
 
     // Desktop mode: if the user alt-tabs back while a game runs, allow "Stop game".
@@ -292,6 +301,7 @@ export default function App() {
     return () => {
       offProgress();
       offEmu();
+      offLaunching();
       offFocus();
       offQuit();
       offUpdate();
@@ -672,15 +682,28 @@ export default function App() {
       playInBrowser(game);
       return;
     }
-    toast(game.isInstalled ? `Starting ${game.title}` : `Downloading ${game.title} before launch`);
-    const r = await rommApi.launchNative(game);
-    if (r.success) {
-      handlePlayed(game, new Date().toISOString());
-      patchGame(game.id, { isInstalled: true });
-      // Record the play on RomM so Recently Played matches on every device.
-      markPlayed(game).then((ts) => ts && handlePlayed(game, ts));
-    } else {
-      toast(r.message, 'error');
+    const coreId = getActiveCoreForGame(game, config);
+    const coreObj = (PLATFORM_AVAILABLE_CORES[game.platformSlug] || []).find((c) => c.id === coreId);
+    const coreName = coreObj ? coreObj.name : coreId.toUpperCase();
+
+    soundService.playSelect();
+    setLaunchingGame({ game, emulatorName: coreName });
+    toast(game.isInstalled ? `Starting ${game.title} with ${coreName}` : `Downloading ${game.title} before launch`);
+
+    try {
+      const r = await rommApi.launchNative(game);
+      if (r.success) {
+        handlePlayed(game, new Date().toISOString());
+        patchGame(game.id, { isInstalled: true });
+        // Record the play on RomM so Recently Played matches on every device.
+        markPlayed(game).then((ts) => ts && handlePlayed(game, ts));
+      } else {
+        setLaunchingGame(null);
+        toast(r.message, 'error');
+      }
+    } catch (e: any) {
+      setLaunchingGame(null);
+      toast(e.message || 'Launch error', 'error');
     }
   };
 
@@ -1200,6 +1223,14 @@ export default function App() {
       />
 
       {playingGame && <WebEmulatorModal key={String(playingGame.id)} game={playingGame} onClose={closeBrowserPlayer} onLaunchNative={handleLaunch} onPlayed={handlePlayed} />}
+
+      {launchingGame && (
+        <LaunchingOverlay
+          game={launchingGame.game}
+          emulatorName={launchingGame.emulatorName}
+          onCancel={() => setLaunchingGame(null)}
+        />
+      )}
 
       <div className="fixed top-20 right-5 z-[300] flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
