@@ -992,6 +992,9 @@ export default function App() {
             setBiosModalOpen(true);
           }}
           onToast={toast}
+          allGames={games}
+          onSelectGame={(g) => setSelectedGame(g)}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
 

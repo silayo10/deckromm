@@ -39,6 +39,7 @@ export interface Game {
   players?: number | string;
   igdbId?: number;
   mobyId?: number;
+  raId?: number;
   isFavorite?: boolean;
   isCached?: boolean;
   lastPlayed?: string;
@@ -52,6 +53,35 @@ export interface Game {
   isMultiFile?: boolean;
   tags?: string[];
   files?: Array<{ id: number | string; fileName: string; fileSizeBytes: number; path?: string }>;
+}
+
+export interface RetroAchievement {
+  id: number;
+  title: string;
+  description: string;
+  points: number;
+  badgeUrl: string;
+  badgeName?: string;
+  unlocked: boolean;
+  unlockedDate?: string;
+  hardcore?: boolean;
+  type?: 'progression' | 'win_condition' | 'missable' | 'standard';
+}
+
+export interface RetroAchievementsGameSummary {
+  gameId: number | string;
+  title: string;
+  consoleName: string;
+  iconUrl?: string;
+  numAchievements: number;
+  numUnlocked: number;
+  pointsTotal: number;
+  pointsEarned: number;
+  hardcorePointsEarned: number;
+  achievements: RetroAchievement[];
+  hardcoreMode: boolean;
+  mastered: boolean;
+  userRank?: string;
 }
 
 export type LibraryViewMode = 'grid' | 'hero' | 'table';
@@ -110,6 +140,10 @@ export interface RommConfig {
   /** @deprecated all RomM traffic is proxied by the Electron main process now */
   useProxy?: boolean;
   offlineOnlyMode?: boolean;
+  // RetroAchievements
+  raUsername?: string;
+  raApiKey?: string;
+  raHardcoreOnly?: boolean;
 }
 
 export interface Collection {

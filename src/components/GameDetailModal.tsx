@@ -8,6 +8,8 @@ import { rommApi } from '../services/rommApi';
 import { CoreSelectorModal } from './CoreSelectorModal';
 import { RomPatcherModal } from './RomPatcherModal';
 import { Pcsx2MemcardManager } from './Pcsx2MemcardManager';
+import { RetroAchievementsPanel } from './RetroAchievementsPanel';
+import { RelatedGamesSection } from './RelatedGamesSection';
 import { bridge, isNativeApp } from '../services/bridge';
 import { soundService } from '../services/soundService';
 
@@ -30,6 +32,9 @@ interface GameDetailModalProps {
   onSelectGenre?: (genre: string) => void;
   onOpenBiosModal?: (platformSlug?: string) => void;
   onToast?: (msg: string, tone?: 'ok' | 'error' | 'info') => void;
+  allGames?: Game[];
+  onSelectGame?: (game: Game) => void;
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -56,6 +61,9 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   onSelectGenre,
   onOpenBiosModal,
   onToast,
+  allGames,
+  onSelectGame,
+  onOpenSettings,
 }) => {
   const [game, setGame] = useState<Game>(initial);
   const [loadingDetails, setLoadingDetails] = useState(true);
@@ -268,7 +276,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
           </div>
         </div>
 
-        <div data-scroll-primary className="deck-scroll flex-1 min-w-0 px-4 pt-1 pb-10">
+        <div id="game-detail-scroll-container" data-scroll-primary className="deck-scroll flex-1 min-w-0 px-4 pt-1 pb-10">
           <div className="flex items-start justify-between gap-4">
             <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight text-white tracking-tight">{game.title}</h1>
             <button data-focusable onClick={onClose} className="h-10 w-10 shrink-0 rounded-xl bg-deck-panel-2 hover:bg-white/10 border border-deck-line flex items-center justify-center text-deck-dim hover:text-white transition-colors" aria-label="Close (B)">
@@ -689,6 +697,28 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
                   </div>
                 ))}
             </section>
+
+            {/* RetroAchievements Integration */}
+            <RetroAchievementsPanel
+              game={game}
+              config={config}
+              onOpenSettings={onOpenSettings}
+              onToast={onToast}
+            />
+
+            {/* Other Games in the Series & Similar Games We Have */}
+            <RelatedGamesSection
+              currentGame={game}
+              allGames={allGames || []}
+              onSelectGame={(selected) => {
+                setGame(selected);
+                onSelectGame?.(selected);
+                const container = document.getElementById('game-detail-scroll-container');
+                if (container) {
+                  container.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+            />
 
             {game.screenshots && game.screenshots.length > 0 && (
               <section className={section}>

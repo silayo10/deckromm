@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Play, Sliders, ArrowUpCircle, Sparkles } from 'lucide-react';
+import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Play, Sliders, ArrowUpCircle, Sparkles, Trophy, Key } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { PLATFORM_AVAILABLE_CORES, RommConfig, SUPPORTED_STANDALONE_EMULATORS } from '../types';
 import { AppInfo, AuthStatus, NativeStorage } from '../env/electron';
 import { bridge, isNativeApp } from '../services/bridge';
 import { soundService } from '../services/soundService';
 import { rommApi } from '../services/rommApi';
+import { retroAchievementsService } from '../services/retroAchievementsService';
 import { formatBytes } from './GameCard';
 import { CoreSelectorModal } from './CoreSelectorModal';
 import { Pcsx2MemcardManager } from './Pcsx2MemcardManager';
@@ -95,6 +96,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [scanStatusMsg, setScanStatusMsg] = useState('');
   const [syncingArt, setSyncingArt] = useState(false);
   const [artSyncMsg, setArtSyncMsg] = useState<string | null>(null);
+
+  const [testingRa, setTestingRa] = useState(false);
+  const [raStatusMsg, setRaStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const handleTestRa = async () => {
+    if (!config.raUsername) {
+      setRaStatusMsg({ text: 'Please enter your RetroAchievements username.', ok: false });
+      return;
+    }
+    soundService.playTick();
+    setTestingRa(true);
+    setRaStatusMsg(null);
+    const res = await retroAchievementsService.testCredentials(config.raUsername || '', config.raApiKey || '');
+    if (res.ok) {
+      soundService.playSuccess();
+      setRaStatusMsg({ text: res.message, ok: true });
+      onToast?.(res.message, 'ok');
+    } else {
+      soundService.playBack();
+      setRaStatusMsg({ text: res.message, ok: false });
+      onToast?.(res.message, 'error');
+    }
+    setTestingRa(false);
+  };
 
   const handleTriggerScan = async (type: 'quick' | 'full' = 'quick') => {
     setScanningServer(true);
@@ -586,6 +611,89 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <Sparkles size={14} className={syncingArt ? 'animate-spin' : ''} />
                   <span>{syncingArt ? 'Downloading...' : 'Sync Offline Art'}</span>
                 </button>
+              </div>
+            </Section>
+
+            <Section icon={<Trophy size={16} />} title="RetroAchievements">
+              <div className="p-4 rounded-xl bg-deck-panel/70 flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-400/30">
+                      <Trophy size={18} />
+                    </div>
+                    <div>
+                      <div className="font-bold text-white text-sm">RetroAchievements Profile</div>
+                      <div className="text-xs text-deck-dim">Link your account to track trophies, badges, and hardcore points</div>
+                    </div>
+                  </div>
+                  {config.raUsername && (
+                    <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5">
+                      <CheckCircle2 size={13} /> Linked
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <label className="block text-deck-dim mb-1 text-xs font-semibold">RA Username:</label>
+                    <input
+                      id="settings-ra-username"
+                      data-focusable
+                      type="text"
+                      value={config.raUsername || ''}
+                      onChange={(e) => onChange({ raUsername: e.target.value.trim() || undefined })}
+                      placeholder="e.g. RetroDeckPlayer"
+                      data-keyboard-title="RetroAchievements Username"
+                      data-keyboard-mode="text"
+                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs focus:border-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-deck-dim mb-1 text-xs font-semibold">Web API Key (from retroachievements.org/settings):</label>
+                    <input
+                      id="settings-ra-key"
+                      data-focusable
+                      type="password"
+                      value={config.raApiKey || ''}
+                      onChange={(e) => onChange({ raApiKey: e.target.value.trim() || undefined })}
+                      placeholder="Enter Web API Key..."
+                      data-keyboard-title="RetroAchievements Web API Key"
+                      data-keyboard-mode="text"
+                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs focus:border-amber-400"
+                    />
+                  </div>
+                </div>
+
+                <Toggle
+                  label="Hardcore Mode Only"
+                  hint="Enforce official hardcore rules: disables in-game save states, rewind, and cheats"
+                  value={config.raHardcoreOnly !== false}
+                  onChange={(v) => onChange({ raHardcoreOnly: v })}
+                />
+
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    data-focusable
+                    id="settings-test-ra"
+                    onClick={handleTestRa}
+                    disabled={testingRa}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {testingRa ? <Loader2 size={14} className="animate-spin" /> : <Trophy size={14} />}
+                    <span>{testingRa ? 'Verifying...' : 'Test Connection'}</span>
+                  </button>
+
+                  {raStatusMsg && (
+                    <span
+                      className={`text-xs font-semibold flex items-center gap-1.5 ${
+                        raStatusMsg.ok ? 'text-emerald-400' : 'text-red-400'
+                      }`}
+                    >
+                      {raStatusMsg.ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                      {raStatusMsg.text}
+                    </span>
+                  )}
+                </div>
               </div>
             </Section>
 

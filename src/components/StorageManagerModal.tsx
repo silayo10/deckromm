@@ -14,6 +14,10 @@ import {
   Layers,
   Gamepad2,
   Sparkles,
+  CheckSquare,
+  Square,
+  Check,
+  ListChecks,
 } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { Game } from '../types';
@@ -67,6 +71,10 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
   const [sortBy, setSortBy] = useState<SortKey>('size-desc');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
   const [deletingId, setDeletingId] = useState<string | number | null>(null);
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -109,6 +117,9 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
     if (isOpen) {
       loadData();
       setDeleteConfirmId(null);
+      setIsMultiSelect(false);
+      setSelectedIds(new Set());
+      setBulkDeleteConfirmOpen(false);
     }
   }, [isOpen]);
 
@@ -230,6 +241,106 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
     }
   };
 
+  const selectedBytesTotal = useMemo(() => {
+    return items
+      .filter((i) => selectedIds.has(i.id))
+      .reduce((sum, curr) => sum + curr.sizeBytes, 0);
+  }, [items, selectedIds]);
+
+  const allVisibleSelected = useMemo(() => {
+    if (displayItems.length === 0) return false;
+    return displayItems.every((i) => selectedIds.has(i.id));
+  }, [displayItems, selectedIds]);
+
+  const toggleSelectItem = (id: string | number) => {
+    soundService.playTick();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    soundService.playTick();
+    if (allVisibleSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        displayItems.forEach((i) => next.delete(i.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        displayItems.forEach((i) => next.add(i.id));
+        return next;
+      });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    soundService.playTick();
+    setBulkDeleting(true);
+    setBulkDeleteConfirmOpen(false);
+
+    const itemsToDelete = items.filter((i) => selectedIds.has(i.id));
+    let deletedCount = 0;
+    let freedBytes = 0;
+    const remainingItems = [...items];
+
+    for (const item of itemsToDelete) {
+      try {
+        const reqGame: Game = item.game || {
+          id: item.id,
+          title: item.title,
+          platformSlug: item.platformSlug,
+          platformName: item.platformName,
+          fileName: item.fileName,
+          fileSizeBytes: item.sizeBytes,
+          releaseYear: 2000,
+          developer: '',
+          publisher: '',
+          genres: [],
+          rating: 0,
+          summary: '',
+          coverUrl: item.coverUrl || '',
+        };
+
+        const res = await bridge.roms.remove({
+          romId: reqGame.id,
+          platformSlug: reqGame.platformSlug,
+          fileName: reqGame.fileName,
+        });
+
+        if (res.ok) {
+          deletedCount++;
+          freedBytes += item.sizeBytes;
+          onGameDeleted?.(item.id);
+          const idx = remainingItems.findIndex((r) => String(r.id) === String(item.id));
+          if (idx !== -1) remainingItems.splice(idx, 1);
+        }
+      } catch (e) {
+        console.error('Failed to delete item in bulk', item.title, e);
+      }
+    }
+
+    setItems(remainingItems);
+    setTotalSizeBytes((prev) => Math.max(0, prev - freedBytes));
+    setSelectedIds(new Set());
+    setIsMultiSelect(false);
+    setBulkDeleting(false);
+
+    if (deletedCount > 0) {
+      soundService.playSuccess();
+      onToast(`Deleted ${deletedCount} games and freed ${formatBytes(freedBytes)}`, 'ok');
+    } else {
+      soundService.playBack();
+      onToast('Could not delete selected games', 'error');
+    }
+  };
+
   const handleLaunch = (item: DownloadedRomItem) => {
     soundService.playSelect();
     const gameToLaunch: Game = item.game || {
@@ -297,15 +408,48 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
         initialFocus="[data-item-id]"
         onBack={onClose}
         onAction={(a) => {
+          if (bulkDeleteConfirmOpen) {
+            if (a === 'BACK') {
+              setBulkDeleteConfirmOpen(false);
+              return true;
+            }
+            return false;
+          }
           if (a === 'BACK') {
             if (deleteConfirmId !== null) {
               setDeleteConfirmId(null);
               return true;
             }
+            if (isMultiSelect) {
+              if (selectedIds.size > 0) {
+                setSelectedIds(new Set());
+              } else {
+                setIsMultiSelect(false);
+              }
+              return true;
+            }
             onClose();
             return true;
           }
+          if (a === 'ACTION_Y') {
+            soundService.playTick();
+            if (isMultiSelect) {
+              toggleSelectAll();
+            } else {
+              setIsMultiSelect(true);
+            }
+            return true;
+          }
           if (a === 'ACTION_X') {
+            if (isMultiSelect) {
+              if (selectedIds.size > 0) {
+                soundService.playTick();
+                setBulkDeleteConfirmOpen(true);
+              } else {
+                onToast('Select at least one game to delete', 'info');
+              }
+              return true;
+            }
             const cur = focusManager.getCurrent();
             const itemId = cur?.getAttribute('data-item-id') || cur?.closest('[data-item-id]')?.getAttribute('data-item-id');
             if (itemId) {
@@ -325,6 +469,10 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
           if (a === 'SELECT') {
             const cur = focusManager.getCurrent();
             const itemId = cur?.getAttribute('data-item-id') || cur?.closest('[data-item-id]')?.getAttribute('data-item-id');
+            if (isMultiSelect && itemId) {
+              toggleSelectItem(itemId);
+              return true;
+            }
             if (itemId && String(deleteConfirmId) === String(itemId)) {
               // Pressing A confirms delete when in delete confirmation state
               const target = displayItems.find((i) => String(i.id) === String(itemId));
@@ -518,18 +666,93 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
             })}
           </div>
 
-          {/* Sort button */}
-          <button
-            id="storage-sort-btn"
-            data-focusable
-            onClick={cycleSort}
-            className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-bold text-white flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Cycle sort order"
-          >
-            <ArrowUpDown size={13} className="text-sky-400" />
-            <span>Sort: {sortLabel[sortBy]}</span>
-          </button>
+          {/* Controls: Sort and Multi-Select */}
+          <div className="flex items-center gap-2">
+            <button
+              id="storage-sort-btn"
+              data-focusable
+              onClick={cycleSort}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-bold text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Cycle sort order"
+            >
+              <ArrowUpDown size={13} className="text-sky-400" />
+              <span>Sort: {sortLabel[sortBy]}</span>
+            </button>
+
+            <button
+              id="storage-toggle-multiselect"
+              data-focusable
+              onClick={() => {
+                soundService.playTick();
+                setIsMultiSelect((prev) => {
+                  const next = !prev;
+                  if (!next) setSelectedIds(new Set());
+                  return next;
+                });
+              }}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isMultiSelect
+                  ? 'bg-sky-500 border-sky-400 text-white shadow-md ring-1 ring-sky-300/50'
+                  : 'bg-white/10 hover:bg-white/20 border-white/10 text-slate-200 hover:text-white'
+              }`}
+              title="Select multiple games to delete together (Y button)"
+            >
+              <ListChecks size={14} className={isMultiSelect ? 'text-white' : 'text-sky-400'} />
+              <span>{isMultiSelect ? 'Selection Active' : 'Multi-Select'}</span>
+              <span className="text-[10px] px-1 rounded bg-black/40 font-mono text-slate-300">Y</span>
+            </button>
+          </div>
         </div>
+
+        {/* Multi-Select Action Bar (when active) */}
+        {isMultiSelect && (
+          <div className="px-6 py-2.5 bg-sky-950/80 border-b border-sky-400/40 flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <span className="font-extrabold text-white flex items-center gap-1.5">
+                <CheckSquare size={16} className="text-sky-400" />
+                <span>{selectedIds.size} of {displayItems.length} Selected</span>
+              </span>
+              <span className="text-sky-300 font-mono font-bold">
+                ({formatBytes(selectedBytesTotal)} to free)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                id="storage-select-all"
+                data-focusable
+                onClick={toggleSelectAll}
+                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 font-bold text-white transition-colors"
+              >
+                {allVisibleSelected ? 'Deselect All' : 'Select All (Y)'}
+              </button>
+
+              <button
+                id="storage-bulk-delete"
+                data-focusable
+                disabled={selectedIds.size === 0 || bulkDeleting}
+                onClick={() => setBulkDeleteConfirmOpen(true)}
+                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed font-extrabold text-white flex items-center gap-1.5 shadow transition-all active:scale-95"
+              >
+                <Trash2 size={14} />
+                <span>Delete Selected ({selectedIds.size}) (X)</span>
+              </button>
+
+              <button
+                id="storage-exit-multiselect"
+                data-focusable
+                onClick={() => {
+                  soundService.playTick();
+                  setIsMultiSelect(false);
+                  setSelectedIds(new Set());
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 font-semibold"
+              >
+                Exit Selection (B)
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Main List */}
         <div data-scroll-primary className="deck-scroll flex-1 p-6 overflow-y-auto space-y-2.5 min-h-0">
@@ -552,6 +775,7 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
             displayItems.map((item, idx) => {
               const isConfirming = deleteConfirmId === item.id;
               const isDeleting = deletingId === item.id;
+              const isSelected = selectedIds.has(item.id);
               const pctOfRoms = totalSizeBytes > 0 ? ((item.sizeBytes / totalSizeBytes) * 100).toFixed(1) : '0';
 
               return (
@@ -560,15 +784,39 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
                   data-focusable
                   data-item-id={item.id}
                   id={`storage-item-${item.id}`}
-                  onClick={() => !isConfirming && handleLaunch(item)}
+                  onClick={() => {
+                    if (isMultiSelect) {
+                      toggleSelectItem(item.id);
+                    } else if (!isConfirming) {
+                      handleLaunch(item);
+                    }
+                  }}
                   className={`p-3 rounded-xl border flex items-center justify-between gap-4 transition-all cursor-pointer ${
-                    isConfirming
+                    isSelected
+                      ? 'bg-sky-950/40 border-sky-400 shadow-md ring-1 ring-sky-400/50'
+                      : isConfirming
                       ? 'bg-red-950/40 border-red-500/50 shadow-lg'
                       : 'bg-white/5 hover:bg-white/10 border-white/10'
                   }`}
                 >
-                  {/* Left: Thumbnail & Info */}
+                  {/* Left: Checkbox (in multi-select) & Thumbnail & Info */}
                   <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                    {isMultiSelect && (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelectItem(item.id);
+                        }}
+                        className={`w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? 'bg-sky-500 border-sky-400 text-white shadow-sm'
+                            : 'bg-white/5 border-white/20 text-transparent hover:border-sky-400'
+                        }`}
+                      >
+                        <Check size={14} className={isSelected ? 'opacity-100' : 'opacity-0'} />
+                      </div>
+                    )}
+
                     {item.coverUrl ? (
                       <img
                         src={item.coverUrl}
@@ -619,7 +867,17 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
 
                   {/* Right: Actions */}
                   <div className="flex items-center gap-2 shrink-0">
-                    {isConfirming ? (
+                    {isMultiSelect ? (
+                      <span
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-colors ${
+                          isSelected
+                            ? 'bg-sky-500/20 border-sky-400/40 text-sky-300'
+                            : 'bg-white/5 border-white/10 text-slate-400'
+                        }`}
+                      >
+                        {isSelected ? '✓ Selected' : 'Tap A to Select'}
+                      </span>
+                    ) : isConfirming ? (
                       <div
                         className="flex items-center gap-2 bg-red-950/80 p-1.5 rounded-xl border border-red-500/60 shadow-lg animate-in fade-in"
                         onClick={(e) => e.stopPropagation()}
@@ -695,6 +953,56 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
           )}
         </div>
 
+        {/* Bulk Delete Confirmation Dialog */}
+        {bulkDeleteConfirmOpen && (
+          <div className="fixed inset-0 z-[240] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-[#131a26] border border-red-500/50 rounded-2xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+              <div className="flex items-center gap-3 text-red-400">
+                <div className="p-2.5 rounded-xl bg-red-500/20 border border-red-500/40">
+                  <Trash2 size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-white">Delete {selectedIds.size} Games?</h3>
+                  <p className="text-xs text-red-200">
+                    Permanently frees <strong className="text-white font-mono">{formatBytes(selectedBytesTotal)}</strong> of storage on this Steam Deck.
+                  </p>
+                </div>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1 p-2 rounded-xl bg-black/50 border border-white/5 text-xs text-slate-300 font-mono">
+                {items
+                  .filter((i) => selectedIds.has(i.id))
+                  .map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-2 py-0.5">
+                      <span className="truncate">{item.title}</span>
+                      <span className="text-slate-400 shrink-0 font-bold">{formatBytes(item.sizeBytes)}</span>
+                    </div>
+                  ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  data-focusable
+                  onClick={() => setBulkDeleteConfirmOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-bold transition-colors"
+                >
+                  Cancel (B)
+                </button>
+                <button
+                  id="confirm-bulk-delete-btn"
+                  data-focusable
+                  disabled={bulkDeleting}
+                  onClick={handleBulkDelete}
+                  className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-extrabold shadow-lg transition-transform active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Trash2 size={14} />
+                  <span>{bulkDeleting ? 'Deleting...' : `Confirm Delete (${selectedIds.size})`}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="px-6 py-3 border-t border-white/10 bg-black/50 flex items-center justify-between text-xs text-slate-400 font-mono">
           <div className="flex items-center gap-2">
@@ -702,7 +1010,19 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
             <span>All files are stored in <code className="text-slate-300">~/Emulation/roms/&lt;platform&gt;</code></span>
           </div>
           <div className="flex items-center gap-4">
-            {deleteConfirmId !== null ? (
+            {bulkDeleteConfirmOpen ? (
+              <>
+                <span className="text-red-400 font-bold">Press <b className="text-white">A</b> to Confirm Delete</span>
+                <span><b className="text-white">B</b> Cancel</span>
+              </>
+            ) : isMultiSelect ? (
+              <>
+                <span><b className="text-white">A</b> Toggle Selection</span>
+                <span><b className="text-white">Y</b> {allVisibleSelected ? 'Deselect All' : 'Select All'}</span>
+                <span><b className="text-white">X</b> Delete Selected ({selectedIds.size})</span>
+                <span><b className="text-white">B</b> Exit Selection</span>
+              </>
+            ) : deleteConfirmId !== null ? (
               <>
                 <span className="text-red-400 font-bold">Press <b className="text-white">A</b> or <b className="text-white">X</b> to Confirm Delete</span>
                 <span><b className="text-white">B</b> Cancel</span>
@@ -711,6 +1031,7 @@ export const StorageManagerModal: React.FC<StorageManagerModalProps> = ({
               <>
                 <span><b className="text-white">A</b> Play</span>
                 <span><b className="text-white">X</b> Delete</span>
+                <span><b className="text-white">Y</b> Multi-Select</span>
                 <span><b className="text-white">B</b> Back</span>
               </>
             )}
