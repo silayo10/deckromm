@@ -257,6 +257,7 @@ export interface DeckRommBridge {
     selectDirectory(): Promise<string | null>;
     flatpakStatus(flatpakIds?: string[]): Promise<{ flatpakAvailable: boolean; installed: Record<string, boolean> }>;
     installFlatpak(flatpakId: string): Promise<{ ok: boolean; message?: string }>;
+    detectRetroAchievements(): Promise<{ found: boolean; source?: string; username?: string; token?: string }>;
   };
   bios: {
     list(): Promise<Array<{ fileName: string; relativePath: string; fullPath: string; sizeBytes: number; mtime: number }>>;

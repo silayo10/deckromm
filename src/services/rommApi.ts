@@ -1287,6 +1287,125 @@ class RommApiService {
   async setPcsx2AutoSync(enabled: boolean): Promise<{ ok: boolean; autoSync: boolean }> {
     return bridge.pcsx2.setAutoSync(enabled);
   }
+
+  /**
+   * Auto-detect RetroAchievements settings from the RomM server and local Steam Deck emulators.
+   * If RomM has RETROACHIEVEMENTS_API_KEY set on the server, RomM handles all API calls
+   * server-side, so the user doesn't need to manually type their API key into DeckRomM!
+   */
+  async detectRetroAchievements(): Promise<{
+    ok: boolean;
+    source: 'romm_server' | 'steam_deck_emulator' | 'none';
+    username?: string;
+    token?: string;
+    hasServerKey: boolean;
+    message: string;
+  }> {
+    let raUser: string | undefined = undefined;
+    let hasServerKey = false;
+
+    // 1. Check RomM server if connected
+    if (!this.config.isDemoMode && (this.auth.authenticated || this.config.serverUrl)) {
+      try {
+        // Query /api/users/me
+        const me = await this.request<any>({ path: '/api/users/me' }).catch(() => null);
+        if (me) {
+          raUser =
+            me.retroachievements_username ||
+            me.ra_username ||
+            me.ra_user ||
+            me.preferences?.retroachievements_username ||
+            me.preferences?.ra_username ||
+            me.settings?.retroachievements_username ||
+            me.settings?.ra_username;
+        }
+
+        // Query /api/config or /api/settings or /api/app/config
+        const serverConfig = await this.request<any>({ path: '/api/config' }).catch(() =>
+          this.request<any>({ path: '/api/app/config' }).catch(() => null)
+        );
+        if (serverConfig) {
+          if (
+            serverConfig.RETROACHIEVEMENTS_ENABLED ||
+            serverConfig.retroachievements ||
+            serverConfig.has_retroachievements ||
+            serverConfig.features?.retroachievements ||
+            serverConfig.METADATA_PROVIDERS?.includes('retroachievements') ||
+            serverConfig.metadata_providers?.retroachievements
+          ) {
+            hasServerKey = true;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (raUser || hasServerKey) {
+      const updatedPatch: Partial<RommConfig> = {
+        raSource: 'romm_server',
+        raServerConnected: true,
+      };
+      if (raUser) updatedPatch.raUsername = raUser;
+      this.saveConfig(updatedPatch);
+
+      return {
+        ok: true,
+        source: 'romm_server',
+        username: raUser,
+        hasServerKey: true,
+        message: raUser
+          ? `Found linked RetroAchievements account "${raUser}" on your RomM server! Server-managed API active.`
+          : 'RomM server has RetroAchievements integration active! Server-managed API key is ready.',
+      };
+    }
+
+    // 2. Check local Steam Deck emulators (RetroArch / EmuDeck, DuckStation, PCSX2)
+    if (isNativeApp && bridge.system.detectRetroAchievements) {
+      try {
+        const local = await bridge.system.detectRetroAchievements();
+        if (local && local.found && local.username) {
+          this.saveConfig({
+            raUsername: local.username,
+            raApiKey: local.token || this.config.raApiKey,
+            raSource: 'steam_deck_emulator',
+          });
+          return {
+            ok: true,
+            source: 'steam_deck_emulator',
+            username: local.username,
+            token: local.token,
+            hasServerKey: false,
+            message: `Auto-detected RetroAchievements account "${local.username}" from ${local.source || 'Steam Deck emulator'}!`,
+          };
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // 3. Fallback: Check if RomM server is connected even if not explicitly reporting config
+    if (!this.config.isDemoMode && this.auth.authenticated) {
+      this.saveConfig({
+        raSource: 'romm_server',
+        raServerConnected: true,
+      });
+      return {
+        ok: true,
+        source: 'romm_server',
+        username: this.auth.username || undefined,
+        hasServerKey: true,
+        message: 'Connected to RomM server. Achievements will be pulled via your RomM server proxy.',
+      };
+    }
+
+    return {
+      ok: false,
+      source: 'none',
+      hasServerKey: false,
+      message: 'Could not automatically detect RetroAchievements on RomM server or local emulators. You can enter your username directly.',
+    };
+  }
 }
 
 /**

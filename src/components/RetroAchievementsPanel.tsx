@@ -11,9 +11,12 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  Server,
+  Loader2,
 } from 'lucide-react';
 import { Game, RetroAchievement, RetroAchievementsGameSummary, RommConfig } from '../types';
 import { retroAchievementsService } from '../services/retroAchievementsService';
+import { rommApi } from '../services/rommApi';
 import { soundService } from '../services/soundService';
 
 interface RetroAchievementsPanelProps {
@@ -33,6 +36,7 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
 }) => {
   const [summary, setSummary] = useState<RetroAchievementsGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncingRomm, setSyncingRomm] = useState(false);
   const [filter, setFilter] = useState<FilterState>('all');
   const [expanded, setExpanded] = useState(true);
   const [selectedAchievement, setSelectedAchievement] = useState<RetroAchievement | null>(null);
@@ -46,6 +50,28 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
       // Ignored
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSyncRomm = async () => {
+    soundService.playTick();
+    setSyncingRomm(true);
+    try {
+      const res = await rommApi.detectRetroAchievements();
+      if (res.ok) {
+        soundService.playSuccess();
+        onToast?.(res.message, 'ok');
+        retroAchievementsService.clearCache(game.id);
+        await loadData();
+      } else {
+        soundService.playBack();
+        onToast?.(res.message, 'info');
+      }
+    } catch (e: any) {
+      soundService.playBack();
+      onToast?.(`Sync failed: ${e.message}`, 'error');
+    } finally {
+      setSyncingRomm(false);
     }
   };
 
@@ -118,6 +144,11 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
               {config.raHardcoreOnly !== false && (
                 <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-red-950/70 border border-red-500/40 text-red-300 flex items-center gap-1">
                   <ShieldAlert size={12} /> Hardcore Mode
+                </span>
+              )}
+              {(summary.source === 'romm_server' || summary.serverManaged) && (
+                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-sky-950/70 border border-sky-400/40 text-sky-300 flex items-center gap-1 shadow" title="Directly queried & hashed by RomM server using server-side RetroAchievements integration">
+                  <Server size={11} /> RomM Server API
                 </span>
               )}
             </div>
@@ -213,7 +244,7 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
             </div>
 
             {/* Account hint / settings link */}
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex items-center gap-2 text-xs flex-wrap">
               {config.raUsername ? (
                 <span className="text-slate-400 flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -224,6 +255,18 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
                   Public community achievements set
                 </span>
               )}
+
+              <button
+                data-focusable
+                id="ra-sync-romm-btn"
+                onClick={handleSyncRomm}
+                disabled={syncingRomm}
+                className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-200 font-bold text-[11px] flex items-center gap-1 transition-colors disabled:opacity-50"
+                title="Pull linked RetroAchievements profile and credentials from RomM server"
+              >
+                {syncingRomm ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                <span>{syncingRomm ? 'Syncing...' : 'Sync from RomM'}</span>
+              </button>
 
               {onOpenSettings && (
                 <button

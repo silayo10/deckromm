@@ -82,6 +82,8 @@ export interface RetroAchievementsGameSummary {
   hardcoreMode: boolean;
   mastered: boolean;
   userRank?: string;
+  source?: 'romm_server' | 'direct_api' | 'steam_deck_emulator' | 'curated' | 'procedural';
+  serverManaged?: boolean;
 }
 
 export type LibraryViewMode = 'grid' | 'hero' | 'table';
@@ -144,6 +146,8 @@ export interface RommConfig {
   raUsername?: string;
   raApiKey?: string;
   raHardcoreOnly?: boolean;
+  raSource?: 'romm_server' | 'steam_deck_emulator' | 'manual' | 'none';
+  raServerConnected?: boolean;
 }
 
 export interface Collection {

@@ -83,6 +83,7 @@ const api = {
     selectDirectory: invoke('system:select-directory'),
     flatpakStatus: invoke('system:flatpak-status'),
     installFlatpak: invoke('system:install-flatpak'),
+    detectRetroAchievements: invoke('system:detect-retroachievements'),
   },
   bios: {
     list: invoke('bios:list'),

@@ -600,6 +600,73 @@ function registerIpc() {
   });
   handle('system:flatpak-status', (flatpakIds) => getFlatpakStatus(flatpakIds));
   handle('system:install-flatpak', (flatpakId) => installFlatpak(flatpakId, (ev) => emit('flatpak:progress', ev)));
+  handle('system:detect-retroachievements', async () => {
+    const candidates = [
+      {
+        app: 'RetroArch (Flatpak/EmuDeck)',
+        file: path.join(HOME, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'retroarch.cfg'),
+        parse: (content) => {
+          const userM = content.match(/cheevos_username\s*=\s*["']?([^"'\r\n]+)/);
+          const tokenM = content.match(/cheevos_token\s*=\s*["']?([^"'\r\n]+)/);
+          const passM = content.match(/cheevos_password\s*=\s*["']?([^"'\r\n]+)/);
+          if (userM && userM[1]) {
+            return { username: userM[1].trim(), token: tokenM ? tokenM[1].trim() : (passM ? passM[1].trim() : '') };
+          }
+          return null;
+        },
+      },
+      {
+        app: 'RetroArch (Native)',
+        file: path.join(HOME, '.config', 'retroarch', 'retroarch.cfg'),
+        parse: (content) => {
+          const userM = content.match(/cheevos_username\s*=\s*["']?([^"'\r\n]+)/);
+          const tokenM = content.match(/cheevos_token\s*=\s*["']?([^"'\r\n]+)/);
+          const passM = content.match(/cheevos_password\s*=\s*["']?([^"'\r\n]+)/);
+          if (userM && userM[1]) {
+            return { username: userM[1].trim(), token: tokenM ? tokenM[1].trim() : (passM ? passM[1].trim() : '') };
+          }
+          return null;
+        },
+      },
+      {
+        app: 'DuckStation',
+        file: path.join(HOME, '.var', 'app', 'org.duckstation.DuckStation', 'config', 'duckstation', 'settings.ini'),
+        parse: (content) => {
+          const userM = content.match(/Username\s*=\s*([^\r\n]+)/);
+          const tokenM = content.match(/Token\s*=\s*([^\r\n]+)/);
+          if (userM && userM[1]) {
+            return { username: userM[1].trim(), token: tokenM ? tokenM[1].trim() : '' };
+          }
+          return null;
+        },
+      },
+      {
+        app: 'PCSX2',
+        file: path.join(HOME, '.var', 'app', 'net.pcsx2.PCSX2', 'config', 'PCSX2', 'inis', 'PCSX2.ini'),
+        parse: (content) => {
+          const userM = content.match(/Username\s*=\s*([^\r\n]+)/);
+          const tokenM = content.match(/Token\s*=\s*([^\r\n]+)/);
+          if (userM && userM[1]) {
+            return { username: userM[1].trim(), token: tokenM ? tokenM[1].trim() : '' };
+          }
+          return null;
+        },
+      },
+    ];
+
+    for (const c of candidates) {
+      try {
+        if (fs.existsSync(c.file)) {
+          const content = await fsp.readFile(c.file, 'utf8');
+          const res = c.parse(content);
+          if (res && res.username) {
+            return { found: true, source: c.app, username: res.username, token: res.token || '' };
+          }
+        }
+      } catch {}
+    }
+    return { found: false };
+  });
 
   // BIOS & Firmware
   handle('bios:list', () => bios.listLocalBios());

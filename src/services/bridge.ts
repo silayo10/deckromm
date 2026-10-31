@@ -200,6 +200,7 @@ function createBrowserFallback(): DeckRommBridge {
       selectDirectory: async () => '/home/deck/Emulation',
       flatpakStatus: async () => ({ flatpakAvailable: true, installed: { 'app.xemu.xemu': true, 'net.pcsx2.PCSX2': true } }),
       installFlatpak: async () => ({ ok: true, message: 'Simulated install' }),
+      detectRetroAchievements: async () => ({ found: false }),
     },
     bios: {
       list: async () => [],

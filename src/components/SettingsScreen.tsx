@@ -98,13 +98,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [artSyncMsg, setArtSyncMsg] = useState<string | null>(null);
 
   const [testingRa, setTestingRa] = useState(false);
+  const [detectingRa, setDetectingRa] = useState(false);
   const [raStatusMsg, setRaStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const handleTestRa = async () => {
-    if (!config.raUsername) {
-      setRaStatusMsg({ text: 'Please enter your RetroAchievements username.', ok: false });
-      return;
+  const handleAutoDetectRa = async () => {
+    soundService.playTick();
+    setDetectingRa(true);
+    setRaStatusMsg(null);
+    try {
+      const res = await rommApi.detectRetroAchievements();
+      if (res.ok) {
+        soundService.playSuccess();
+        setRaStatusMsg({ text: res.message, ok: true });
+        onToast?.(res.message, 'ok');
+        onChange({
+          raUsername: res.username || config.raUsername,
+          raApiKey: res.token || config.raApiKey,
+          raSource: res.source,
+          raServerConnected: res.hasServerKey,
+        });
+      } else {
+        soundService.playBack();
+        setRaStatusMsg({ text: res.message, ok: false });
+        onToast?.(res.message, 'info');
+      }
+    } catch (e: any) {
+      soundService.playBack();
+      setRaStatusMsg({ text: `Auto-detect error: ${e.message}`, ok: false });
+      onToast?.(`Auto-detect error: ${e.message}`, 'error');
+    } finally {
+      setDetectingRa(false);
     }
+  };
+
+  const handleTestRa = async () => {
     soundService.playTick();
     setTestingRa(true);
     setRaStatusMsg(null);
@@ -616,7 +643,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
             <Section icon={<Trophy size={16} />} title="RetroAchievements">
               <div className="p-4 rounded-xl bg-deck-panel/70 flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-2.5">
                     <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-400/30">
                       <Trophy size={18} />
@@ -626,14 +653,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       <div className="text-xs text-deck-dim">Link your account to track trophies, badges, and hardcore points</div>
                     </div>
                   </div>
-                  {config.raUsername && (
-                    <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5">
-                      <CheckCircle2 size={13} /> Linked
-                    </span>
-                  )}
+
+                  <div className="flex items-center gap-2">
+                    {config.raSource === 'romm_server' || config.raServerConnected ? (
+                      <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-sky-950/80 border border-sky-400/40 text-sky-300 flex items-center gap-1.5 shadow">
+                        <Server size={13} /> RomM Server API
+                      </span>
+                    ) : null}
+                    {config.raUsername && (
+                      <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5">
+                        <CheckCircle2 size={13} /> {config.raUsername}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                {/* RomM Server Key Callout Banner */}
+                <div className="p-3 rounded-xl bg-sky-950/40 border border-sky-500/30 text-xs text-sky-200/90 leading-relaxed flex items-start gap-2.5">
+                  <Sparkles size={16} className="text-sky-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-sky-300 block mb-0.5">No API Key Input Needed on Steam Deck:</strong>
+                    If you already configured RetroAchievements on your RomM server (via <code className="px-1 py-0.5 rounded bg-black/40 text-sky-200 font-mono text-[11px]">RETROACHIEVEMENTS_API_KEY</code>), DeckRomM automatically routes all achievement queries through your server. You do not need to manually copy-paste an API key!
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div>
                     <label className="block text-deck-dim mb-1 text-xs font-semibold">RA Username:</label>
                     <input
@@ -649,15 +693,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-deck-dim mb-1 text-xs font-semibold">Web API Key (from retroachievements.org/settings):</label>
+                    <label className="block text-deck-dim mb-1 text-xs font-semibold">
+                      Web API Key <span className="text-deck-dim/70 font-normal">(Optional - RomM Server provides this)</span>:
+                    </label>
                     <input
                       id="settings-ra-key"
                       data-focusable
                       type="password"
                       value={config.raApiKey || ''}
                       onChange={(e) => onChange({ raApiKey: e.target.value.trim() || undefined })}
-                      placeholder="Enter Web API Key..."
-                      data-keyboard-title="RetroAchievements Web API Key"
+                      placeholder="Leave blank to use RomM server's key..."
+                      data-keyboard-title="RetroAchievements Web API Key (Optional)"
                       data-keyboard-mode="text"
                       className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs focus:border-amber-400"
                     />
@@ -672,16 +718,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 />
 
                 <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    data-focusable
-                    id="settings-test-ra"
-                    onClick={handleTestRa}
-                    disabled={testingRa}
-                    className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    {testingRa ? <Loader2 size={14} className="animate-spin" /> : <Trophy size={14} />}
-                    <span>{testingRa ? 'Verifying...' : 'Test Connection'}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      data-focusable
+                      id="settings-detect-ra"
+                      onClick={handleAutoDetectRa}
+                      disabled={detectingRa}
+                      className="px-4 py-2 rounded-xl text-xs font-extrabold bg-sky-600 hover:bg-sky-500 text-white flex items-center gap-1.5 shadow transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                      title="Pull RetroAchievements username and integration status from RomM server"
+                    >
+                      {detectingRa ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      <span>{detectingRa ? 'Detecting...' : 'Auto-Detect from RomM Server'}</span>
+                    </button>
+
+                    <button
+                      data-focusable
+                      id="settings-test-ra"
+                      onClick={handleTestRa}
+                      disabled={testingRa || detectingRa}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      {testingRa ? <Loader2 size={14} className="animate-spin" /> : <Trophy size={14} />}
+                      <span>{testingRa ? 'Verifying...' : 'Test Connection'}</span>
+                    </button>
+                  </div>
 
                   {raStatusMsg && (
                     <span
