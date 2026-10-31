@@ -1,5 +1,6 @@
 import { Game, RetroAchievement, RetroAchievementsGameSummary, RommConfig } from '../types';
 import { bridge, isNativeApp } from './bridge';
+import { rommApi } from './rommApi';
 
 /**
  * Built-in curated RetroAchievements sets for prominent retro classics.
@@ -18,8 +19,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Complete Yoshi Island 1 through Yoshi Island 4 without losing a life.',
         points: 5,
         badgeUrl: 'https://media.retroachievements.org/Badge/01001.png',
-        unlocked: true,
-        unlockedDate: '2026-10-14 18:22',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -29,8 +29,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Activate the Yellow Switch Palace in Yoshi Island.',
         points: 5,
         badgeUrl: 'https://media.retroachievements.org/Badge/01002.png',
-        unlocked: true,
-        unlockedDate: '2026-10-14 18:45',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -40,8 +39,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Find the secret exit in Donut Ghost House 1.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/01003.png',
-        unlocked: true,
-        unlockedDate: '2026-10-15 20:10',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -51,8 +49,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Discover the gateway to Star Road from Donut Plains.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/01004.png',
-        unlocked: true,
-        unlockedDate: '2026-10-16 21:05',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -62,8 +59,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Defeat Iggy Koopa in #1 Iggy\'s Castle by knocking him into the lava.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/01005.png',
-        unlocked: true,
-        unlockedDate: '2026-10-14 19:30',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -131,8 +127,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Defeat the King of the Bob-ombs on the mountain summit in Bob-omb Battlefield.',
         points: 5,
         badgeUrl: 'https://media.retroachievements.org/Badge/02001.png',
-        unlocked: true,
-        unlockedDate: '2026-10-20 14:10',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -142,8 +137,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Outrun Koopa the Quick to the summit flag without using the warp.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/02002.png',
-        unlocked: true,
-        unlockedDate: '2026-10-20 14:25',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -153,8 +147,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Toss Bowser by his tail into the mine bomb in the Dark World and obtain the key.',
         points: 15,
         badgeUrl: 'https://media.retroachievements.org/Badge/02003.png',
-        unlocked: true,
-        unlockedDate: '2026-10-21 16:50',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -174,8 +167,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Collect all 8 red coins inside the Tower of the Wing Cap.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/02005.png',
-        unlocked: true,
-        unlockedDate: '2026-10-21 17:15',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -223,8 +215,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Bump into Marle and retrieve her pendant at the Leene\'s Bell festival grounds.',
         points: 5,
         badgeUrl: 'https://media.retroachievements.org/Badge/03001.png',
-        unlocked: true,
-        unlockedDate: '2026-09-28 11:15',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -234,8 +225,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Gain a unanimous innocent verdict from the Guardia Royal Court jury.',
         points: 15,
         badgeUrl: 'https://media.retroachievements.org/Badge/03002.png',
-        unlocked: true,
-        unlockedDate: '2026-09-28 12:00',
+        unlocked: false,
         hardcore: true,
         type: 'missable',
       },
@@ -245,8 +235,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Witness the Day of Lavos visual log in Arris Dome (2300 A.D.).',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/03003.png',
-        unlocked: true,
-        unlockedDate: '2026-09-28 13:40',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -256,8 +245,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Mend the legendary Masamune blade with Melchior using Dreamstone.',
         points: 20,
         badgeUrl: 'https://media.retroachievements.org/Badge/03004.png',
-        unlocked: true,
-        unlockedDate: '2026-09-29 19:10',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -315,8 +303,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Rescue Professor Birch on Route 101 and pick your starter Pokémon.',
         points: 5,
         badgeUrl: 'https://media.retroachievements.org/Badge/04001.png',
-        unlocked: true,
-        unlockedDate: '2026-10-02 09:20',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -326,8 +313,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Defeat Gym Leader Roxanne at Rustboro City Gym.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/04002.png',
-        unlocked: true,
-        unlockedDate: '2026-10-02 11:45',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -337,8 +323,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Halt the submarine theft at the Slateport City Oceanic Museum.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/04003.png',
-        unlocked: true,
-        unlockedDate: '2026-10-02 14:15',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -386,8 +371,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Defeat Dracula in 1792 as Richter Belmont with maximum hearts remaining.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/05001.png',
-        unlocked: true,
-        unlockedDate: '2026-10-10 22:30',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -397,8 +381,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Confront Death at the castle entrance as Alucard.',
         points: 5,
         badgeUrl: 'https://media.retroachievements.org/Badge/05002.png',
-        unlocked: true,
-        unlockedDate: '2026-10-10 22:45',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -408,8 +391,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Acquire the Bat Relic from the Long Library.',
         points: 15,
         badgeUrl: 'https://media.retroachievements.org/Badge/05003.png',
-        unlocked: true,
-        unlockedDate: '2026-10-11 00:20',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -467,8 +449,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Score a clean service ace clocked over 125 mph in Tournament Mode.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/06001.png',
-        unlocked: true,
-        unlockedDate: '2026-10-18 19:12',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -478,8 +459,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Win your first World Tour singles match in Melbourne.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/06002.png',
-        unlocked: true,
-        unlockedDate: '2026-10-18 19:40',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -527,8 +507,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Escape Dr. Neo Cortex\'s laboratory castle and wash ashore on N. Sanity Island.',
         points: 5,
         badgeUrl: 'https://media.retroachievements.org/Badge/07001.png',
-        unlocked: true,
-        unlockedDate: '2026-10-12 17:30',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -538,8 +517,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Defeat tribal chief Papu Papu without getting hit by his giant staff.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/07002.png',
-        unlocked: true,
-        unlockedDate: '2026-10-12 17:55',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -597,8 +575,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Reach the elevator on the Shadow Moses Cargo Dock without triggering an alert.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/08001.png',
-        unlocked: true,
-        unlockedDate: '2026-10-08 21:05',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -608,8 +585,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Defeat Revolver Ocelot without detonating the C4 surrounding the DARPA Chief.',
         points: 15,
         badgeUrl: 'https://media.retroachievements.org/Badge/08002.png',
-        unlocked: true,
-        unlockedDate: '2026-10-08 21:50',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -619,8 +595,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Defeat Psycho Mantis by switching your controller port.',
         points: 25,
         badgeUrl: 'https://media.retroachievements.org/Badge/08003.png',
-        unlocked: true,
-        unlockedDate: '2026-10-09 20:30',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -668,8 +643,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Escape the exploding Cerres Station countdown after encountering Ridley.',
         points: 5,
         badgeUrl: 'https://media.retroachievements.org/Badge/09001.png',
-        unlocked: true,
-        unlockedDate: '2026-10-05 15:10',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -679,8 +653,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Acquire the Morph Ball and Bombs in the ruins of Brinstar.',
         points: 10,
         badgeUrl: 'https://media.retroachievements.org/Badge/09002.png',
-        unlocked: true,
-        unlockedDate: '2026-10-05 15:40',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -690,8 +663,7 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
         description: 'Defeat the colossal reptilian beast Kraid and obtain the Varia Suit.',
         points: 20,
         badgeUrl: 'https://media.retroachievements.org/Badge/09003.png',
-        unlocked: true,
-        unlockedDate: '2026-10-05 16:35',
+        unlocked: false,
         hardcore: true,
         type: 'progression',
       },
@@ -740,109 +712,122 @@ const CURATED_ACHIEVEMENT_SETS: Record<string, Partial<RetroAchievementsGameSumm
 };
 
 /**
- * Generate an authentic procedural RetroAchievements set for games not in the curated dictionary.
+ * Parse achievements and user progression from RomM metadata or direct RetroAchievements responses.
  */
-function generateProceduralAchievements(game: Game): RetroAchievementsGameSummary {
-  const title = game.title.replace(/\s*[\(\[][^\)\]]*[\)\]]\s*/g, ' ').trim();
-  const consoleName = game.platformName || game.platformSlug.toUpperCase();
-  const dev = game.developer || 'Retro Developers';
-  const genres = game.genres || ['Action'];
-  const primaryGenre = genres[0] || 'Adventure';
+function parseAchievementsFromRommData(
+  rawList: any[],
+  progressionData?: any
+): { achievements: RetroAchievement[]; numUnlocked: number; pointsEarned: number; pointsTotal: number } {
+  // Build a lookup of earned achievement IDs and metadata from progressionData
+  const earnedMap = new Map<string, { date?: string; hardcore?: boolean }>();
 
-  const achievements: RetroAchievement[] = [
-    {
-      id: 9901,
-      title: 'First Steps in ' + title,
-      description: `Complete the introductory stage or tutorial in ${title}.`,
-      points: 5,
-      badgeUrl: 'https://media.retroachievements.org/Badge/00001.png',
-      unlocked: true,
-      unlockedDate: '2026-10-15 12:00',
-      hardcore: true,
-      type: 'progression',
-    },
-    {
-      id: 9902,
-      title: `${primaryGenre} Veteran`,
-      description: `Survive midway through the campaign and reach the secondary act in ${title}.`,
-      points: 10,
-      badgeUrl: 'https://media.retroachievements.org/Badge/00002.png',
-      unlocked: true,
-      unlockedDate: '2026-10-15 13:45',
-      hardcore: true,
-      type: 'progression',
-    },
-    {
-      id: 9903,
-      title: 'No Damage Challenger',
-      description: `Defeat any major boss or clearing an entire level without taking a hit in ${title}.`,
-      points: 20,
-      badgeUrl: 'https://media.retroachievements.org/Badge/00003.png',
-      unlocked: false,
-      hardcore: false,
-      type: 'standard',
-    },
-    {
-      id: 9904,
-      title: 'Hidden Secrets Unearthed',
-      description: `Discover all hidden bonus rooms, items, or secret warps in any single stage.`,
-      points: 15,
-      badgeUrl: 'https://media.retroachievements.org/Badge/00004.png',
-      unlocked: false,
-      hardcore: false,
-      type: 'standard',
-    },
-    {
-      id: 9905,
-      title: 'Mastery of ' + title,
-      description: `Defeat the final adversary and view the end credits of ${title} by ${dev}.`,
-      points: 50,
-      badgeUrl: 'https://media.retroachievements.org/Badge/00005.png',
-      unlocked: false,
-      hardcore: false,
-      type: 'win_condition',
-    },
-    {
-      id: 9906,
-      title: 'Hardcore Perfectionist',
-      description: `Complete the game on the highest difficulty setting without using save states.`,
-      points: 50,
-      badgeUrl: 'https://media.retroachievements.org/Badge/00006.png',
-      unlocked: false,
-      hardcore: false,
-      type: 'win_condition',
-    },
-  ];
+  if (progressionData) {
+    // 1. rom_user.ra_progression or user.ra_progression with earned_achievements array
+    if (Array.isArray(progressionData.earned_achievements)) {
+      for (const e of progressionData.earned_achievements) {
+        const id = e.id ?? e.ra_id ?? e.achievement_id ?? e.badge_id ?? e.BadgeID;
+        if (id != null) {
+          earnedMap.set(String(id), {
+            date: e.date_earned || e.unlocked_at || e.DateEarned,
+            hardcore: Boolean(e.is_hardcore || e.DateEarnedHardcore),
+          });
+        }
+      }
+    } else if (Array.isArray(progressionData)) {
+      for (const e of progressionData) {
+        const id = typeof e === 'object' ? (e.id ?? e.ra_id ?? e.achievement_id ?? e.badge_id) : e;
+        if (id != null) {
+          earnedMap.set(String(id), {
+            date: typeof e === 'object' ? (e.date_earned || e.DateEarned) : undefined,
+            hardcore: typeof e === 'object' ? Boolean(e.is_hardcore || e.DateEarnedHardcore) : true,
+          });
+        }
+      }
+    } else if (typeof progressionData === 'object') {
+      // Keyed by achievement ID or badge ID: { "1001": { date_earned: "...", is_hardcore: true } }
+      for (const [k, v] of Object.entries(progressionData)) {
+        if (v && k !== 'earned_achievements') {
+          const vObj = typeof v === 'object' ? (v as any) : {};
+          earnedMap.set(String(k), {
+            date: vObj.date_earned || vObj.DateEarned || (typeof v === 'string' ? v : undefined),
+            hardcore: Boolean(vObj.is_hardcore || vObj.DateEarnedHardcore),
+          });
+        }
+      }
+    }
+  }
 
-  const totalPoints = achievements.reduce((acc, a) => acc + a.points, 0);
-  const earnedPoints = achievements.filter((a) => a.unlocked).reduce((acc, a) => acc + a.points, 0);
-  const numUnlocked = achievements.filter((a) => a.unlocked).length;
+  const achs: RetroAchievement[] = rawList.map((a: any, idx: number) => {
+    const id = Number(a.id || a.ID || a.achievement_id || a.ra_id || idx + 1);
+    const badgeName = a.BadgeName || a.badge_name || a.badge_id || '';
+    const badgeUrl =
+      a.badge_url ||
+      a.badgeUrl ||
+      (badgeName
+        ? `https://media.retroachievements.org/Badge/${badgeName}.png`
+        : `https://media.retroachievements.org/Badge/00001.png`);
 
-  return {
-    gameId: game.id,
-    title,
-    consoleName,
-    numAchievements: achievements.length,
-    numUnlocked,
-    pointsTotal: totalPoints,
-    pointsEarned: earnedPoints,
-    hardcorePointsEarned: earnedPoints,
-    achievements,
-    hardcoreMode: true,
-    mastered: numUnlocked === achievements.length,
-    userRank: 'Retro Adept',
-  };
+    const directEarned = Boolean(a.DateEarned || a.DateEarnedHardcore || a.date_earned);
+    const inProgression = earnedMap.has(String(id)) || (badgeName && earnedMap.has(String(badgeName)));
+    const isUnlocked = directEarned || inProgression;
+
+    const progInfo = earnedMap.get(String(id)) || (badgeName ? earnedMap.get(String(badgeName)) : undefined);
+    const unlockedDate = a.DateEarnedHardcore || a.DateEarned || a.date_earned || progInfo?.date || (isUnlocked ? 'Unlocked' : undefined);
+    const isHardcore = Boolean(a.DateEarnedHardcore || a.is_hardcore || progInfo?.hardcore);
+
+    const typeCode = Number(a.type);
+    const typeStr =
+      typeCode === 3 ? 'progression' : typeCode === 5 ? 'win_condition' : typeCode === 2 ? 'missable' : a.type || 'standard';
+
+    return {
+      id,
+      title: a.title || a.Title || a.name || `Achievement ${idx + 1}`,
+      description: a.description || a.Description || a.memo || '',
+      points: Number(a.points || a.Points || 5),
+      badgeUrl,
+      unlocked: isUnlocked,
+      unlockedDate: isUnlocked ? unlockedDate : undefined,
+      hardcore: isHardcore,
+      type: typeStr as any,
+    };
+  });
+
+  const numUnlocked = achs.filter((a) => a.unlocked).length;
+  const pointsEarned = achs.filter((a) => a.unlocked).reduce((sum, a) => sum + a.points, 0);
+  const pointsTotal = achs.reduce((sum, a) => sum + a.points, 0);
+
+  return { achievements: achs, numUnlocked, pointsEarned, pointsTotal };
 }
 
 class RetroAchievementsService {
   private cache = new Map<string, RetroAchievementsGameSummary>();
 
+  getCustomRaId(gameId: string | number): number | undefined {
+    try {
+      const v = localStorage.getItem(`deckromm_ra_id_${gameId}`);
+      return v && !isNaN(Number(v)) ? Number(v) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  setCustomRaId(gameId: string | number, raId: number | null) {
+    try {
+      if (raId == null || isNaN(raId)) {
+        localStorage.removeItem(`deckromm_ra_id_${gameId}`);
+      } else {
+        localStorage.setItem(`deckromm_ra_id_${gameId}`, String(raId));
+      }
+    } catch {}
+    this.clearCache(gameId);
+  }
+
   /**
    * Look up RetroAchievements for a game from:
-   * 1. RomM API `/api/roms/{id}/retroachievements`
-   * 2. Direct RetroAchievements Web API if user has configured raUsername + raApiKey
-   * 3. Curated offline database for popular classics
-   * 4. Dynamic procedural generation for other retro titles
+   * 1. RomM API (`/api/roms/{id}` ra_metadata, or `/api/roms/{id}/retroachievements`)
+   * 2. Direct RetroAchievements Web API if user has configured raUsername + raApiKey/token
+   * 3. Curated offline database for popular classics (demo mode only)
+   * 4. Accurate 'unmatched' state with zero fabricated/generic placeholders
    */
   async getGameAchievements(game: Game, config: RommConfig): Promise<RetroAchievementsGameSummary> {
     const cacheKey = `${game.platformSlug}:${game.id}`;
@@ -850,154 +835,212 @@ class RetroAchievementsService {
       return this.cache.get(cacheKey)!;
     }
 
-    // 1. Try RomM Server API if connected (RomM uses server-side RETROACHIEVEMENTS_API_KEY - no user key needed!)
+    const customRaId = this.getCustomRaId(game.id);
+
+    // 1. Try RomM Server API if connected (RomM uses server-side RETROACHIEVEMENTS_API_KEY)
     if (!config.isDemoMode && config.serverUrl) {
       try {
+        let rommData: any = null;
+        let rawRom: any = null;
+
+        // A. Dedicated endpoint: /api/roms/{id}/retroachievements
         const res = await bridge.romm.request<any>({
           path: `/api/roms/${encodeURIComponent(String(game.id))}/retroachievements`,
           timeoutMs: 8000,
-        });
-        if (res.ok && res.data) {
-          const raw = res.data;
-          const rawList = Array.isArray(raw)
-            ? raw
-            : Array.isArray(raw.achievements)
-            ? raw.achievements
-            : raw.achievements && typeof raw.achievements === 'object'
-            ? Object.values(raw.achievements)
-            : Array.isArray(raw.items)
-            ? raw.items
-            : null;
+        }).catch(() => null);
 
-          if (rawList && rawList.length > 0) {
-            const achs: RetroAchievement[] = rawList.map((a: any, idx: number) => ({
-              id: Number(a.id || a.achievement_id || a.ID || idx + 1),
-              title: a.title || a.name || a.Title || `Achievement ${idx + 1}`,
-              description: a.description || a.memo || a.Description || '',
-              points: Number(a.points || a.Points || 5),
-              badgeUrl:
-                a.badge_url ||
-                a.badgeUrl ||
-                (a.BadgeName
-                  ? `https://media.retroachievements.org/Badge/${a.BadgeName}.png`
-                  : `https://media.retroachievements.org/Badge/${a.badge_name || '00001'}.png`),
-              unlocked: Boolean(a.unlocked || a.date_earned || a.DateEarned || a.DateEarnedHardcore),
-              unlockedDate: a.date_earned || a.unlockedDate || a.DateEarnedHardcore || a.DateEarned,
-              hardcore: Boolean(a.hardcore || a.is_hardcore || a.DateEarnedHardcore),
-              type: Number(a.type) === 3 ? 'progression' : Number(a.type) === 5 ? 'win_condition' : a.type || 'standard',
-            }));
+        if (res && res.ok && res.data) {
+          rommData = res.data;
+        }
 
-            const numUnlocked = achs.filter((a) => a.unlocked).length;
-            const pointsEarned = achs.filter((a) => a.unlocked).reduce((sum, a) => sum + a.points, 0);
-            const pointsTotal = achs.reduce((sum, a) => sum + a.points, 0);
-
-            const summary: RetroAchievementsGameSummary = {
-              gameId: raw.game_id || raw.id || game.id,
-              title: raw.title || game.title,
-              consoleName: raw.console_name || game.platformName,
-              iconUrl: raw.icon_url || game.coverUrl,
-              numAchievements: achs.length,
-              numUnlocked,
-              pointsTotal: pointsTotal || raw.points_total || 400,
-              pointsEarned,
-              hardcorePointsEarned: pointsEarned,
-              achievements: achs,
-              hardcoreMode: Boolean(config.raHardcoreOnly),
-              mastered: numUnlocked > 0 && numUnlocked === achs.length,
-              source: 'romm_server',
-              serverManaged: true,
-            };
-            this.cache.set(cacheKey, summary);
-            return summary;
+        // B. Raw ROM details endpoint: /api/roms/{id}
+        if (!rommData) {
+          rawRom = await rommApi.getRomRaw(game.id).catch(() => null);
+          if (rawRom) {
+            rommData =
+              rawRom.ra_metadata ||
+              rawRom.merged_ra_metadata ||
+              rawRom.metadatum?.ra_metadata ||
+              rawRom.retroachievements ||
+              game.raMetadata;
           }
         }
-      } catch {
-        // Fall through to RA API / Curated data
+
+        // Normalize list of achievements
+        let rawList: any[] | null = null;
+        if (rommData) {
+          if (Array.isArray(rommData)) {
+            rawList = rommData;
+          } else if (Array.isArray(rommData.achievements)) {
+            rawList = rommData.achievements;
+          } else if (rommData.Achievements && typeof rommData.Achievements === 'object') {
+            rawList = Array.isArray(rommData.Achievements) ? rommData.Achievements : Object.values(rommData.Achievements);
+          } else if (rommData.achievements && typeof rommData.achievements === 'object') {
+            rawList = Object.values(rommData.achievements);
+          } else if (Array.isArray(rommData.items)) {
+            rawList = rommData.items;
+          }
+        }
+
+        if (rawList && rawList.length > 0) {
+          // Ingest authentic user progression from rom_user or /api/users/me
+          let progressionData =
+            rawRom?.rom_user?.ra_progression ||
+            rawRom?.rom_user?.earned_achievements ||
+            rawRom?.rom_user?.achievements ||
+            rommData?.ra_progression ||
+            rommData?.user_progress;
+
+          if (!progressionData) {
+            const me = await rommApi.getMe().catch(() => null);
+            if (me && me.ra_progression) {
+              const raId = customRaId || rawRom?.ra_id || rawRom?.metadatum?.ra_id || rommData?.id || rommData?.ID || game.raId;
+              progressionData =
+                (raId && me.ra_progression[raId]) ||
+                me.ra_progression[game.id] ||
+                me.ra_progression;
+            }
+          }
+
+          const parsed = parseAchievementsFromRommData(rawList, progressionData);
+          const iconUrl =
+            rommData.icon_url ||
+            (rommData.ImageIcon ? `https://media.retroachievements.org${rommData.ImageIcon}` : game.coverUrl);
+
+          const summary: RetroAchievementsGameSummary = {
+            gameId: customRaId || rommData.game_id || rommData.id || rommData.ID || game.raId || game.id,
+            title: rommData.title || rommData.Title || game.title,
+            consoleName: rommData.console_name || rommData.ConsoleName || game.platformName,
+            iconUrl,
+            numAchievements: parsed.achievements.length,
+            numUnlocked: parsed.numUnlocked,
+            pointsTotal: parsed.pointsTotal || rommData.points_total || 400,
+            pointsEarned: parsed.pointsEarned,
+            hardcorePointsEarned: parsed.pointsEarned,
+            achievements: parsed.achievements,
+            hardcoreMode: Boolean(config.raHardcoreOnly),
+            mastered: parsed.numUnlocked > 0 && parsed.numUnlocked === parsed.achievements.length,
+            source: 'romm_server',
+            serverManaged: true,
+            status: 'ready',
+          };
+          this.cache.set(cacheKey, summary);
+          return summary;
+        }
+      } catch (e) {
+        console.warn('RomM RetroAchievements retrieval error:', e);
       }
     }
 
-    // 2. Try official RetroAchievements Web API if user configured keys
-    if (config.raUsername && config.raApiKey) {
+    // 2. Try official RetroAchievements Web API if user configured credentials
+    const raUser = (config.raUsername || '').trim();
+    const raKey = (config.raApiKey || '').trim();
+    if (raUser && raKey) {
       try {
-        const raGameId = game.raId;
+        let raGameId = customRaId || game.raId;
+
+        // If no raGameId but MD5 hash is known, lookup GameID from RetroAchievements
+        if (!raGameId && game.md5) {
+          try {
+            const idUrl = `https://retroachievements.org/API/API_GetGameID.php?z=${encodeURIComponent(
+              raUser
+            )}&y=${encodeURIComponent(raKey)}&m=${encodeURIComponent(game.md5)}`;
+            const idRes = await fetch(idUrl, { headers: { Accept: 'application/json' } });
+            if (idRes.ok) {
+              const idData = await idRes.json();
+              if (idData && (idData.GameID || idData.game_id || typeof idData === 'number')) {
+                raGameId = Number(idData.GameID || idData.game_id || idData);
+              }
+            }
+          } catch {}
+        }
+
         if (raGameId) {
           const url = `https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php?z=${encodeURIComponent(
-            config.raUsername
-          )}&y=${encodeURIComponent(config.raApiKey)}&g=${raGameId}`;
+            raUser
+          )}&y=${encodeURIComponent(raKey)}&g=${raGameId}&u=${encodeURIComponent(raUser)}`;
           const res = await fetch(url, { headers: { Accept: 'application/json' } });
           if (res.ok) {
             const data = await res.json();
-            if (data && data.Achievements) {
-              const achs: RetroAchievement[] = Object.values(data.Achievements).map((a: any) => ({
-                id: Number(a.ID),
-                title: a.Title,
-                description: a.Description,
-                points: Number(a.Points),
-                badgeUrl: `https://media.retroachievements.org/Badge/${a.BadgeName}.png`,
-                unlocked: Boolean(a.DateEarned || a.DateEarnedHardcore),
-                unlockedDate: a.DateEarnedHardcore || a.DateEarned,
-                hardcore: Boolean(a.DateEarnedHardcore),
-                type: Number(a.type) === 3 ? 'progression' : Number(a.type) === 5 ? 'win_condition' : 'standard',
-              }));
-
-              const numUnlocked = achs.filter((a) => a.unlocked).length;
-              const pointsEarned = achs.filter((a) => a.unlocked).reduce((sum, a) => sum + a.points, 0);
+            if (data && data.Achievements && typeof data.Achievements === 'object') {
+              const rawList = Object.values(data.Achievements);
+              const parsed = parseAchievementsFromRommData(rawList, data);
               const summary: RetroAchievementsGameSummary = {
                 gameId: raGameId,
                 title: data.Title || game.title,
                 consoleName: data.ConsoleName || game.platformName,
-                iconUrl: `https://media.retroachievements.org${data.ImageIcon}`,
-                numAchievements: achs.length,
-                numUnlocked,
-                pointsTotal: achs.reduce((sum, a) => sum + a.points, 0),
-                pointsEarned,
-                hardcorePointsEarned: pointsEarned,
-                achievements: achs,
+                iconUrl: data.ImageIcon ? `https://media.retroachievements.org${data.ImageIcon}` : game.coverUrl,
+                numAchievements: parsed.achievements.length,
+                numUnlocked: parsed.numUnlocked,
+                pointsTotal: parsed.pointsTotal,
+                pointsEarned: parsed.pointsEarned,
+                hardcorePointsEarned: parsed.pointsEarned,
+                achievements: parsed.achievements,
                 hardcoreMode: Boolean(config.raHardcoreOnly),
-                mastered: numUnlocked > 0 && numUnlocked === achs.length,
+                mastered: parsed.numUnlocked > 0 && parsed.numUnlocked === parsed.achievements.length,
+                source: 'direct_api',
+                status: 'ready',
               };
               this.cache.set(cacheKey, summary);
               return summary;
             }
           }
         }
-      } catch {
-        // Fall back to curated set
+      } catch (e) {
+        console.warn('RetroAchievements Web API direct lookup error:', e);
       }
     }
 
-    // 3. Check curated offline set for popular classics
-    const cleanKey = game.title.toLowerCase().replace(/\s*[\(\[][^\)\]]*[\)\]]\s*/g, ' ').trim();
-    for (const [key, curated] of Object.entries(CURATED_ACHIEVEMENT_SETS)) {
-      if (cleanKey.includes(key) || key.includes(cleanKey)) {
-        const achs = curated.achievements || [];
-        const numUnlocked = achs.filter((a) => a.unlocked).length;
-        const pointsEarned = achs.filter((a) => a.unlocked).reduce((sum, a) => sum + a.points, 0);
-        const pointsTotal = curated.pointsTotal || achs.reduce((sum, a) => sum + a.points, 0);
-
-        const summary: RetroAchievementsGameSummary = {
-          gameId: curated.gameId || game.id,
-          title: curated.title || game.title,
-          consoleName: curated.consoleName || game.platformName,
-          numAchievements: achs.length,
-          numUnlocked,
-          pointsTotal,
-          pointsEarned,
-          hardcorePointsEarned: pointsEarned,
-          achievements: achs,
-          hardcoreMode: true,
-          mastered: numUnlocked === achs.length,
-          userRank: 'Retro Adept',
-        };
-        this.cache.set(cacheKey, summary);
-        return summary;
+    // 3. Demo Mode only: check curated offline database for classic titles
+    if (config.isDemoMode) {
+      const cleanKey = game.title.toLowerCase().replace(/\s*[\(\[][^\)\]]*[\)\]]\s*/g, ' ').trim();
+      for (const [key, curated] of Object.entries(CURATED_ACHIEVEMENT_SETS)) {
+        if (cleanKey.includes(key) || key.includes(cleanKey)) {
+          const achs = (curated.achievements || []).map((a) => ({
+            ...a,
+            unlocked: false,
+            unlockedDate: undefined,
+          }));
+          const summary: RetroAchievementsGameSummary = {
+            gameId: curated.gameId || game.id,
+            title: curated.title || game.title,
+            consoleName: curated.consoleName || game.platformName,
+            numAchievements: achs.length,
+            numUnlocked: 0,
+            pointsTotal: curated.pointsTotal || achs.reduce((sum, a) => sum + a.points, 0),
+            pointsEarned: 0,
+            hardcorePointsEarned: 0,
+            achievements: achs,
+            hardcoreMode: true,
+            mastered: false,
+            source: 'curated',
+            status: 'ready',
+          };
+          this.cache.set(cacheKey, summary);
+          return summary;
+        }
       }
     }
 
-    // 4. Procedural set for any retro title
-    const procedural = generateProceduralAchievements(game);
-    this.cache.set(cacheKey, procedural);
-    return procedural;
+    // 4. No achievements found - accurate unmatched status (NEVER generate fake generic achievements)
+    const unmatchedSummary: RetroAchievementsGameSummary = {
+      gameId: game.id,
+      title: game.title,
+      consoleName: game.platformName,
+      numAchievements: 0,
+      numUnlocked: 0,
+      pointsTotal: 0,
+      pointsEarned: 0,
+      hardcorePointsEarned: 0,
+      achievements: [],
+      hardcoreMode: Boolean(config.raHardcoreOnly),
+      mastered: false,
+      source: 'not_found',
+      status: 'unmatched',
+      statusMessage: 'No RetroAchievements set found for this ROM.',
+    };
+    this.cache.set(cacheKey, unmatchedSummary);
+    return unmatchedSummary;
   }
 
   /**

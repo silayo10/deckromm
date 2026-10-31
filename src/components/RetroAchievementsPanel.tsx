@@ -13,6 +13,10 @@ import {
   Info,
   Server,
   Loader2,
+  Link2,
+  Settings,
+  X,
+  Check,
 } from 'lucide-react';
 import { Game, RetroAchievement, RetroAchievementsGameSummary, RommConfig } from '../types';
 import { retroAchievementsService } from '../services/retroAchievementsService';
@@ -40,6 +44,8 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
   const [filter, setFilter] = useState<FilterState>('all');
   const [expanded, setExpanded] = useState(true);
   const [selectedAchievement, setSelectedAchievement] = useState<RetroAchievement | null>(null);
+  const [showIdModal, setShowIdModal] = useState(false);
+  const [idInput, setIdInput] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -80,8 +86,198 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.id, config.raUsername, config.raApiKey, config.raHardcoreOnly]);
 
+  const handleSaveCustomId = () => {
+    soundService.playSuccess();
+    const val = idInput.trim();
+    if (!val) {
+      retroAchievementsService.setCustomRaId(game.id, null);
+      onToast?.('Cleared custom RetroAchievements Game ID.', 'info');
+    } else {
+      const num = Number(val);
+      if (isNaN(num) || num <= 0) {
+        onToast?.('Please enter a valid numeric Game ID.', 'error');
+        return;
+      }
+      retroAchievementsService.setCustomRaId(game.id, num);
+      onToast?.(`Linked RetroAchievements Game ID #${num}!`, 'ok');
+    }
+    setShowIdModal(false);
+    loadData();
+  };
+
+  const renderCustomIdModal = () => (
+    <div
+      className="fixed inset-0 z-[300] bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      onClick={() => setShowIdModal(false)}
+    >
+      <div
+        className="w-full max-w-md p-6 rounded-2xl bg-gradient-to-b from-[#131b2e] to-[#0c121e] border border-amber-500/40 shadow-2xl flex flex-col relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between pb-3 border-b border-white/10">
+          <div className="flex items-center gap-2 text-white font-bold text-base">
+            <Link2 size={18} className="text-amber-400" />
+            <span>Link RetroAchievements Game ID</span>
+          </div>
+          <button
+            data-focusable
+            onClick={() => setShowIdModal(false)}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-300 mt-3 leading-relaxed">
+          Enter the official Game ID from RetroAchievements (e.g. from <code className="px-1 py-0.5 rounded bg-black/40 text-amber-300 font-mono">retroachievements.org/game/XXXX</code>). DeckRomM will load that game's official achievements.
+        </p>
+
+        <div className="mt-4">
+          <label className="block text-xs font-bold text-slate-400 mb-1">
+            RetroAchievements Game ID
+          </label>
+          <input
+            type="number"
+            data-focusable
+            id="ra-game-id-input"
+            value={idInput}
+            onChange={(e) => setIdInput(e.target.value)}
+            placeholder="e.g. 228 (Super Mario World)"
+            className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/20 text-white placeholder-slate-500 font-mono text-sm focus:border-amber-400 focus:outline-none"
+            data-keyboard-title="Enter RetroAchievements Game ID"
+          />
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-2.5">
+          <button
+            data-focusable
+            type="button"
+            onClick={() => {
+              setIdInput('');
+              retroAchievementsService.setCustomRaId(game.id, null);
+              setShowIdModal(false);
+              loadData();
+              onToast?.('Cleared custom Game ID.', 'info');
+            }}
+            className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-bold"
+          >
+            Clear Override
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              data-focusable
+              type="button"
+              onClick={() => setShowIdModal(false)}
+              className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold"
+            >
+              Cancel
+            </button>
+            <button
+              data-focusable
+              type="button"
+              id="ra-save-game-id-btn"
+              onClick={handleSaveCustomId}
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 text-black text-xs font-black shadow-lg"
+            >
+              Save & Link
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (loading && !summary) {
+    return (
+      <section className="p-4 rounded-2xl bg-gradient-to-b from-[#131b2e] to-[#0c121e] border border-white/10 text-deck-text flex items-center justify-between gap-3 animate-pulse">
+        <div className="flex items-center gap-3">
+          <Loader2 size={18} className="animate-spin text-amber-400" />
+          <span className="text-xs text-slate-300 font-medium">
+            Checking RomM server & RetroAchievements for <strong className="text-white">{game.title}</strong>...
+          </span>
+        </div>
+      </section>
+    );
+  }
+
   if (!summary || summary.achievements.length === 0) {
-    return null;
+    return (
+      <section
+        data-focusable
+        tabIndex={-1}
+        className="p-5 rounded-2xl bg-gradient-to-b from-[#131b2e] to-[#0c121e] border border-white/10 text-deck-text relative overflow-hidden"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-slate-800/80 border border-white/10 flex items-center justify-center text-slate-400 shrink-0">
+              <Trophy size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-extrabold text-white">RetroAchievements</h2>
+                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-800/80 border border-white/10 text-slate-400">
+                  Unmatched / Not Linked
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                No active achievement set matched for this ROM on RomM.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              data-focusable
+              onClick={handleSyncRomm}
+              disabled={syncingRomm}
+              className="px-3 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-bold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              title="Query RomM server for RetroAchievements match"
+            >
+              {syncingRomm ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              <span>{syncingRomm ? 'Syncing...' : 'Sync from RomM'}</span>
+            </button>
+
+            <button
+              data-focusable
+              onClick={() => {
+                soundService.playTick();
+                setIdInput(String(retroAchievementsService.getCustomRaId(game.id) || game.raId || ''));
+                setShowIdModal(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 font-bold text-xs flex items-center gap-1.5 transition-colors"
+              title="Link official RetroAchievements Game ID directly"
+            >
+              <Link2 size={13} />
+              <span>Link RA Game ID</span>
+            </button>
+
+            {onOpenSettings && (
+              <button
+                data-focusable
+                onClick={() => {
+                  soundService.playTick();
+                  onOpenSettings();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-semibold text-xs flex items-center gap-1.5 transition-colors"
+              >
+                <Settings size={13} />
+                <span>Settings</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-3 text-xs text-slate-400 space-y-1">
+          <p>
+            • RomM matches games by ROM hash against RetroAchievements. If hash calculation is off or this is a modified dump, click <strong>Link RA Game ID</strong> to associate it with its official ID from retroachievements.org.
+          </p>
+        </div>
+
+        {/* Custom RA ID Modal */}
+        {showIdModal && renderCustomIdModal()}
+      </section>
+    );
   }
 
   const { numAchievements, numUnlocked, pointsTotal, pointsEarned, achievements, mastered } = summary;
@@ -268,6 +464,21 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
                 <span>{syncingRomm ? 'Syncing...' : 'Sync from RomM'}</span>
               </button>
 
+              <button
+                data-focusable
+                id="ra-link-id-btn"
+                onClick={() => {
+                  soundService.playTick();
+                  setIdInput(String(retroAchievementsService.getCustomRaId(game.id) || summary.gameId || game.raId || ''));
+                  setShowIdModal(true);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 text-amber-200 font-semibold text-[11px] flex items-center gap-1"
+                title="View or change linked RetroAchievements Game ID"
+              >
+                <Link2 size={11} />
+                <span>RA #{summary.gameId}</span>
+              </button>
+
               {onOpenSettings && (
                 <button
                   data-focusable
@@ -447,6 +658,9 @@ export const RetroAchievementsPanel: React.FC<RetroAchievementsPanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* Custom RetroAchievements ID Override Modal */}
+      {showIdModal && renderCustomIdModal()}
     </section>
   );
 };

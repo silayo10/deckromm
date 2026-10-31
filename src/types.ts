@@ -40,6 +40,8 @@ export interface Game {
   igdbId?: number;
   mobyId?: number;
   raId?: number;
+  raMetadata?: any;
+  romUser?: any;
   isFavorite?: boolean;
   isCached?: boolean;
   lastPlayed?: string;
@@ -82,8 +84,10 @@ export interface RetroAchievementsGameSummary {
   hardcoreMode: boolean;
   mastered: boolean;
   userRank?: string;
-  source?: 'romm_server' | 'direct_api' | 'steam_deck_emulator' | 'curated' | 'procedural';
+  source?: 'romm_server' | 'direct_api' | 'steam_deck_emulator' | 'curated' | 'not_found';
   serverManaged?: boolean;
+  status?: 'ready' | 'not_supported' | 'unmatched' | 'no_credentials';
+  statusMessage?: string;
 }
 
 export type LibraryViewMode = 'grid' | 'hero' | 'table';

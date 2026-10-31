@@ -498,6 +498,21 @@ class RommApiService {
     const languages = normalizedLangs.length > 0 ? normalizedLangs : parsedFileMeta.languages;
     const region = (r.regions && r.regions[0]) || r.region || meta.region || parsedFileMeta.region || '';
 
+    const raIdRaw =
+      r.ra_id ??
+      r.retroachievements_id ??
+      r.retroachievementsId ??
+      meta.ra_id ??
+      meta.retroachievements_id ??
+      meta.ra_game_id ??
+      r.ra_metadata?.id ??
+      r.ra_metadata?.ID ??
+      meta.ra_metadata?.id ??
+      meta.ra_metadata?.ID;
+    const raId = raIdRaw != null && !isNaN(Number(raIdRaw)) ? Number(raIdRaw) : undefined;
+    const raMetadata = r.ra_metadata || r.merged_ra_metadata || meta.ra_metadata || r.retroachievements || undefined;
+    const romUser = r.rom_user || undefined;
+
     return {
       id,
       title: r.name || r.fs_name_no_ext || String(r.fs_name || 'Untitled').replace(/\.[^/.]+$/, ''),
@@ -523,6 +538,9 @@ class RommApiService {
       players: meta.player_count || r.player_count || '',
       igdbId: r.igdb_id,
       mobyId: r.moby_id,
+      raId,
+      raMetadata,
+      romUser,
       isFavorite: this.favorites.has(String(id)),
       lastPlayed: r.rom_user?.last_played || undefined,
       playableOnline: STREAMABLE_PLATFORM_SLUGS.has(slug),
@@ -673,6 +691,26 @@ class RommApiService {
     try {
       const raw = await this.request<any>({ path: `/api/roms/${encodeURIComponent(String(id))}` });
       return this.mapRom(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch raw ROM response including ra_metadata and rom_user */
+  async getRomRaw(id: string | number): Promise<any> {
+    if (this.config.isDemoMode || !this.config.serverUrl) return null;
+    try {
+      return await this.request<any>({ path: `/api/roms/${encodeURIComponent(String(id))}` });
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch current user profile including ra_username and ra_progression */
+  async getMe(): Promise<any> {
+    if (this.config.isDemoMode || !this.config.serverUrl) return null;
+    try {
+      return await this.request<any>({ path: '/api/users/me' });
     } catch {
       return null;
     }
