@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Game } from '../types';
-import { findSeriesGames, findSimilarGames } from '../utils/gameRecommendations';
+import { findSeriesGames, findSimilarGames, detectFranchiseName } from '../utils/gameRecommendations';
 import { PlatformBadge } from './PlatformBadge';
-import { Layers, Sparkles, CheckCircle2, ChevronRight, Gamepad2 } from 'lucide-react';
+import { Layers, Sparkles, CheckCircle2, ChevronRight, Gamepad2, Loader2 } from 'lucide-react';
 import { soundService } from '../services/soundService';
+import { rommApi } from '../services/rommApi';
 
 interface RelatedGamesSectionProps {
   currentGame: Game;
@@ -16,10 +17,51 @@ export const RelatedGamesSection: React.FC<RelatedGamesSectionProps> = ({
   allGames,
   onSelectGame,
 }) => {
+  const [serverSeriesGames, setServerSeriesGames] = useState<Game[]>([]);
+  const [loadingServer, setLoadingServer] = useState(false);
+
+  const franchise = useMemo(() => {
+    return detectFranchiseName(currentGame.title);
+  }, [currentGame.title]);
+
+  // Query RomM server across all platforms for games in this franchise
+  useEffect(() => {
+    let alive = true;
+    if (!franchise) {
+      setServerSeriesGames([]);
+      return;
+    }
+    setLoadingServer(true);
+    rommApi
+      .searchGamesAcrossLibrary(franchise)
+      .then((results) => {
+        if (alive) {
+          setServerSeriesGames(results);
+          setLoadingServer(false);
+        }
+      })
+      .catch(() => {
+        if (alive) setLoadingServer(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [currentGame.id, currentGame.title, franchise]);
+
+  // Combined library pool: current view + cached full library + server search results
+  const combinedGames = useMemo(() => {
+    const cached = rommApi.getCachedLibrary();
+    const map = new Map<string, Game>();
+    for (const g of allGames) map.set(`${g.platformSlug}:${g.id}`, g);
+    for (const g of cached) map.set(`${g.platformSlug}:${g.id}`, g);
+    for (const g of serverSeriesGames) map.set(`${g.platformSlug}:${g.id}`, g);
+    return Array.from(map.values());
+  }, [allGames, serverSeriesGames]);
+
   // 1. Other games in the same series from the library
   const seriesResult = useMemo(() => {
-    return findSeriesGames(currentGame, allGames);
-  }, [currentGame, allGames]);
+    return findSeriesGames(currentGame, combinedGames);
+  }, [currentGame, combinedGames]);
 
   // Set of IDs already in series so we don't duplicate them in "Similar Games"
   const seriesIds = useMemo(() => {
@@ -30,13 +72,13 @@ export const RelatedGamesSection: React.FC<RelatedGamesSectionProps> = ({
 
   // 2. Similar games based on genre, developer, publisher, and era
   const similarGames = useMemo(() => {
-    return findSimilarGames(currentGame, allGames, seriesIds);
-  }, [currentGame, allGames, seriesIds]);
+    return findSimilarGames(currentGame, combinedGames, seriesIds);
+  }, [currentGame, combinedGames, seriesIds]);
 
   const hasSeries = seriesResult.games.length > 0;
   const hasSimilar = similarGames.length > 0;
 
-  if (!hasSeries && !hasSimilar) {
+  if (!hasSeries && !hasSimilar && !loadingServer && !franchise) {
     return null;
   }
 
@@ -48,7 +90,7 @@ export const RelatedGamesSection: React.FC<RelatedGamesSectionProps> = ({
   return (
     <div className="flex flex-col gap-6 mt-2">
       {/* 1. Other Games in the Series */}
-      {hasSeries && (
+      {hasSeries ? (
         <section
           data-focusable
           tabIndex={-1}
@@ -67,7 +109,7 @@ export const RelatedGamesSection: React.FC<RelatedGamesSectionProps> = ({
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  More titles from the {seriesResult.seriesName} franchise available in your collection
+                  More titles from the {seriesResult.seriesName} franchise available in your collection across all platforms
                 </p>
               </div>
             </div>
@@ -133,7 +175,22 @@ export const RelatedGamesSection: React.FC<RelatedGamesSectionProps> = ({
             })}
           </div>
         </section>
-      )}
+      ) : loadingServer ? (
+        <section className="p-4 rounded-2xl bg-sky-950/20 border border-sky-500/20 flex items-center gap-3">
+          <Loader2 size={16} className="animate-spin text-sky-400" />
+          <span className="text-xs text-slate-300 font-medium">
+            Searching your RomM collection across all platforms for other <strong className="text-white">{franchise}</strong> games...
+          </span>
+        </section>
+      ) : franchise ? (
+        <section className="p-4 rounded-2xl bg-deck-panel-2/30 border border-deck-line text-xs text-slate-400 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-slate-300">
+            <Layers size={14} className="text-sky-400" />
+            <span>Series: <strong>{franchise}</strong></span>
+          </div>
+          <span className="text-slate-500">Only {currentGame.title} detected in your RomM collection so far</span>
+        </section>
+      ) : null}
 
       {/* 2. Similar Games We Have */}
       {hasSimilar && (

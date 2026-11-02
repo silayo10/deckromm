@@ -429,6 +429,19 @@ export default function App() {
       });
   }, [games]);
 
+  // Full cross-platform game pool for franchise and recommendation discovery
+  const allKnownGames = useMemo(() => {
+    const cached = rommApi.getCachedLibrary();
+    const map = new Map<string, Game>();
+    for (const g of cached) {
+      map.set(`${g.platformSlug}:${g.id}`, g);
+    }
+    for (const g of games) {
+      map.set(`${g.platformSlug}:${g.id}`, g);
+    }
+    return Array.from(map.values());
+  }, [games]);
+
   const { availableLanguages, japaneseCount } = useMemo(() => {
     let ja = 0;
     let en = 0;
@@ -992,7 +1005,7 @@ export default function App() {
             setBiosModalOpen(true);
           }}
           onToast={toast}
-          allGames={games}
+          allGames={allKnownGames}
           onSelectGame={(g) => setSelectedGame(g)}
           onOpenSettings={() => setSettingsOpen(true)}
         />

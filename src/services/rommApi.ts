@@ -1109,6 +1109,86 @@ class RommApiService {
   }
 
   /**
+   * Return all known games stored in the local library cache.
+   */
+  getCachedLibrary(): Game[] {
+    try {
+      const raw = localStorage.getItem(LIBRARY_CACHE_KEY);
+      if (raw) {
+        const list: Game[] = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          if (this.config.isDemoMode) {
+            const map = new Map<string, Game>();
+            for (const g of DEMO_GAMES) map.set(`${g.platformSlug}:${g.id}`, g);
+            for (const g of list) map.set(`${g.platformSlug}:${g.id}`, g);
+            return Array.from(map.values());
+          }
+          return list;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return [...DEMO_GAMES];
+  }
+
+  /**
+   * Search all games matching a term or franchise across the entire RomM library
+   * regardless of platform, combining network results with local library cache.
+   */
+  async searchGamesAcrossLibrary(term: string): Promise<Game[]> {
+    if (!term || !term.trim()) return [];
+    const cleanTerm = term.trim().toLowerCase();
+
+    // 1. Get cached games and demo games for instant response
+    const cached = this.getCachedLibrary();
+    const map = new Map<string, Game>();
+    for (const g of DEMO_GAMES) {
+      if (g.title.toLowerCase().includes(cleanTerm)) {
+        map.set(`${g.platformSlug}:${g.id}`, g);
+      }
+    }
+    for (const g of cached) {
+      if (g.title.toLowerCase().includes(cleanTerm)) {
+        map.set(`${g.platformSlug}:${g.id}`, g);
+      }
+    }
+    const localMatches = Array.from(map.values());
+
+    // 2. If online, query RomM server across all platforms
+    if (!this.config.isDemoMode && !this.config.offlineOnlyMode && this.config.serverUrl) {
+      try {
+        const data = await this.request<any>({
+          path: '/api/roms',
+          query: { search_term: term.trim(), search: term.trim(), limit: 100 },
+          timeoutMs: 12000,
+        });
+        const items: any[] = Array.isArray(data) ? data : data?.items || [];
+        if (items.length > 0) {
+          const mapped = await this.annotateInstalled(await this.mapChunked(items));
+          this.saveLibraryCache(mapped);
+
+          // Merge without duplicates
+          const seen = new Set<string>();
+          const merged: Game[] = [];
+          for (const g of [...mapped, ...localMatches]) {
+            const key = `${g.platformSlug}:${g.id}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              merged.push(g);
+            }
+          }
+          return merged;
+        }
+      } catch (e) {
+        console.warn('searchGamesAcrossLibrary network error:', e);
+      }
+    }
+
+    return localMatches;
+  }
+
+  /**
    * Scan all downloaded games and ensure their cover art is downloaded and cached locally.
    */
   async syncAllOfflineArtwork(): Promise<{ ok: boolean; total: number; downloaded: number; message: string }> {
