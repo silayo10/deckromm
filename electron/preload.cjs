@@ -20,6 +20,7 @@ const EVENTS = new Set([
   'app:update-progress',
   'app:update-available',
   'pcsx2:memcard-uploaded',
+  'playtime:updated',
 ]);
 
 function on(channel, listener) {
@@ -107,6 +108,14 @@ const api = {
     uploadMemcard: invoke('pcsx2:upload-memcard'),
     downloadMemcard: invoke('pcsx2:download-memcard'),
     setAutoSync: invoke('pcsx2:set-auto-sync'),
+  },
+  playtime: {
+    get: invoke('playtime:get'),
+    getAll: invoke('playtime:get-all'),
+    record: invoke('playtime:record'),
+    reconcile: invoke('playtime:reconcile'),
+    sync: invoke('playtime:sync'),
+    syncAll: invoke('playtime:sync-all'),
   },
   on,
 };

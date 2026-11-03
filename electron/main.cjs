@@ -40,6 +40,7 @@ const { CloudSync } = require('./lib/cloudSync.cjs');
 const { BiosManager } = require('./lib/biosManager.cjs');
 const { Pcsx2Manager } = require('./lib/pcsx2Manager.cjs');
 const { AppUpdater } = require('./lib/appUpdater.cjs');
+const { PlaytimeManager } = require('./lib/playtimeManager.cjs');
 
 // ---------------------------------------------------------------------------
 // Environment / Chromium switches (must run before `app.ready`)
@@ -190,6 +191,11 @@ const pcsx2 = new Pcsx2Manager({
   getRoot: getEmulationRoot,
 });
 
+const playtime = new PlaytimeManager({
+  userDataDir,
+  log,
+});
+
 const emulators = new EmulatorManager({
   getConfig: () => configStore.get(),
   emit,
@@ -214,6 +220,20 @@ const emulators = new EmulatorManager({
   },
   onGameEnd: (info) => {
     restoreWindow();
+    if (info && info.romId && (info.activeSeconds > 0 || info.playedMs > 5000)) {
+      try {
+        const secs = info.activeSeconds || Math.round(info.playedMs / 1000);
+        const record = playtime.recordSession(info.romId, secs);
+        if (record) {
+          emit('playtime:updated', { romId: info.romId, record });
+          if (romm && romm.getCreds()) {
+            playtime.syncToRomm(info.romId, romm).catch((e) => log('[playtime] auto-sync error:', e.message));
+          }
+        }
+      } catch (err) {
+        log('[playtime] onGameEnd record error:', err && err.message);
+      }
+    }
     if (info && (info.platformSlug === 'ps2' || info.flatpakId === 'net.pcsx2.PCSX2')) {
       pcsx2.onPcsx2GameExited(info).catch((e) => log('[pcsx2] post-game sync error:', e.message));
     }
@@ -744,6 +764,25 @@ function registerIpc() {
   handle('app:check-update', () => updater.checkForUpdates());
   handle('app:perform-update', (opts) => updater.performUpdate(opts));
   handle('app:relaunch', () => updater.relaunch());
+
+  // Playtime Tracker & RomM Sync
+  handle('playtime:get', (romId) => playtime.getPlaytime(romId));
+  handle('playtime:get-all', () => playtime.getAllPlaytimes());
+  handle('playtime:record', ({ romId, activeSeconds }) => {
+    const rec = playtime.recordSession(romId, activeSeconds);
+    if (rec) {
+      emit('playtime:updated', { romId, record: rec });
+      if (romm && romm.getCreds()) {
+        playtime.syncToRomm(romId, romm).catch((e) => log('[playtime] sync error:', e.message));
+      }
+    }
+    return rec;
+  });
+  handle('playtime:reconcile', ({ romId, serverPlaytime, serverLastPlayed }) =>
+    playtime.reconcileWithRomm(romId, serverPlaytime, serverLastPlayed)
+  );
+  handle('playtime:sync', (romId) => playtime.syncToRomm(romId, romm));
+  handle('playtime:sync-all', () => playtime.syncAllPending(romm));
 
   // ---- v1.0 compatibility channels -------------------------------------
   handle('deckromm:is-electron', () => true);

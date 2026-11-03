@@ -184,6 +184,15 @@ export interface XboxEmulatorStatus {
   missingItems: string[];
 }
 
+export interface PlaytimeRecord {
+  romId: string | number;
+  totalSeconds: number;
+  sessionsCount: number;
+  lastPlayed: number;
+  lastSyncedAt?: number;
+  pendingSync?: boolean;
+}
+
 export interface DeckRommBridge {
   isElectron: true;
   app: {
@@ -282,6 +291,14 @@ export interface DeckRommBridge {
     downloadMemcard(req: { downloadPath: string; targetFileName?: string }): Promise<{ ok: boolean; targetPath?: string; sizeBytes?: number; fileName?: string; message?: string }>;
     setAutoSync(enabled: boolean): Promise<{ ok: boolean; autoSync: boolean }>;
   };
+  playtime: {
+    get(romId: string | number): Promise<PlaytimeRecord>;
+    getAll(): Promise<Record<string, PlaytimeRecord>>;
+    record(req: { romId: string | number; activeSeconds: number }): Promise<PlaytimeRecord>;
+    reconcile(req: { romId: string | number; serverPlaytime: number; serverLastPlayed?: string | number }): Promise<PlaytimeRecord>;
+    sync(romId: string | number): Promise<{ ok: boolean; romId?: string; totalSeconds?: number; lastSyncedAt?: number; message?: string }>;
+    syncAll(): Promise<{ ok: boolean; synced: number; total?: number; message?: string }>;
+  };
   on(channel: 'auth:required', cb: (info: { status: number; message: string }) => void): Unsubscribe;
   on(channel: 'rom:progress', cb: (ev: RomProgressEvent) => void): Unsubscribe;
   on(channel: 'emulator:state', cb: (ev: EmulatorStateEvent) => void): Unsubscribe;
@@ -293,6 +310,7 @@ export interface DeckRommBridge {
   on(channel: 'app:update-progress', cb: (ev: any) => void): Unsubscribe;
   on(channel: 'app:update-available', cb: (ev: any) => void): Unsubscribe;
   on(channel: 'pcsx2:memcard-uploaded', cb: (ev: { romId: string | number; title: string; fileName: string; sizeBytes: number; time: number }) => void): Unsubscribe;
+  on(channel: 'playtime:updated', cb: (ev: { romId: string | number; record: PlaytimeRecord }) => void): Unsubscribe;
 }
 
 declare global {

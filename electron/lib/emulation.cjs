@@ -1422,6 +1422,45 @@ class EmulatorManager {
     }
 
     const startedAt = Date.now();
+    let lastHeartbeat = Date.now();
+    let activePlayedMs = 0;
+    let isExplicitlyPaused = false;
+
+    // Heartbeat ticker for active playtime accumulation
+    // Automatically excludes:
+    // 1) Steam Deck sleep / suspend (wall clock skips > 2500ms between 1000ms ticks)
+    // 2) Process stopped / suspended state on Linux (/proc/<pid>/stat state 'T' or 't')
+    // 3) Explicit pause states
+    const heartbeatTimer = setInterval(() => {
+      const now = Date.now();
+      const delta = now - lastHeartbeat;
+      lastHeartbeat = now;
+
+      // 1) Sleep / suspend immunity: If delta is > 2500ms, the Steam Deck was in sleep mode or suspended
+      if (delta > 2500) {
+        return;
+      }
+
+      // 2) Linux process stopped state: check if gamescope or OS froze/stopped the process
+      let isProcessStopped = false;
+      if (!IS_WIN && child && child.pid) {
+        try {
+          const stat = fs.readFileSync(`/proc/${child.pid}/stat`, 'utf8');
+          const m = stat.match(/\)\s+([RSDZTtW])/);
+          if (m && (m[1] === 'T' || m[1] === 't')) {
+            isProcessStopped = true;
+          }
+        } catch {
+          // Process might be running in background flatpak
+        }
+      }
+
+      // 3) Accumulate only when actively running
+      if (!isExplicitlyPaused && !isProcessStopped) {
+        activePlayedMs += Math.min(delta, 1200);
+      }
+    }, 1000);
+
     this.current = {
       child,
       pgid: child.pid,
@@ -1432,10 +1471,19 @@ class EmulatorManager {
       command: resolved.label,
       flatpakId: resolved.flatpakId,
       monitorInterval: null,
+      heartbeatTimer,
+      pause: () => { isExplicitlyPaused = true; },
+      resume: () => { isExplicitlyPaused = false; lastHeartbeat = Date.now(); },
+      getActivePlayedMs: () => activePlayedMs,
     };
 
     const finish = (code, signal, error) => {
       if (!this.current || this.current.child !== child) return;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (this.current.heartbeatTimer) {
+        clearInterval(this.current.heartbeatTimer);
+        this.current.heartbeatTimer = null;
+      }
       if (this.current.monitorInterval) {
         clearInterval(this.current.monitorInterval);
         this.current.monitorInterval = null;
@@ -1445,6 +1493,7 @@ class EmulatorManager {
       } catch {
         /* ignore */
       }
+      const activeSeconds = Math.max(0, Math.round(activePlayedMs / 1000));
       const info = {
         running: false,
         romId: req.romId,
@@ -1456,9 +1505,11 @@ class EmulatorManager {
         signal,
         error: error ? error.message : null,
         playedMs: Date.now() - startedAt,
+        activePlayedMs,
+        activeSeconds,
       };
       this.current = null;
-      this.log(`[launch] emulator exited code=${code} signal=${signal}`);
+      this.log(`[launch] emulator exited code=${code} signal=${signal} activePlaytime=${activeSeconds}s`);
       this.emit('emulator:state', info);
       this.onGameEnd(info);
     };

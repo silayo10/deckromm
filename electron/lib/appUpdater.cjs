@@ -18,7 +18,9 @@ const https = require('https');
 const { app } = require('electron');
 
 const IS_WIN = process.platform === 'win32';
-const HOME = os.homedir() || process.env.USERPROFILE || process.env.HOME || '/home/deck';
+const HOME = IS_WIN
+  ? (process.env.USERPROFILE || os.homedir() || 'C:\\')
+  : (process.env.HOME || '/home/deck');
 const PATH_SEP = IS_WIN ? ';' : ':';
 
 const EXTRA_PATHS = (
