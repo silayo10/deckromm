@@ -13,22 +13,36 @@ const { execFile, spawn } = require('child_process');
 const fsp = require('fs').promises;
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const https = require('https');
 const { app } = require('electron');
 
-const HOME = process.env.HOME || '/home/deck';
-const EXTRA_PATHS = [
-  path.join(HOME, '.bun', 'bin'),
-  path.join(HOME, '.nvm', 'versions', 'node', 'current', 'bin'),
-  path.join(HOME, '.local', 'bin'),
-  '/usr/local/bin',
-  '/usr/bin',
-  '/bin',
-].join(':');
+const IS_WIN = process.platform === 'win32';
+const HOME = os.homedir() || process.env.USERPROFILE || process.env.HOME || '/home/deck';
+const PATH_SEP = IS_WIN ? ';' : ':';
+
+const EXTRA_PATHS = (
+  IS_WIN
+    ? [
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin'),
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'bin'),
+        path.join(process.env.APPDATA || '', 'npm'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs'),
+        path.join(HOME, '.bun', 'bin'),
+      ]
+    : [
+        path.join(HOME, '.bun', 'bin'),
+        path.join(HOME, '.nvm', 'versions', 'node', 'current', 'bin'),
+        path.join(HOME, '.local', 'bin'),
+        '/usr/local/bin',
+        '/usr/bin',
+        '/bin',
+      ]
+).filter(Boolean).join(PATH_SEP);
 
 const BUILD_ENV = {
   ...process.env,
-  PATH: process.env.PATH ? `${EXTRA_PATHS}:${process.env.PATH}` : EXTRA_PATHS,
+  PATH: process.env.PATH ? `${EXTRA_PATHS}${PATH_SEP}${process.env.PATH}` : EXTRA_PATHS,
   CI: 'true',
 };
 
@@ -352,8 +366,12 @@ class AppUpdater {
       this.log(`[updater] ${cmd} ${args.join(' ')} (cwd: ${safeCwd})`);
       
       let proc;
+      let resolvedCmd = cmd;
+      if (IS_WIN && cmd === 'npm') {
+        resolvedCmd = 'npm.cmd';
+      }
       try {
-        proc = spawn(cmd, args, { cwd: safeCwd, env: BUILD_ENV });
+        proc = spawn(resolvedCmd, args, { cwd: safeCwd, env: BUILD_ENV, shell: IS_WIN });
       } catch (err) {
         return reject(err);
       }
@@ -458,9 +476,9 @@ class AppUpdater {
           await this.runSpawn('npm', ['run', 'build'], gitDir, 'building', 80, 90);
         }
 
-        // Package new AppImage and install if scripts exist
+        // Package new AppImage and install if scripts exist (Linux / SteamOS only)
         const buildScript = path.join(gitDir, 'build-appimage.sh');
-        if (fs.existsSync(buildScript)) {
+        if (!IS_WIN && fs.existsSync(buildScript)) {
           await fsp.chmod(buildScript, 0o755).catch(() => {});
           this.emit('app:update-progress', {
             stage: 'packaging',
@@ -575,7 +593,7 @@ class AppUpdater {
       });
 
       const buildScript = path.join(buildDir, 'build-appimage.sh');
-      if (fs.existsSync(buildScript)) {
+      if (!IS_WIN && fs.existsSync(buildScript)) {
         await fsp.chmod(buildScript, 0o755).catch(() => {});
         await this.runSpawn('bash', [buildScript], buildDir, 'building', 60, 90);
         const installScript = path.join(buildDir, 'installer.sh');
@@ -651,6 +669,20 @@ class AppUpdater {
   relaunch() {
     this.log('[updater] Relaunching application...');
     if (app) {
+      if (IS_WIN) {
+        const exePath = process.execPath;
+        try {
+          spawn('cmd.exe', ['/c', 'start', '""', exePath], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+          }).unref();
+        } catch {
+          app.relaunch();
+        }
+        app.exit(0);
+        return;
+      }
       const launcherPath = path.join(HOME, 'Applications/DeckRomM/launch_deckromm.sh');
       if (fs.existsSync(launcherPath)) {
         app.relaunch({ execPath: launcherPath });

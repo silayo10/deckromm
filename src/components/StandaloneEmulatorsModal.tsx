@@ -105,13 +105,17 @@ export const StandaloneEmulatorsModal: React.FC<StandaloneEmulatorsModalProps> =
 
   const handleInstallEmulator = async (emu: StandaloneEmulatorInfo) => {
     soundService.playSelect();
+    if (emu.id === 'xenia' || emu.flatpakId === 'xenia') {
+      onToast('Xenia (Xbox 360) is not on Flathub. Install it via EmuDeck (Proton wrapper) or place xenia.AppImage in ~/Applications.', 'info');
+      return;
+    }
     setInstallingMap((prev) => ({ ...prev, [emu.flatpakId]: { message: 'Starting...' } }));
     try {
       const res = await bridge.system.installFlatpak(emu.flatpakId);
       if (res.ok) {
         setInstalledMap((prev) => ({ ...prev, [emu.flatpakId]: true }));
         soundService.playSuccess();
-        onToast(`Installed ${emu.name}`, 'ok');
+        onToast(res.message || `Installed ${emu.name}`, 'ok');
       } else {
         soundService.playBack();
         onToast(res.message || `Failed to install ${emu.name}`, 'error');

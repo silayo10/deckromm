@@ -20,6 +20,8 @@
     "pack:dir": "npm run build && electron-builder --config electron-builder.json --linux dir",
     "dist:appimage": "npm run build && electron-builder --config electron-builder.json --linux AppImage",
     "dist:appimage:npm": "npm run build && electron-builder --config electron-builder.json --linux AppImage",
+    "dist:win:portable": "npm run build && electron-builder --config electron-builder.json --win portable",
+    "dist:all": "npm run build && electron-builder --config electron-builder.json --linux AppImage --win portable",
     "clean": "rm -rf dist release"
   },
   "dependencies": {

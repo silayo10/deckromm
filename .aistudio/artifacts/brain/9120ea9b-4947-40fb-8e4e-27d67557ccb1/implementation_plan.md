@@ -1,138 +1,136 @@
-# DeckRomM Platform Expansion, PS2 BIOS Auto-Sync & Search Bar Cleanup
+# DeckRomM Native Windows Portable EXE & Dual-Platform Architecture
 
-Enhance DeckRomM by supporting all major retro and modern emulation platforms, automating BIOS firmware retrieval from RomM for the PS2 emulator (PCSX2) and other systems, and streamlining the search/filter toolbar by removing the redundant "Hide JP" button.
+Enable DeckRomM to run natively on Windows as a single standalone portable `.exe` while maintaining 100% feature parity with SteamOS Game Mode, keeping both platforms synchronized in a single GitHub repository.
 
-## User Review & Critical Decisions
+## User Review & Critical Decisions Confirmed
 
 > [!IMPORTANT]
-> The following user preferences were confirmed during clarification:
-> - **Platform Expansion Scope**: Include all major emulation platforms supported by EmuDeck and RetroArch / standalone flatpaks (Sega Dreamcast, Sega Saturn, Sony PSP, Sony PS3, Nintendo Wii, Nintendo 3DS, Nintendo Switch, Arcade / Neo-Geo / MAME, Sega CD, Game Boy / Color, and TurboGrafx-16).
-> - **BIOS Pulling Strategy**: Implement dual-mode syncing: automatically detect and pull missing BIOS files from RomM when a game is downloaded or launched, while also providing a dedicated one-click "Sync All Server BIOS" button in the BIOS Manager modal.
-> - **Search Filter Bar Refinement**: Remove the redundant standalone `🇯🇵 Hide JP` chip from the quick filter row in `SearchFilterBar.tsx`, relying exclusively on the multi-option `LanguagePickerModal` (`Globe` button) which already includes the `no-ja` ("Hide Japanese ROMs") filter option.
+> The following user preferences were confirmed during planning clarification:
+> - **In-Place Updating Mechanism**: Git in-place pull and rebuild matching SteamOS (`git pull` + `npm install` + `npm run build` with automatic detached restart).
+> - **Release Packaging Format**: Single portable standalone EXE without installation (`portable` target via `electron-builder`, producing `DeckRomM-<version>-portable.exe`).
+> - **Emulation & ROM Directory Structure**: EmuDeck for Windows directory layout (`C:\Emulation` or custom drive like `D:\Emulation`, with standard subdirectories: `\roms\<platform>`, `\bios`, `\saves`, and `\tools`).
+> - **Unified GitHub Repository**: Single shared codebase with platform-aware abstraction layers, packaged via a dual-platform GitHub Actions workflow releasing both Linux AppImage and Windows Portable EXE.
 
 ---
 
-## 1. Overview & Core Concept
-
-- **What It Delivers**:
-  1. **Comprehensive Platform Catalog**: Full coverage across classic and modern consoles with proper libretro core associations, standalone flatpak fallback mappings, file extensions, and UI theme accents.
-  2. **Automated & Manual BIOS Provisioning**: Robust RomM firmware endpoint ingestion (supporting both direct JSON arrays and `{ items: [...] }` paginated responses) that deploys BIOS files directly to both `~/Emulation/bios` (EmuDeck standard) and standalone emulator configuration directories (PCSX2 flatpak config & data directories).
-  3. **Clean Handheld Filter Bar**: Streamlined filter bar layout without redundant Japanese filter toggles, maximizing screen space for quick genre chips on the Steam Deck's 1280x800 display.
-- **Target Audience / Persona**: Steam Deck users running DeckRomM in Game Mode wanting seamless out-of-the-box emulation without manually navigating Linux desktop folders to copy BIOS or configure unrecognized platforms.
-- **Key Value**: PS2 games (and other BIOS-dependent platforms) work on the first click because DeckRomM guarantees the correct BIOS is synchronized to PCSX2 before launch.
-
----
-
-## 2. User Experience & Visual Design
-
-### Key User Flows
-
-1. **PS2 / BIOS-Dependent Game Launch & Download**:
-   - User navigates to a PlayStation 2 (or Dreamcast / PS1 / Saturn / Xbox) game card and presses **A** (Play / Download).
-   - Before spawning PCSX2 or starting the ROM download, DeckRomM inspects local BIOS directories (`~/Emulation/bios` and `~/.var/app/net.pcsx2.PCSX2/data/PCSX2/bios`).
-   - If missing, DeckRomM queries RomM's `/api/firmware` endpoint, matches available firmware entries by platform (`ps2`, `sony-playstation-2`, etc.) and filename patterns (`scph*.bin`), downloads them in the background, copies them to the emulator's BIOS folder, and issues a subtle notification (`"Synchronized PS2 BIOS to PCSX2"`).
-   - The game launches smoothly without PCSX2 throwing a missing BIOS error screen.
-
-2. **One-Click Manual BIOS Sync in BIOS Manager**:
-   - User opens the **BIOS & Firmware Manager** from Settings or Quick Menu.
-   - A prominent **"Sync All Server BIOS"** action button allows downloading all missing firmware files from RomM with a single press, showing progress indicators per file.
-
-3. **Streamlined Filter Bar**:
-   - The secondary filter row displays `Lang: [Current]` (opens `LanguagePickerModal`), followed by `Genre: [Current]`, `All Genres`, and quick genre chips (`RPG`, `Action`, etc.).
-   - The extra `🇯🇵 Hide JP` chip is cleanly removed, preventing visual clutter and redundant state.
-
-### Visual Identity & Theme
-- Handheld-optimized Steam Deck UI tokens: `#1a1f2c` deep slate backgrounds, `#0ea5e9` sky accent highlights, `border-deck-line` dividers.
-- High-contrast focused states with zero layout shifting.
-- Clean typography and metadata presentation without pills or clipped text.
-
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-### Decision 1: Dual-Mode BIOS Retrieval (Auto-Check on Launch + Manual Sync)
-- **Chosen Approach**: When launching or downloading a game for any platform requiring BIOS (PS2, PS1, Dreamcast, Saturn, Sega CD, Xbox), trigger an asynchronous pre-flight check. If the required local BIOS files are absent, fetch them from RomM's firmware catalog and deploy to emulator folders before booting. Additionally, expose a manual "Sync All" action in `BiosManagerModal`.
-- **Why**: Eliminates the most common failure mode in handheld emulation (launching a PS2 game only for PCSX2 to fail with "No BIOS found"). Users don't need to manually know which SCPH file PCSX2 requires.
-- **Alternatives Considered**: Only relying on manual downloading in the modal was confusing because users expected RomM to automatically supply firmware when available.
-
-### Decision 2: RomM API Firmware Normalization
-- **Chosen Approach**: Enhance RomM firmware retrieval in both `rommApi.ts` and `biosManager.cjs` to handle all RomM API versions: direct JSON array responses `[...]`, paginated `{ items: [...], total: ... }` responses, and nested `{ data: [...] }` envelopes. Match platform identifiers flexibly using slug variations (`ps2`, `playstation-2`, `sony-playstation-2`) and common filename patterns (`/scph|ps2/i`).
-- **Why**: RomM versions 3.x, 4.x, and 5.x have minor schema variations. Normalizing ensures compatibility across all server setups.
-
-### Decision 3: Expanded Platform Core & Folder Mappings
-- **Chosen Approach**: Add full configurations in `emulation.cjs`, `rommData.ts`, and `types.ts` for:
-  - **Sega Dreamcast** (`flycast` / `Flycast` flatpak)
-  - **Sega Saturn** (`mednafen_saturn` / `yabasanshiro`)
-  - **Sony PSP** (`ppsspp` / `PPSSPP` flatpak)
-  - **Sony PS3** (`rpcs3` / `RPCS3` flatpak)
-  - **Nintendo Wii** (`dolphin` / `Dolphin` flatpak)
-  - **Nintendo 3DS** (`lime3ds` / `Lime3DS` flatpak)
-  - **Nintendo Switch** (`ryujinx` / `Ryujinx` flatpak)
-  - **Arcade / Neo Geo / MAME** (`fbneo`, `mame`, `mame2003_plus`)
-  - **Sega CD & 32X** (`genesis_plus_gx`, `picodrive`)
-  - **Game Boy & Game Boy Color** (`gambatte`, `sameboy`)
-  - **TurboGrafx-16 / PC Engine** (`mednafen_pce_fast`)
-- **Why**: Users with varied RomM collections have ROMs that currently appear without dedicated icons, proper EmuDeck folder mapping, or automatic emulator resolution.
-
----
-
-## 4. Technical Architecture & Data Strategy
+## 1. Architecture & Platform Abstraction
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                          DeckRomM Client UI                            │
+│                   DeckRomM Unified React Frontend                     │
+│     (1280x800 Handheld / PC Controller & Keyboard First Navigation)    │
 │                                                                        │
-│  ┌──────────────────────┐  ┌─────────────────┐  ┌───────────────────┐  │
-│  │ SearchFilterBar      │  │ GameDetailModal │  │ BiosManagerModal  │  │
-│  │ (Language & Genres)  │  │ (Play/Download) │  │ ("Sync All BIOS") │  │
-│  └──────────┬───────────┘  └────────┬────────┘  └─────────┬─────────┘  │
-└─────────────┼───────────────────────┼─────────────────────┼────────────┘
-              │                       │                     │
-              ▼                       ▼                     ▼
+│  ┌───────────────────────┐  ┌──────────────────┐  ┌─────────────────┐  │
+│  │ Library / Game View   │  │ SettingsScreen   │  │ AppUpdateModal  │  │
+│  │ (RomM Sync, Art, RA)  │  │ (Drive Selector) │  │ (In-place Git)  │  │
+│  └───────────┬───────────┘  └────────┬─────────┘  └────────┬────────┘  │
+└──────────────┼───────────────────────┼─────────────────────┼───────────┘
+               │                       │                     │
+               ▼                       ▼                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Services & Bridge Layer                         │
-│                                                                        │
-│  ┌──────────────────────┐  ┌────────────────────────────────────────┐  │
-│  │ rommApi.ts           │  │ bridge.ts                              │  │
-│  │ - Normalized Firmware│  │ - bios.status() / bios.download()      │  │
-│  │ - Paged Firmwares    │  │ - bios.syncForPlatform()               │  │
-│  └──────────┬───────────┘  └────────────────────┬───────────────────┘  │
-└─────────────┼───────────────────────────────────┼──────────────────────┘
-              │                                   │
-              ▼                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                       Electron Main Process                            │
-│                                                                        │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ BiosManager (biosManager.cjs)                                     │  │
-│  │ - checkStatus() & listLocalBios()                                 │  │
-│  │ - download() -> atomic stream -> deploys to:                      │  │
-│  │     • ~/Emulation/bios/                                           │  │
-│  │     • ~/.var/app/net.pcsx2.PCSX2/data/PCSX2/bios/ (PCSX2)         │  │
-│  │     • ~/.config/PCSX2/bios/ (PCSX2 native)                        │  │
-│  │     • ~/.var/app/org.libretro.RetroArch/config/retroarch/system/ │  │
-│  │ - syncPlatformBios(platformSlug) auto-check helper                │  │
-│  └─────────────────────────────────┬─────────────────────────────────┘  │
-│                                    │                                    │
-│  ┌─────────────────────────────────┴─────────────────────────────────┐  │
-│  │ EmulatorManager (emulation.cjs)                                   │  │
-│  │ - Pre-launch BIOS check hook before spawning emulator             │  │
-│  │ - Expanded PLATFORM_FOLDERS, LIBRETRO_CORES & STANDALONE emulators │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────┘
+│                  Platform-Agnostic Bridge & IPC Layer                  │
+│       (Normalized IPC Contracts: `window.deckromm.*`, `platform`)      │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+         ┌─────────────────────────┴─────────────────────────┐
+         ▼                                                   ▼
+┌──────────────────────────────────┐        ┌──────────────────────────────────┐
+│   SteamOS / Linux Subsystem      │        │    Windows Native Subsystem      │
+│   (process.platform === 'linux') │        │    (process.platform === 'win32')│
+├──────────────────────────────────┤        ├──────────────────────────────────┤
+│ • Root: ~/Emulation or SD card   │        │ • Root: C:\Emulation or D:\Emu.. │
+│ • Emulators: Flatpak & AppImage  │        │ • Emulators: .exe & .bat binaries│
+│   (net.pcsx2.PCSX2, RetroArch)   │        │   (tools\pcsx2\pcsx2-qt.exe)     │
+│ • Process: kill(-pgid) POSIX grp │        │ • Process: taskkill /T /F tree   │
+│ • Update: git + npm + bash/exec  │        │ • Update: git.exe + npm.cmd      │
+│ • Packaging: AppImage x86_64     │        │ • Packaging: Single Portable EXE │
+└──────────────────────────────────┘        └──────────────────────────────────┘
 ```
 
-### Component & State Modifications
-1. **`SearchFilterBar.tsx`**:
-   - Remove the `🇯🇵 Hide JP` button and associated props (`japaneseCount`).
-   - Clean up spacing so `LanguagePickerModal` trigger and genre quick chips align neatly.
-2. **`BiosManager.cjs` & `main.cjs`**:
-   - Add `bios:sync-platform` IPC handler to check if local BIOS exists for a given platform slug (e.g. `ps2`), and if missing, fetch matching firmware items from RomM.
-   - Ensure target copy logic writes to all known PCSX2 directories (`.var/app/net.pcsx2.PCSX2/data/PCSX2/bios`, `.var/app/net.pcsx2.PCSX2/config/PCSX2/bios`, `.config/PCSX2/bios`, and `~/Emulation/bios/ps2`).
-3. **`rommApi.ts`**:
-   - Fix `getFirmware` to accept arrays or `{ items: [...] }` from `/api/firmware`.
-   - Add `syncBiosForPlatform(platformSlug)` called before game launch or download.
-4. **`BiosManagerModal.tsx`**:
-   - Add a "Sync All from RomM" button that downloads all uninstalled firmware items in one go.
-5. **Platform catalog expansion (`rommData.ts`, `types.ts`, `emulation.cjs`)**:
-   - Add full metadata, cores, extensions, and folder paths for Dreamcast, Saturn, PSP, PS3, Wii, 3DS, Switch, Sega CD, Game Boy, TG-16, and Arcade.
+---
+
+## 2. Proposed Changes & Implementation Strategy
+
+### A. Windows Emulation & Path Resolution (`electron/lib/emulation.cjs`)
+1. **Windows EmuDeck Path Resolver**:
+   - Detect platform via `process.platform === 'win32'`.
+   - Default Windows root: `C:\Emulation` (or scan candidate drive letters `C:`, `D:`, `E:`, `F:`, `G:` for `\Emulation`).
+   - Standard Windows subdirectories:
+     - ROMs: `<root>\roms\<platform>` (e.g. `C:\Emulation\roms\ps2`)
+     - BIOS: `<root>\bios` (e.g. `C:\Emulation\bios`)
+     - Saves/States: `<root>\saves` (e.g. `C:\Emulation\saves`)
+     - Tools: `<root>\tools` (e.g. `C:\Emulation\tools`)
+2. **Windows Standalone Emulator & RetroArch Discovery**:
+   - Query both EmuDeck Windows launchers and standard install paths:
+     - **RetroArch**: `<root>\tools\launchers\retroarch.bat`, `<root>\tools\retroarch\retroarch.exe`, or `%APPDATA%\RetroArch\retroarch.exe`.
+     - **PCSX2**: `<root>\tools\pcsx2\pcsx2-qt.exe`, `<root>\tools\launchers\pcsx2.bat`, or `%LOCALAPPDATA%\Programs\PCSX2\pcsx2-qt.exe`.
+     - **DuckStation**: `<root>\tools\duckstation\duckstation-qt-x64-ReleaseLTCG.exe`.
+     - **Dolphin**: `<root>\tools\dolphin\Dolphin.exe` or `<root>\tools\launchers\dolphin.bat`.
+     - **RPCS3**: `<root>\tools\rpcs3\rpcs3.exe`.
+     - **Xemu**: `<root>\tools\xemu\xemu.exe`.
+     - **Cemu**: `<root>\tools\cemu\Cemu.exe`.
+     - **Xenia**: `<root>\tools\xenia\xenia_canary.exe` or `xenia.exe`.
+     - **Ryujinx**: `<root>\tools\ryujinx\Ryujinx.exe`.
+3. **Cross-Platform Process Lifecycle**:
+   - On Linux/SteamOS: Spawn with `detached: true` and terminate via `process.kill(-pgid, 'SIGTERM')`.
+   - On Windows: Windows does not support POSIX process group signals. Spawn with `detached: false` (or job object) and terminate cleanly using `taskkill /pid <PID> /T /F` to terminate the entire process hierarchy.
+   - Window Focus & Visibility: When a game launches on Windows, minimize or hide DeckRomM; upon game exit (or emulator exit code), restore and focus DeckRomM window.
+
+### B. In-Place App Updating on Windows (`electron/lib/appUpdater.cjs`)
+1. **Tooling & Environment Detection**:
+   - Locate `git.exe` and `npm.cmd` via Windows `PATH`, `%ProgramFiles%\Git\bin\git.exe`, `%LOCALAPPDATA%\Programs\Git\bin\git.exe`, and `%APPDATA%\npm\npm.cmd`.
+2. **Git In-Place Upgrade Flow on Windows**:
+   - Fetch remote updates: `git fetch origin main`.
+   - Reset working tree: `git reset --hard origin/main`.
+   - Re-install dependencies: `npm.cmd install --no-audit --prefer-offline`.
+   - Re-build UI: `npm.cmd run build`.
+3. **Detached Relaunch on Windows**:
+   - On Linux, DeckRomM respawns using `nohup` or `app.relaunch()`.
+   - On Windows, execute `cmd.exe /c start "" "<exePath>"` or `powershell.exe Start-Process` detached before `app.quit()` to avoid file locking on the running executable.
+
+### C. Storage & Settings Screen (`src/components/SettingsScreen.tsx`)
+1. **Drive & Emulation Directory Picker**:
+   - When running on Windows, show detected drive letters (`C:`, `D:`, `E:`, etc.) with quick buttons to select the EmuDeck root (`C:\Emulation`, `D:\Emulation`).
+   - Display active platform indicator (`Windows 11 / 10 Native` or `SteamOS Game Mode`).
+2. **Directory & Path Normalization**:
+   - Ensure all paths handle Windows backslashes (`\`) or forward slashes (`/`) transparently without double-escaping bugs.
+
+### D. Packaging & GitHub Actions CI/CD (`package.json`, `electron-builder.json`, `.github/workflows/build.yml`)
+1. **Build Configuration**:
+   - Configure `electron-builder.json` with a dedicated `win` target:
+     ```json
+     "win": {
+       "target": [
+         {
+           "target": "portable",
+           "arch": ["x64"]
+         }
+       ],
+       "executableName": "DeckRomM",
+       "artifactName": "DeckRomM-${version}-Windows-Portable.${ext}"
+     }
+     ```
+   - Add npm scripts to `package.json`:
+     - `"dist:win:portable": "npm run build && electron-builder --config electron-builder.json --win portable"`
+     - `"dist:all": "npm run build && electron-builder --config electron-builder.json --linux AppImage --win portable"`
+2. **Automated Dual-Platform GitHub Actions Workflow** (`.github/workflows/build.yml`):
+   - Triggers on GitHub Releases, tags (`v*`), or manual workflow dispatch.
+   - Matrix builds:
+     - **ubuntu-latest**: Generates Linux AppImage (`DeckRomM-1.3.0-x86_64.AppImage`) for Steam Deck.
+     - **windows-latest**: Generates Windows Portable EXE (`DeckRomM-1.3.0-Windows-Portable.exe`).
+   - Automatically attaches both artifacts to the GitHub Release.
+
+---
+
+## 3. Verification Plan
+
+### Automated Verification
+1. `npm run typecheck` (`tsc --noEmit`): Verify all TypeScript typings compile without errors.
+2. `npm run check:main`: Verify all Electron main process scripts (`main.cjs`, `appUpdater.cjs`, `emulation.cjs`, `configStore.cjs`) pass syntax checks with `node --check`.
+3. `npm run build`: Verify Vite production compilation passes cleanly.
+
+### Manual & Runtime Verification
+1. Verify platform detection in `SettingsScreen` (displays Windows drive paths when `platform === 'win32'`).
+2. Verify process termination logic simulates `taskkill /T /F` on Windows and `process.kill(-pgid)` on Linux.
+3. Verify emulator path resolution properly locates both EmuDeck Windows layouts and RetroArch.
+4. Verify `.github/workflows/build.yml` syntax and actions matrix for multi-platform build success.

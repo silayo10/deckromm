@@ -19,38 +19,53 @@ const HOME = process.env.HOME || '/home/deck';
 // Specific paths where standalone emulators look for BIOS files
 function getEmulatorBiosDirs(emulationRoot) {
   const root = emulationRoot || path.join(HOME, 'Emulation');
+  const appData = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
+  const localAppData = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
+
   return {
     pcsx2: [
       path.join(root, 'bios'),
       path.join(root, 'bios', 'ps2'),
+      path.join(root, 'tools', 'pcsx2', 'bios'),
+      path.join(localAppData, 'PCSX2', 'bios'),
       path.join(HOME, '.var/app/net.pcsx2.PCSX2/data/PCSX2/bios'),
       path.join(HOME, '.var/app/net.pcsx2.PCSX2/config/PCSX2/bios'),
       path.join(HOME, '.config/PCSX2/bios'),
     ],
     duckstation: [
       path.join(root, 'bios'),
+      path.join(root, 'tools', 'duckstation', 'bios'),
+      path.join(localAppData, 'DuckStation', 'bios'),
       path.join(HOME, '.var/app/org.duckstation.DuckStation/data/duckstation/bios'),
       path.join(HOME, '.config/duckstation/bios'),
     ],
     retroarch: [
       path.join(root, 'bios'),
+      path.join(root, 'tools', 'retroarch', 'system'),
+      path.join(appData, 'RetroArch', 'system'),
       path.join(HOME, '.var/app/org.libretro.RetroArch/config/retroarch/system'),
       path.join(HOME, '.config/retroarch/system'),
     ],
     flycast: [
       path.join(root, 'bios'),
       path.join(root, 'bios', 'dc'),
+      path.join(root, 'tools', 'flycast', 'data'),
+      path.join(appData, 'Flycast'),
       path.join(HOME, '.var/app/org.flycast.Flycast/data/flycast'),
       path.join(HOME, '.config/flycast'),
     ],
     ppsspp: [
       path.join(root, 'bios'),
+      path.join(root, 'tools', 'ppsspp', 'assets'),
+      path.join(appData, 'PPSSPP', 'PSP', 'SYSTEM'),
       path.join(HOME, '.var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP/SYSTEM'),
     ],
     xemu: [
       path.join(root, 'bios'),
       path.join(root, 'bios', 'xbox'),
       path.join(root, 'bios', 'xemu'),
+      path.join(root, 'tools', 'xemu'),
+      path.join(appData, 'xemu', 'xemu'),
       path.join(HOME, '.var/app/app.xemu.xemu/data/xemu/xemu'),
       path.join(HOME, '.var/app/app.xemu.xemu/config/xemu'),
       path.join(HOME, '.local/share/xemu/xemu'),

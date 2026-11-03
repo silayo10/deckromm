@@ -53,5 +53,22 @@
   },
   "appImage": {
     "artifactName": "DeckRomM-${version}-x86_64.${ext}"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "executableName": "DeckRomM",
+    "icon": "build/icon.ico",
+    "synopsis": "Controller-first RomM client for PC and Steam Deck",
+    "description": "Browse, download and launch games from a self-hosted RomM server with EmuDeck layout support."
+  },
+  "portable": {
+    "artifactName": "DeckRomM-${version}-Windows-Portable.${ext}"
   }
 }

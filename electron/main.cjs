@@ -601,7 +601,61 @@ function registerIpc() {
   handle('system:flatpak-status', (flatpakIds) => getFlatpakStatus(flatpakIds));
   handle('system:install-flatpak', (flatpakId) => installFlatpak(flatpakId, (ev) => emit('flatpak:progress', ev)));
   handle('system:detect-retroachievements', async () => {
+    const appData = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
+    const localAppData = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
+    const root = getEmulationRoot();
+
     const candidates = [
+      {
+        app: 'RetroArch (Windows/AppData)',
+        file: path.join(appData, 'RetroArch', 'retroarch.cfg'),
+        parse: (content) => {
+          const userM = content.match(/cheevos_username\s*=\s*["']?([^"'\r\n]+)/);
+          const tokenM = content.match(/cheevos_token\s*=\s*["']?([^"'\r\n]+)/);
+          const passM = content.match(/cheevos_password\s*=\s*["']?([^"'\r\n]+)/);
+          if (userM && userM[1]) {
+            return { username: userM[1].trim(), token: tokenM ? tokenM[1].trim() : (passM ? passM[1].trim() : '') };
+          }
+          return null;
+        },
+      },
+      {
+        app: 'RetroArch (EmuDeck Tools)',
+        file: path.join(root, 'tools', 'retroarch', 'retroarch.cfg'),
+        parse: (content) => {
+          const userM = content.match(/cheevos_username\s*=\s*["']?([^"'\r\n]+)/);
+          const tokenM = content.match(/cheevos_token\s*=\s*["']?([^"'\r\n]+)/);
+          const passM = content.match(/cheevos_password\s*=\s*["']?([^"'\r\n]+)/);
+          if (userM && userM[1]) {
+            return { username: userM[1].trim(), token: tokenM ? tokenM[1].trim() : (passM ? passM[1].trim() : '') };
+          }
+          return null;
+        },
+      },
+      {
+        app: 'DuckStation (Windows)',
+        file: path.join(localAppData, 'DuckStation', 'settings.ini'),
+        parse: (content) => {
+          const userM = content.match(/Username\s*=\s*([^\r\n]+)/);
+          const tokenM = content.match(/Token\s*=\s*([^\r\n]+)/);
+          if (userM && userM[1]) {
+            return { username: userM[1].trim(), token: tokenM ? tokenM[1].trim() : '' };
+          }
+          return null;
+        },
+      },
+      {
+        app: 'PCSX2 (Windows)',
+        file: path.join(localAppData, 'PCSX2', 'inis', 'PCSX2.ini'),
+        parse: (content) => {
+          const userM = content.match(/Username\s*=\s*([^\r\n]+)/);
+          const tokenM = content.match(/Token\s*=\s*([^\r\n]+)/);
+          if (userM && userM[1]) {
+            return { username: userM[1].trim(), token: tokenM ? tokenM[1].trim() : '' };
+          }
+          return null;
+        },
+      },
       {
         app: 'RetroArch (Flatpak/EmuDeck)',
         file: path.join(HOME, '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'retroarch.cfg'),

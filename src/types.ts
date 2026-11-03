@@ -461,14 +461,14 @@ export const SUPPORTED_STANDALONE_EMULATORS: StandaloneEmulatorInfo[] = [
   { id: 'pcsx2', flatpakId: 'net.pcsx2.PCSX2', name: 'PCSX2', platforms: ['PlayStation 2'], description: 'Full-speed PlayStation 2 emulator with widescreen & HD patches' },
   { id: 'dolphin', flatpakId: 'org.DolphinEmu.dolphin-emu', name: 'Dolphin', platforms: ['GameCube', 'Wii'], description: 'Industry standard GameCube & Wii emulator with full controller support' },
   { id: 'flycast', flatpakId: 'org.flycast.Flycast', name: 'Flycast', platforms: ['Dreamcast', 'NAOMI', 'Atomiswave'], description: 'High performance Dreamcast & arcade emulator' },
-  { id: 'yabasanshiro', flatpakId: 'org.yabasanshiro.YabaSanshiro', name: 'YabaSanshiro', platforms: ['Sega Saturn'], description: 'High performance Sega Saturn emulator with HD upscaling' },
+  { id: 'yabasanshiro', flatpakId: 'io.github.strikerx3.ymir', name: 'Ymir (Saturn)', platforms: ['Sega Saturn'], description: 'Modern standalone Sega Saturn emulator on Flathub (or use RetroArch Beetle Saturn)' },
   { id: 'ppsspp', flatpakId: 'org.ppsspp.PPSSPP', name: 'PPSSPP', platforms: ['PSP (PlayStation Portable)'], description: 'Fast, feature-rich PSP emulator with upscaling and HD textures' },
   { id: 'rpcs3', flatpakId: 'net.rpcs3.RPCS3', name: 'RPCS3', platforms: ['PlayStation 3'], description: 'PlayStation 3 open-source emulator' },
-  { id: 'lime3ds', flatpakId: 'io.github.lime3ds.Lime3DS', name: 'Lime3DS', platforms: ['Nintendo 3DS'], description: 'Nintendo 3DS emulator fork of Citra' },
+  { id: 'lime3ds', flatpakId: 'io.github.lime3ds.Lime3DS', name: 'Lime3DS / Citra', platforms: ['Nintendo 3DS'], description: 'Nintendo 3DS emulator' },
   { id: 'cemu', flatpakId: 'info.cemu.Cemu', name: 'Cemu', platforms: ['Wii U'], description: 'Nintendo Wii U emulator' },
-  { id: 'ryujinx', flatpakId: 'org.ryujinx.Ryujinx', name: 'Ryujinx', platforms: ['Nintendo Switch'], description: 'Nintendo Switch emulator' },
+  { id: 'ryujinx', flatpakId: 'io.github.ryubing.Ryujinx', name: 'Ryujinx', platforms: ['Nintendo Switch'], description: 'Nintendo Switch emulator on Flathub' },
   { id: 'xemu', flatpakId: 'app.xemu.xemu', name: 'Xemu', platforms: ['Microsoft Xbox (Original)'], description: 'Open-source Original Xbox emulator with HD upscaling & system link' },
-  { id: 'xenia', flatpakId: 'jp.xenia.xenia', name: 'Xenia', platforms: ['Microsoft Xbox 360'], description: 'Xbox 360 emulator for Linux / Steam Deck' },
+  { id: 'xenia', flatpakId: 'xenia', name: 'Xenia', platforms: ['Microsoft Xbox 360'], description: 'Xbox 360 emulator (runs via EmuDeck Proton wrapper or AppImage)' },
   { id: 'retroarch', flatpakId: 'org.libretro.RetroArch', name: 'RetroArch', platforms: ['Multi-System (NES, SNES, N64, GBA, Genesis, Arcade, etc.)'], description: 'All-in-one emulation frontend and libretro core runner' },
 ];
 
@@ -535,7 +535,7 @@ export const PLATFORM_AVAILABLE_CORES: Record<string, CoreOption[]> = {
     { id: 'cemu', name: 'Cemu (Standalone)', type: 'standalone', flatpakId: 'info.cemu.Cemu', recommended: true, description: 'Nintendo Wii U emulator' },
   ],
   switch: [
-    { id: 'ryujinx', name: 'Ryujinx (Standalone)', type: 'standalone', flatpakId: 'org.ryujinx.Ryujinx', recommended: true, description: 'Nintendo Switch emulator' },
+    { id: 'ryujinx', name: 'Ryujinx (Standalone)', type: 'standalone', flatpakId: 'io.github.ryubing.Ryujinx', recommended: true, description: 'Nintendo Switch emulator' },
   ],
   arcade: [
     { id: 'fbneo', name: 'FinalBurn Neo', type: 'libretro', recommended: true, description: 'Arcade and Neo-Geo champion core' },
@@ -550,11 +550,12 @@ export const PLATFORM_AVAILABLE_CORES: Record<string, CoreOption[]> = {
     { id: 'xemu', name: 'Xemu (Standalone)', type: 'standalone', flatpakId: 'app.xemu.xemu', recommended: true, description: 'Open-source Original Xbox emulator for Linux / Steam Deck' },
   ],
   xbox360: [
-    { id: 'xenia', name: 'Xenia (Standalone)', type: 'standalone', flatpakId: 'jp.xenia.xenia', recommended: true, description: 'Xbox 360 emulator for Linux / Steam Deck' },
+    { id: 'xenia', name: 'Xenia (Standalone)', type: 'standalone', flatpakId: 'xenia', recommended: true, description: 'Xbox 360 emulator (via EmuDeck Proton or AppImage)' },
   ],
   saturn: [
-    { id: 'mednafen_saturn', name: 'Beetle Saturn', type: 'libretro', recommended: true, description: 'Accurate Sega Saturn core' },
-    { id: 'yabasanshiro', name: 'YabaSanshiro', type: 'libretro', description: 'Fast Sega Saturn core with hardware upscaling' },
+    { id: 'mednafen_saturn', name: 'Beetle Saturn (RetroArch)', type: 'libretro', recommended: true, description: 'Accurate Sega Saturn core with highest compatibility' },
+    { id: 'yabasanshiro', name: 'YabaSanshiro (Libretro)', type: 'libretro', description: 'Fast Sega Saturn core with hardware upscaling' },
+    { id: 'ymir', name: 'Ymir (Standalone Flatpak)', type: 'standalone', flatpakId: 'io.github.strikerx3.ymir', description: 'Modern Sega Saturn emulator on Flathub' },
   ],
   gb: [
     { id: 'gambatte', name: 'Gambatte', type: 'libretro', recommended: true, description: 'Accurate Game Boy core' },
