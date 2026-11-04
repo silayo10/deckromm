@@ -22,7 +22,15 @@ fi
 echo "Installing DeckRomM from: $SRC"
 mkdir -p "$DEST" "$APPS_DIR" "$ICON_DIR" "$HOME/Emulation/roms"
 
-install -m 755 "$SRC" "$DEST/DeckRomM.AppImage"
+# Install to a temporary file first, then atomically rename to avoid 'Text file busy'
+# when DeckRomM is currently running in SteamOS Game Mode
+install -m 755 "$SRC" "$DEST/DeckRomM.AppImage.new"
+mv -f "$DEST/DeckRomM.AppImage.new" "$DEST/DeckRomM.AppImage"
+
+# Also maintain versioned AppImage (1.3.0) in $DEST so Steam shortcuts pointing to versioned names work
+install -m 755 "$SRC" "$DEST/DeckRomM-1.3.0-x86_64.AppImage.new"
+mv -f "$DEST/DeckRomM-1.3.0-x86_64.AppImage.new" "$DEST/DeckRomM-1.3.0-x86_64.AppImage"
+
 install -m 755 "$SCRIPT_DIR/launch_deckromm.sh" "$DEST/launch_deckromm.sh"
 if [[ -f "$SCRIPT_DIR/dist/.build-info.json" ]]; then
   install -m 644 "$SCRIPT_DIR/dist/.build-info.json" "$DEST/.build-info.json"

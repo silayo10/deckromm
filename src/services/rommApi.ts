@@ -543,6 +543,15 @@ class RommApiService {
       romUser,
       isFavorite: this.favorites.has(String(id)),
       lastPlayed: r.rom_user?.last_played || undefined,
+      playtime: Number(
+        r.rom_user?.playtime ??
+        r.rom_user?.data?.playtime ??
+        r.user_playtime ??
+        r.playtime ??
+        r.props?.playtime ??
+        r.props?.data?.playtime ??
+        0
+      ),
       playableOnline: STREAMABLE_PLATFORM_SLUGS.has(slug),
       isMultiFile: Boolean(r.multi || files.length > 1),
       tags,
@@ -674,14 +683,36 @@ class RommApiService {
     return this.getGamesPaged({ platform, search: searchQuery });
   }
 
-  /** Full details (summary, screenshots, files) for the detail view. */
+  /** Full details (summary, screenshots, files, playtime) for the detail view. */
   async getGameDetails(game: Game): Promise<Game> {
-    if (this.config.isDemoMode) return game;
+    if (this.config.isDemoMode) {
+      const localRec = await bridge.playtime.get(game.id).catch(() => null);
+      if (localRec && localRec.totalSeconds > 0) {
+        return { ...game, playtime: Math.max(game.playtime || 0, localRec.totalSeconds) };
+      }
+      return game;
+    }
     try {
       const raw = await this.request<any>({ path: `/api/roms/${encodeURIComponent(String(game.id))}` });
       const [mapped] = await this.annotateInstalled([this.mapRom(raw)]);
-      return { ...game, ...mapped };
+      const localRec = await bridge.playtime.get(game.id).catch(() => null);
+      let effectivePlaytime = mapped.playtime || game.playtime || 0;
+      if (localRec && localRec.totalSeconds > 0) {
+        effectivePlaytime = Math.max(effectivePlaytime, localRec.totalSeconds);
+        if ((mapped.playtime || 0) > localRec.totalSeconds) {
+          void bridge.playtime.reconcile({
+            romId: game.id,
+            serverPlaytime: mapped.playtime || 0,
+            serverLastPlayed: mapped.lastPlayed,
+          }).catch(() => {});
+        }
+      }
+      return { ...game, ...mapped, playtime: effectivePlaytime };
     } catch {
+      const localRec = await bridge.playtime.get(game.id).catch(() => null);
+      if (localRec && localRec.totalSeconds > 0) {
+        return { ...game, playtime: Math.max(game.playtime || 0, localRec.totalSeconds) };
+      }
       return game;
     }
   }

@@ -352,8 +352,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     placeholder={
                       storage?.emulationRoot
                         ? `Auto: ${storage.emulationRoot}`
-                        : info?.platform === 'win32'
-                        ? 'Auto-detect (C:\\Emulation or custom drive)'
                         : 'Auto-detect (EmuDeck / SD card)'
                     }
                     onChange={(e) => {
@@ -366,31 +364,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     <FolderOpen size={18} /> Browse
                   </button>
                 </div>
-
-                {info?.platform === 'win32' && (
-                  <div className="flex items-center gap-2 pt-1 pb-1 flex-wrap">
-                    <span className="text-xs text-deck-dim font-semibold">Quick Set EmuDeck Root:</span>
-                    {['C:\\Emulation', 'D:\\Emulation', 'E:\\Emulation'].map((drive) => (
-                      <button
-                        key={drive}
-                        type="button"
-                        data-focusable
-                        onClick={() => {
-                          setEmuPath(drive);
-                          onChange({ emulationPath: drive });
-                          onToast?.(`Set emulation path to ${drive}`, 'ok');
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer ${
-                          (emuPath || storage?.emulationRoot) === drive
-                            ? 'bg-deck-accent text-white border-deck-accent'
-                            : 'bg-deck-panel-2 border-deck-line text-deck-dim hover:text-white'
-                        }`}
-                      >
-                        {drive}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <button data-focusable onClick={cycleLauncher} className="deck-row w-full min-h-14 px-4 py-2 rounded-xl flex items-center justify-between gap-4 text-left bg-deck-panel/70">
                   <span>
                     <span className="block font-semibold">Launcher</span>
@@ -832,9 +805,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <div data-focusable tabIndex={-1} className="rounded-xl bg-deck-panel/70 p-4 text-sm grid grid-cols-2 gap-2">
                   <span className="text-deck-dim">DeckRomM</span><span>{info.version}</span>
                   <span className="text-deck-dim">Platform</span>
-                  <span>{info.platform === 'win32' ? 'Windows 10 / 11 Native' : (info.gameMode ? 'SteamOS Game Mode' : 'Linux Desktop')}</span>
+                  <span>{info.gameMode ? 'SteamOS Game Mode' : 'Linux Desktop'}</span>
                   <span className="text-deck-dim">Electron</span><span>{info.electron}</span>
-                  <span className="text-deck-dim">Session</span><span>{info.gameMode ? 'SteamOS Game Mode' : (info.platform === 'win32' ? 'Windows Native' : 'Desktop')}</span>
+                  <span className="text-deck-dim">Session</span><span>{info.gameMode ? 'SteamOS Game Mode' : 'Desktop'}</span>
                   <span className="text-deck-dim">Secret storage</span><span>{info.secureStorage}</span>
                   <span className="text-deck-dim">Data folder</span><span className="font-mono truncate">{info.userData}</span>
                 </div>

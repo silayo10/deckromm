@@ -46,6 +46,7 @@ export interface Game {
   isCached?: boolean;
   lastPlayed?: string;
   playCount?: number;
+  playtime?: number; // total duration played in seconds
   downloadUrl?: string;
   playableOnline?: boolean; // true if can be streamed in-app without downloading
   platformId?: number | string;
@@ -678,6 +679,51 @@ export interface AppUpdateProgressEvent {
   percent: number;
   message: string;
   log?: string;
+}
+
+/**
+ * Format total playtime seconds into a clean, handheld-friendly string.
+ * Examples:
+ *   0 -> "0 min"
+ *   45 -> "< 1 min"
+ *   1800 -> "30 mins"
+ *   3600 -> "1.0 hr"
+ *   5400 -> "1.5 hrs"
+ *   45200 -> "12.6 hrs"
+ */
+export function formatPlaytime(seconds?: number): string {
+  if (!seconds || seconds <= 0) return '0 min';
+  if (seconds < 60) return '< 1 min';
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'}`;
+  const hours = seconds / 3600;
+  if (hours < 10) {
+    return `${hours.toFixed(1)} hr${hours === 1 ? '' : 's'}`;
+  }
+  return `${Math.round(hours)} hrs`;
+}
+
+/**
+ * Format playtime into dual representation: primary hours and secondary detail (e.g. "2h 34m").
+ */
+export function formatDetailedPlaytime(seconds?: number): { primary: string; secondary: string } {
+  if (!seconds || seconds <= 0) {
+    return { primary: '0 hrs', secondary: 'Not played yet' };
+  }
+  if (seconds < 60) {
+    return { primary: '< 1 min', secondary: `${seconds} seconds total` };
+  }
+  const totalMins = Math.floor(seconds / 60);
+  if (totalMins < 60) {
+    return { primary: `${totalMins} min${totalMins === 1 ? '' : 's'}`, secondary: `${seconds} seconds total` };
+  }
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const decimalHours = (seconds / 3600).toFixed(1);
+  return {
+    primary: `${decimalHours} hrs`,
+    secondary: m > 0 ? `${h}h ${m}m total` : `${h} hour${h === 1 ? '' : 's'} total`,
+  };
 }
 
 

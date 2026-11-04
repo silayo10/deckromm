@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react';
-import { CheckCircle2, Star, Gamepad2, Disc } from 'lucide-react';
-import { Game, LibraryViewMode } from '../types';
+import { CheckCircle2, Star, Gamepad2, Disc, Clock } from 'lucide-react';
+import { Game, LibraryViewMode, formatPlaytime } from '../types';
 import { PLATFORM_COLORS } from './PlatformBadge';
 
 interface GameCardProps {
@@ -69,6 +69,12 @@ const Badges: React.FC<{ game: Game }> = ({ game }) => (
         <CheckCircle2 size={16} className="text-deck-ok" />
       </span>
     )}
+    {Boolean(game.playtime && game.playtime >= 60) && (
+      <span className="h-7 px-2 rounded-full bg-black/80 flex items-center gap-1 shadow text-[10px] font-mono font-bold text-amber-300 border border-amber-500/30" title={`Played: ${formatPlaytime(game.playtime)}`}>
+        <Clock size={11} className="text-amber-400" />
+        <span>{formatPlaytime(game.playtime)}</span>
+      </span>
+    )}
   </div>
 );
 
@@ -121,12 +127,23 @@ export const GameCard: React.FC<GameCardProps> = memo(({ game, index, viewMode, 
   }
 
   const hero = viewMode === 'hero';
+  const platformAccent = PLATFORM_COLORS[game.platformSlug]?.accent || '#1a9fff';
+
   return (
     <button
       {...common}
       className="deck-card group relative flex flex-col rounded-xl overflow-hidden bg-deck-panel text-left transition-transform"
-      style={{ contentVisibility: 'auto', containIntrinsicSize: hero ? '300px 460px' : '190px 300px' } as React.CSSProperties}
+      style={{
+        contentVisibility: 'auto',
+        containIntrinsicSize: hero ? '300px 460px' : '190px 300px',
+        ['--card-accent' as any]: platformAccent,
+      } as React.CSSProperties}
     >
+      {/* Ambient platform backlight glow on focus */}
+      <div
+        className="absolute -inset-1 rounded-2xl opacity-0 group-[[data-focused=true]]:opacity-60 transition-opacity duration-300 blur-xl pointer-events-none -z-10"
+        style={{ background: `radial-gradient(circle at 50% 50%, ${platformAccent}99 0%, transparent 75%)` }}
+      />
       <div className="relative w-full aspect-[3/4]">
         <Cover game={game} className="absolute inset-0 w-full h-full" />
         <Badges game={game} />

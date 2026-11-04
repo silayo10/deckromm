@@ -28,7 +28,7 @@ import { focusManager } from '../services/focusManager';
 import { InGameOverlayMenu } from './InGameOverlayMenu';
 import { cacheStorage } from '../services/cacheStorage';
 import { rommApi, getEmulatorCore } from '../services/rommApi';
-import { isNativeApp } from '../services/bridge';
+import { isNativeApp, bridge } from '../services/bridge';
 import { loadMergedStates, uploadSlot, ensureStateData, deleteSlot, markPlayed, cloudSyncAvailable } from '../services/cloudSaves';
 import { planStartup, uploadSram, recordLocalChange, bytesEqual, sramSyncAvailable, type SramStatus } from '../services/sramSync';
 
@@ -254,6 +254,19 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
       pending.clear();
     };
   }, []);
+
+  // Active non-paused playtime tracker for in-app emulator
+  const activeSecondsRef = useRef(0);
+  useEffect(() => {
+    if (!emuStarted) return;
+    const interval = setInterval(() => {
+      // Do NOT count time if overlay menu is open or document is hidden (paused)
+      if (!isOverlayOpen && document.visibilityState === 'visible') {
+        activeSecondsRef.current += 1;
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [emuStarted, isOverlayOpen]);
 
   const callEmu = useCallback((cmd: EmuCommand, payload: Record<string, unknown> = {}, timeoutMs = 6000, transfer?: Transferable[]) => {
     return new Promise<any>((resolve, reject) => {
@@ -628,6 +641,20 @@ const WebEmulatorPlayer: React.FC<WebEmulatorModalProps & { game: Game }> = ({
           }
         })().catch(() => {});
         await Promise.race([flush, new Promise((r) => setTimeout(r, 6000))]);
+      }
+      // Record active non-paused played duration to local store & sync to RomM
+      if (activeSecondsRef.current > 0) {
+        try {
+          const rec = await bridge.playtime.record({
+            romId: game.id,
+            activeSeconds: activeSecondsRef.current,
+          });
+          if (rec) {
+            void bridge.playtime.sync(game.id).catch(() => {});
+          }
+        } catch (err) {
+          console.warn('[playtime] failed to record in-app playtime:', err);
+        }
       }
     } finally {
       onClose();

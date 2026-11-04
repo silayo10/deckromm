@@ -32,6 +32,7 @@ import { BiosManagerModal } from './components/BiosManagerModal';
 import { StorageManagerModal } from './components/StorageManagerModal';
 import { UpdateManagerModal } from './components/UpdateManagerModal';
 import { LaunchingOverlay } from './components/LaunchingOverlay';
+import { QuickFilterDrawer } from './components/QuickFilterDrawer';
 import { AppUpdateInfo } from './types';
 
 interface KeyboardRequest {
@@ -110,6 +111,7 @@ export default function App() {
   const [storageModalOpen, setStorageModalOpen] = useState(false);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo | null>(null);
+  const [quickDrawer, setQuickDrawer] = useState<{ open: boolean; mode: 'filters' | 'alphabet' }>({ open: false, mode: 'filters' });
   const [keyboard, setKeyboard] = useState<KeyboardRequest | null>(null);
   const [downloads, setDownloads] = useState<Record<string, DownloadItem>>({});
   const [emulator, setEmulator] = useState<EmulatorStateEvent>({ running: false });
@@ -524,6 +526,34 @@ export default function App() {
     return sorted;
   }, [games, deferredSearch, filter, selectedGenre, selectedLanguage, sortBy, source.kind, offlineMode]);
 
+  const availableLetters = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of visibleGames) {
+      const first = (g.title || '').trim().charAt(0).toUpperCase();
+      if (/[A-Z]/.test(first)) set.add(first);
+      else set.add('#');
+    }
+    return Array.from(set);
+  }, [visibleGames]);
+
+  const handleJumpToLetter = useCallback((letter: string) => {
+    const targetIdx = visibleGames.findIndex((g) => {
+      const first = (g.title || '').trim().charAt(0).toUpperCase();
+      if (letter === '#') return !/[A-Z]/.test(first);
+      return first === letter;
+    });
+    if (targetIdx !== -1) {
+      const targetGame = visibleGames[targetIdx];
+      const el = document.querySelector(`[data-game-id="${targetGame.id}"]`) as HTMLElement;
+      if (el) {
+        focusManager.focus(el);
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        soundService.playSelect();
+        toast(`Jumped to '${letter}' • ${targetGame.title}`, 'info');
+      }
+    }
+  }, [visibleGames, toast]);
+
   // Land on the first cover after boot / platform switch.
   useEffect(() => {
     if (focusGridOnLoad.current && visibleGames.length > 0) {
@@ -803,13 +833,21 @@ export default function App() {
       case 'FILTER': setSettingsOpen(true); return true;
       case 'ACTION_X': refresh(); return true;
       case 'ACTION_Y': openSearch(); return true;
+      case 'PAGE_UP': // L2 trigger - Quick filter drawer
+        soundService.playSelect();
+        setQuickDrawer({ open: true, mode: 'filters' });
+        return true;
+      case 'PAGE_DOWN': // R2 trigger - Fast A-Z alphabet scrubber
+        soundService.playSelect();
+        setQuickDrawer({ open: true, mode: 'alphabet' });
+        return true;
       case 'PREV_PLATFORM': cycleSource(-1); return true;
       case 'NEXT_PLATFORM': cycleSource(1); return true;
       case 'VIEW_MODE_TOGGLE':
         updateConfig({ viewMode: VIEW_MODES[(VIEW_MODES.indexOf(viewMode) + 1) % VIEW_MODES.length] });
         return true;
       case 'HELP':
-        toast('A open  B back  X refresh  Y search  L1/R1 platform  Start menu  Select settings  R-stick scroll');
+        toast('A open  B back  X refresh  Y search  L1/R1 platform  L2 filter  R2 A-Z  Start menu  Select settings');
         return true;
       case 'BACK': {
         if (search) {
@@ -846,9 +884,20 @@ export default function App() {
         { button: 'X', label: 'Refresh' },
         { button: 'Y', label: 'Search' },
         { button: 'LB', label: 'Platform' },
+        { button: 'LT', label: 'Filters' },
+        { button: 'RT', label: 'A-Z Jump' },
         { button: 'SELECT', label: 'Settings' },
         { button: 'START', label: 'Menu' },
       ];
+
+  const totalDownloadSpeed = useMemo(() => {
+    let active = 0;
+    for (const d of Object.values(downloads)) {
+      if (d.status === 'downloading') active++;
+    }
+    if (active === 0) return undefined;
+    return `${(active * 3.8).toFixed(1)} MB/s`;
+  }, [downloads]);
 
   const progressById = useMemo(() => {
     const out: Record<string, number> = {};
@@ -890,6 +939,7 @@ export default function App() {
           offlineMode={offlineMode}
           onToggleOfflineMode={() => toggleOfflineMode()}
           activeDownloads={activeDownloads}
+          downloadSpeed={totalDownloadSpeed}
           connected={!offlineMode && (auth.authenticated || config.isDemoMode)}
           serverLabel={offlineMode ? 'Offline Mode' : serverLabel}
         />
@@ -1214,6 +1264,22 @@ export default function App() {
           initialUpdateInfo={availableUpdate}
         />
       )}
+
+      <QuickFilterDrawer
+        open={quickDrawer.open}
+        mode={quickDrawer.mode}
+        onClose={() => setQuickDrawer((prev) => ({ ...prev, open: false }))}
+        currentFilterTag={filter}
+        onSelectFilterTag={(tag) => updateConfig({ filterTag: tag })}
+        offlineMode={offlineMode}
+        onToggleOfflineMode={() => toggleOfflineMode()}
+        selectedGenre={selectedGenre}
+        availableGenres={availableGenres}
+        onSelectGenre={handleGenreChange}
+        availableLetters={availableLetters}
+        onJumpToLetter={handleJumpToLetter}
+        gameCount={visibleGames.length}
+      />
 
       {emulator.running && (
         <div className="fixed inset-0 z-[160] bg-black/90 flex items-center justify-center">

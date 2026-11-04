@@ -1,13 +1,17 @@
 'use strict';
 /**
- * In-place App Updater for DeckRomM.
+ * In-place App Updater for DeckRomM (Steam Deck / SteamOS Game Mode).
  *
- * Checks GitHub for newer commits/versions and performs in-place upgrades:
- *  - If running in a git clone: `git fetch`, `git reset --hard`, `npm install`, `npm run build`.
- *  - If running as an AppImage: fetches latest release asset, writes .new and atomically swaps.
- *  - If running as standalone files or source: clones/updates and rebuilds AppImage.
- *
- * Reports live progress over the `app:update-progress` event and triggers clean relaunch.
+ * Checks GitHub for newer commits/releases and performs reliable in-place upgrades:
+ *  - Running as AppImage (standard Steam Deck Game Mode install):
+ *      1. Checks GitHub Releases for a pre-built DeckRomM-*.AppImage.
+ *      2. Downloads asset with streaming progress directly to a .new file.
+ *      3. Follows redirects without sending GitHub tokens to AWS S3 (fixes HTTP 400).
+ *      4. Atomically renames .new over the running AppImage (bypassing ETXTBSY / Text file busy).
+ *      5. Fallback: if no release asset exists, falls back to source update and build.
+ *  - Running from source or git worktree:
+ *      `git fetch`, `git reset --hard`, `npm install`, `npm run build`.
+ *  - Relaunch: cleanly respawns the launcher script or AppImage process group.
  */
 const { execFile, spawn } = require('child_process');
 const fsp = require('fs').promises;
@@ -15,38 +19,28 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 const { app } = require('electron');
 
-const IS_WIN = process.platform === 'win32';
-const HOME = IS_WIN
-  ? (process.env.USERPROFILE || os.homedir() || 'C:\\')
-  : (process.env.HOME || '/home/deck');
-const PATH_SEP = IS_WIN ? ';' : ':';
+const HOME = process.env.HOME || '/home/deck';
 
-const EXTRA_PATHS = (
-  IS_WIN
-    ? [
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin'),
-        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'bin'),
-        path.join(process.env.APPDATA || '', 'npm'),
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs'),
-        path.join(HOME, '.bun', 'bin'),
-      ]
-    : [
-        path.join(HOME, '.bun', 'bin'),
-        path.join(HOME, '.nvm', 'versions', 'node', 'current', 'bin'),
-        path.join(HOME, '.local', 'bin'),
-        '/usr/local/bin',
-        '/usr/bin',
-        '/bin',
-      ]
-).filter(Boolean).join(PATH_SEP);
+const EXTRA_PATHS = [
+  path.join(HOME, '.bun', 'bin'),
+  path.join(HOME, '.nvm', 'versions', 'node', 'current', 'bin'),
+  path.join(HOME, '.local', 'bin'),
+  '/usr/local/bin',
+  '/usr/bin',
+  '/bin',
+].filter(Boolean).join(':');
 
 const BUILD_ENV = {
   ...process.env,
-  PATH: process.env.PATH ? `${EXTRA_PATHS}${PATH_SEP}${process.env.PATH}` : EXTRA_PATHS,
+  PATH: process.env.PATH ? `${EXTRA_PATHS}:${process.env.PATH}` : EXTRA_PATHS,
   CI: 'true',
 };
+
+const APP_VERSION = '1.3.0';
 
 /**
  * Validates and returns a real, existing directory on disk.
@@ -101,23 +95,32 @@ function execP(cmd, args, opts = {}) {
 
 function fetchJson(url, token) {
   return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
     const headers = {
-      'User-Agent': 'DeckRomM-Updater/1.3.0',
+      'User-Agent': `DeckRomM-Updater/${APP_VERSION}`,
       Accept: 'application/vnd.github.v3+json',
     };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (token && parsed.hostname.endsWith('github.com')) {
+      headers.Authorization = `Bearer ${token}`;
+    }
 
-    const req = https.get(url, { headers, timeout: 15000 }, (res) => {
+    const client = parsed.protocol === 'http:' ? http : https;
+    const req = client.get(url, { headers, timeout: 15000 }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return fetchJson(res.headers.location, token).then(resolve).catch(reject);
+        res.resume();
+        const nextUrl = new URL(res.headers.location, url).toString();
+        return fetchJson(nextUrl, token).then(resolve).catch(reject);
       }
       if (res.statusCode === 404) {
+        res.resume();
         return resolve({ notFound: true, status: 404 });
       }
       if (res.statusCode === 403) {
+        res.resume();
         return resolve({ rateLimited: true, status: 403 });
       }
       if (res.statusCode !== 200) {
+        res.resume();
         return reject(new Error(`GitHub returned HTTP ${res.statusCode}`));
       }
       let body = '';
@@ -194,25 +197,31 @@ class AppUpdater {
    * If running packaged as an AppImage with no git clone, returns build info.
    */
   async detectGitInfo() {
-    const gitDir = this.findGitDirectory();
-    if (gitDir) {
-      const [insideRes, commitRes, remoteRes, branchRes] = await Promise.all([
-        execP('git', ['rev-parse', '--is-inside-work-tree'], { cwd: gitDir }),
-        execP('git', ['rev-parse', 'HEAD'], { cwd: gitDir }),
-        execP('git', ['config', '--get', 'remote.origin.url'], { cwd: gitDir }),
-        execP('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: gitDir }),
-      ]);
+    const isAppImage = Boolean(process.env.APPIMAGE || (app && app.isPackaged));
 
-      if (insideRes.ok && commitRes.ok) {
-        const repo = remoteRes.ok ? this.parseRepo(remoteRes.stdout) : null;
-        const branch = branchRes.ok && branchRes.stdout !== 'HEAD' ? branchRes.stdout : 'main';
-        return {
-          isGit: true,
-          gitDir,
-          commit: commitRes.stdout,
-          repo: repo || '',
-          branch,
-        };
+    // If running in development / source mode, check git worktree directly
+    if (!isAppImage) {
+      const gitDir = this.findGitDirectory();
+      if (gitDir) {
+        const [insideRes, commitRes, remoteRes, branchRes] = await Promise.all([
+          execP('git', ['rev-parse', '--is-inside-work-tree'], { cwd: gitDir }),
+          execP('git', ['rev-parse', 'HEAD'], { cwd: gitDir }),
+          execP('git', ['config', '--get', 'remote.origin.url'], { cwd: gitDir }),
+          execP('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: gitDir }),
+        ]);
+
+        if (insideRes.ok && commitRes.ok) {
+          const repo = remoteRes.ok ? this.parseRepo(remoteRes.stdout) : null;
+          const branch = branchRes.ok && branchRes.stdout !== 'HEAD' ? branchRes.stdout : 'main';
+          return {
+            isGit: true,
+            isAppImage: false,
+            gitDir,
+            commit: commitRes.stdout,
+            repo: repo || 'silayo10/deckromm',
+            branch,
+          };
+        }
       }
     }
 
@@ -232,9 +241,10 @@ class AppUpdater {
           if (parsed && (parsed.commit || parsed.repo)) {
             return {
               isGit: false,
+              isAppImage,
               gitDir: null,
-              commit: parsed.commit || '',
-              repo: parsed.repo || '',
+              commit: parsed.commit || (parsed.version ? `v${parsed.version}` : `v${APP_VERSION}`),
+              repo: parsed.repo || 'silayo10/deckromm',
               branch: parsed.branch || 'main',
             };
           }
@@ -242,12 +252,13 @@ class AppUpdater {
       } catch {}
     }
 
-    const version = app ? app.getVersion() : '1.3.0';
+    const version = app ? app.getVersion() : APP_VERSION;
     return {
       isGit: false,
+      isAppImage,
       gitDir: null,
-      commit: version ? `v${version}` : '',
-      repo: '',
+      commit: version ? `v${version}` : `v${APP_VERSION}`,
+      repo: 'silayo10/deckromm',
       branch: 'main',
     };
   }
@@ -257,7 +268,7 @@ class AppUpdater {
    */
   recordBuildInfo({ commit, repo }) {
     try {
-      const data = JSON.stringify({ commit, repo, updatedAt: new Date().toISOString() }, null, 2);
+      const data = JSON.stringify({ commit, repo, version: APP_VERSION, updatedAt: new Date().toISOString() }, null, 2);
       const paths = [
         path.join(HOME, 'Applications/DeckRomM/.build-info.json'),
         path.join(HOME, '.config/DeckRomM/.build-info.json'),
@@ -278,13 +289,13 @@ class AppUpdater {
     try {
       const gitInfo = await this.detectGitInfo();
       const config = this.configStore ? this.configStore.get() : {};
-      const targetRepo = config.githubRepo ? this.parseRepo(config.githubRepo) : gitInfo.repo;
+      const targetRepo = config.githubRepo ? this.parseRepo(config.githubRepo) : (gitInfo.repo || 'silayo10/deckromm');
       const targetBranch = config.githubBranch || gitInfo.branch || 'main';
 
       if (!targetRepo) {
         return {
           hasUpdate: false,
-          error: 'Please configure your GitHub Repository (e.g. yourname/deckromm) in Settings > App Updates.',
+          error: 'Please configure your GitHub Repository (e.g. silayo10/deckromm) in Settings > App Updates.',
           currentCommit: gitInfo.commit.slice(0, 7),
           branch: targetBranch,
         };
@@ -292,6 +303,23 @@ class AppUpdater {
 
       this.log(`[updater] Checking GitHub for ${targetRepo} on branch ${targetBranch}...`);
 
+      // 1. Check latest release if running as an AppImage
+      let releaseAsset = null;
+      let releaseTag = '';
+      try {
+        const release = await fetchJson(`https://api.github.com/repos/${targetRepo}/releases/latest`, config.githubToken);
+        if (release && !release.notFound && !release.rateLimited && release.assets) {
+          const appImageAsset = release.assets.find((a) => a.name.endsWith('.AppImage'));
+          if (appImageAsset) {
+            releaseAsset = appImageAsset;
+            releaseTag = release.tag_name || '';
+          }
+        }
+      } catch (err) {
+        this.log(`[updater] Release check note: ${err.message}`);
+      }
+
+      // 2. Check latest commit on target branch
       let data = await fetchJson(`https://api.github.com/repos/${targetRepo}/commits/${targetBranch}`, config.githubToken);
 
       // If branch not found (e.g. 'main' vs 'master'), try fallback
@@ -311,6 +339,26 @@ class AppUpdater {
       }
 
       if (!data || !data.sha) {
+        // If commits API failed but release exists
+        if (releaseTag) {
+          const isDifferentTag = gitInfo.commit !== releaseTag && `v${APP_VERSION}` !== releaseTag;
+          return {
+            hasUpdate: isDifferentTag,
+            currentCommit: gitInfo.commit.slice(0, 7),
+            latestCommit: releaseTag,
+            fullSha: releaseTag,
+            message: `Release ${releaseTag}`,
+            fullMessage: `GitHub Release ${releaseTag}`,
+            author: 'DeckRomM',
+            date: '',
+            repo: targetRepo,
+            branch: targetBranch,
+            isGit: gitInfo.isGit,
+            isAppImage: gitInfo.isAppImage,
+            hasReleaseAsset: Boolean(releaseAsset),
+          };
+        }
+
         return {
           hasUpdate: false,
           error: data?.notFound ? `Repository ${targetRepo} or branch ${targetBranch} not found on GitHub. Check repository name.` : 'Unable to parse GitHub response',
@@ -328,16 +376,16 @@ class AppUpdater {
 
       const isDifferent = Boolean(
         !currentSha ||
-        (latestSha && !latestSha.startsWith(currentSha) && !currentSha.startsWith(latestSha))
+        (latestSha && !latestSha.startsWith(currentSha) && !currentSha.startsWith(latestSha) && currentSha !== `v${APP_VERSION}`)
       );
-
-      const isAppImage = Boolean(process.env.APPIMAGE || (app && app.isPackaged));
 
       return {
         hasUpdate: isDifferent,
         currentCommit: currentSha.slice(0, 7),
         latestCommit: latestSha.slice(0, 7),
         fullSha: latestSha,
+        releaseTag: releaseTag || null,
+        hasReleaseAsset: Boolean(releaseAsset),
         message: commitMsg.split('\n')[0],
         fullMessage: commitMsg,
         author,
@@ -345,7 +393,7 @@ class AppUpdater {
         repo: targetRepo,
         branch: targetBranch,
         isGit: gitInfo.isGit,
-        isAppImage,
+        isAppImage: gitInfo.isAppImage,
         releaseUrl: data.html_url,
       };
     } catch (e) {
@@ -368,12 +416,8 @@ class AppUpdater {
       this.log(`[updater] ${cmd} ${args.join(' ')} (cwd: ${safeCwd})`);
       
       let proc;
-      let resolvedCmd = cmd;
-      if (IS_WIN && cmd === 'npm') {
-        resolvedCmd = 'npm.cmd';
-      }
       try {
-        proc = spawn(resolvedCmd, args, { cwd: safeCwd, env: BUILD_ENV, shell: IS_WIN });
+        proc = spawn(cmd, args, { cwd: safeCwd, env: BUILD_ENV });
       } catch (err) {
         return reject(err);
       }
@@ -414,7 +458,92 @@ class AppUpdater {
   }
 
   /**
-   * Perform an in-place upgrade.
+   * Download file following redirects safely without leaking Authorization header to S3.
+   */
+  downloadFile(url, dest, token) {
+    return new Promise((resolve, reject) => {
+      const get = (targetUrl) => {
+        let parsedUrl;
+        try {
+          parsedUrl = new URL(targetUrl);
+        } catch (e) {
+          return reject(e);
+        }
+
+        const isGithubDomain = parsedUrl.hostname.endsWith('github.com');
+        const headers = {
+          'User-Agent': `DeckRomM-Updater/${APP_VERSION}`,
+        };
+        // ONLY send Authorization header if directly communicating with github.com.
+        // AWS S3 and objects.githubusercontent.com will REJECT requests with HTTP 400
+        // if both signed URL queries and Authorization headers are present.
+        if (token && isGithubDomain) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        const client = parsedUrl.protocol === 'http:' ? http : https;
+        const req = client.get(targetUrl, { headers, timeout: 60000 }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            // Must resume/drain stream to avoid socket hang
+            res.resume();
+            const nextUrl = new URL(res.headers.location, targetUrl).toString();
+            return get(nextUrl);
+          }
+
+          if (res.statusCode !== 200) {
+            res.resume();
+            return reject(new Error(`Download failed: HTTP ${res.statusCode} ${res.statusMessage || ''}`));
+          }
+
+          const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+          let downloadedBytes = 0;
+          let lastReport = 0;
+
+          const file = fs.createWriteStream(dest);
+          res.on('data', (chunk) => {
+            downloadedBytes += chunk.length;
+            const now = Date.now();
+            if (totalBytes > 0 && now - lastReport > 300) {
+              lastReport = now;
+              const pct = Math.min(95, Math.round(25 + (downloadedBytes / totalBytes) * 65));
+              const mb = (downloadedBytes / 1048576).toFixed(1);
+              const totalMb = (totalBytes / 1048576).toFixed(1);
+              this.emit('app:update-progress', {
+                stage: 'downloading',
+                percent: pct,
+                message: `Downloading update (${mb} / ${totalMb} MB)...`,
+              });
+            }
+          });
+
+          res.pipe(file);
+          file.on('finish', () => {
+            file.close(resolve);
+          });
+          file.on('error', (err) => {
+            fs.unlink(dest, () => {});
+            reject(err);
+          });
+        });
+
+        req.on('timeout', () => {
+          req.destroy();
+          fs.unlink(dest, () => {});
+          reject(new Error('Download timed out'));
+        });
+
+        req.on('error', (err) => {
+          fs.unlink(dest, () => {});
+          reject(err);
+        });
+      };
+
+      get(url);
+    });
+  }
+
+  /**
+   * Perform an in-place upgrade on SteamOS.
    */
   async performUpdate(options = {}) {
     if (this.isUpdating) {
@@ -425,7 +554,7 @@ class AppUpdater {
     try {
       const gitInfo = await this.detectGitInfo();
       const config = this.configStore ? this.configStore.get() : {};
-      const targetRepo = options.repo || config.githubRepo || gitInfo.repo;
+      const targetRepo = options.repo || config.githubRepo || gitInfo.repo || 'silayo10/deckromm';
       const targetBranch = options.branch || config.githubBranch || gitInfo.branch || 'main';
 
       if (!targetRepo) {
@@ -438,11 +567,85 @@ class AppUpdater {
         message: 'Preparing in-place update...',
       });
 
-      // -------------------------------------------------------------
-      // PATH 1: Git-based in-place upgrade
-      // -------------------------------------------------------------
-      if (gitInfo.isGit && gitInfo.gitDir) {
-        const gitDir = gitInfo.gitDir;
+      const isAppImage = Boolean(process.env.APPIMAGE || (app && app.isPackaged));
+      const appImagePath = process.env.APPIMAGE || path.join(HOME, 'Applications/DeckRomM/DeckRomM.AppImage');
+
+      // =========================================================================
+      // STRATEGY A (PRIMARY FOR STEAM DECK): Download Release AppImage from GitHub
+      // =========================================================================
+      if (isAppImage) {
+        this.emit('app:update-progress', {
+          stage: 'checking_releases',
+          percent: 15,
+          message: `Checking GitHub Releases for ${targetRepo}...`,
+        });
+
+        let release = null;
+        try {
+          release = await fetchJson(`https://api.github.com/repos/${targetRepo}/releases/latest`, config.githubToken);
+        } catch (e) {
+          this.log(`[updater] Could not query releases: ${e.message}`);
+        }
+
+        const asset = release?.assets?.find((a) => a.name.endsWith('.AppImage'));
+
+        if (asset && asset.browser_download_url) {
+          const sizeMb = asset.size ? (asset.size / 1048576).toFixed(1) : 'download';
+          this.emit('app:update-progress', {
+            stage: 'downloading',
+            percent: 25,
+            message: `Downloading new AppImage (${sizeMb} MB)...`,
+          });
+
+          // Ensure parent directory exists
+          await fsp.mkdir(path.dirname(appImagePath), { recursive: true });
+
+          // Write to a temporary file first, then atomically rename
+          // This avoids 'Text file busy' (ETXTBSY) when replacing the running AppImage on Linux
+          const tmpDest = `${appImagePath}.new-${Date.now()}`;
+          await this.downloadFile(asset.browser_download_url, tmpDest, config.githubToken);
+          await fsp.chmod(tmpDest, 0o755);
+          await fsp.rename(tmpDest, appImagePath);
+
+          // Synchronize canonical and versioned aliases in ~/Applications/DeckRomM
+          // in case Steam shortcut points directly to DeckRomM-1.3.0-x86_64.AppImage or DeckRomM.AppImage
+          const appsDir = path.join(HOME, 'Applications/DeckRomM');
+          const canonical = path.join(appsDir, 'DeckRomM.AppImage');
+          const versioned13 = path.join(appsDir, 'DeckRomM-1.3.0-x86_64.AppImage');
+
+          for (const target of [canonical, versioned13]) {
+            if (target !== appImagePath) {
+              try {
+                await fsp.mkdir(path.dirname(target), { recursive: true });
+                const copyTmp = `${target}.new-${Date.now()}`;
+                await fsp.copyFile(appImagePath, copyTmp);
+                await fsp.chmod(copyTmp, 0o755);
+                await fsp.rename(copyTmp, target);
+              } catch {}
+            }
+          }
+
+          this.recordBuildInfo({ commit: release.tag_name || asset.name, repo: targetRepo });
+
+          this.emit('app:update-progress', {
+            stage: 'complete',
+            percent: 100,
+            message: 'AppImage upgraded successfully! Ready to restart.',
+          });
+
+          return {
+            ok: true,
+            commit: (release.tag_name || asset.name).slice(0, 10),
+            message: `DeckRomM upgraded to ${release.tag_name || 'latest'} successfully. Restart to run the new version.`,
+          };
+        }
+      }
+
+      // =========================================================================
+      // STRATEGY B: Git-based in-place pull and rebuild (for dev or local repo)
+      // =========================================================================
+      const gitDir = this.findGitDirectory();
+      if (gitDir && (!isAppImage || !gitInfo.hasReleaseAsset)) {
         this.emit('app:update-progress', {
           stage: 'pulling',
           percent: 20,
@@ -478,9 +681,9 @@ class AppUpdater {
           await this.runSpawn('npm', ['run', 'build'], gitDir, 'building', 80, 90);
         }
 
-        // Package new AppImage and install if scripts exist (Linux / SteamOS only)
+        // If packaging is needed (when running AppImage)
         const buildScript = path.join(gitDir, 'build-appimage.sh');
-        if (!IS_WIN && fs.existsSync(buildScript)) {
+        if (isAppImage && fs.existsSync(buildScript)) {
           await fsp.chmod(buildScript, 0o755).catch(() => {});
           this.emit('app:update-progress', {
             stage: 'packaging',
@@ -507,95 +710,35 @@ class AppUpdater {
         return {
           ok: true,
           commit: newCommit.slice(0, 7),
-          message: 'Application upgraded successfully in place. Restart to apply changes.',
+          message: 'DeckRomM upgraded in place successfully. Restart to apply changes.',
         };
       }
 
-      // -------------------------------------------------------------
-      // PATH 2: AppImage in-place upgrade via GitHub Release
-      // -------------------------------------------------------------
-      const appImagePath = process.env.APPIMAGE || path.join(HOME, 'Applications/DeckRomM/DeckRomM.AppImage');
-
-      this.emit('app:update-progress', {
-        stage: 'checking_releases',
-        percent: 20,
-        message: 'Checking for release AppImage...',
-      });
-
-      const release = await fetchJson(`https://api.github.com/repos/${targetRepo}/releases/latest`, config.githubToken);
-      const asset = release?.assets?.find((a) => a.name.endsWith('.AppImage'));
-
-      if (asset && asset.browser_download_url) {
-        this.emit('app:update-progress', {
-          stage: 'downloading',
-          percent: 40,
-          message: `Downloading new AppImage (${(asset.size / 1e6).toFixed(1)} MB)...`,
-        });
-
-        const tmpDest = `${appImagePath}.new-${Date.now()}`;
-        await this.downloadFile(asset.browser_download_url, tmpDest);
-        await fsp.chmod(tmpDest, 0o755);
-        await fsp.rename(tmpDest, appImagePath);
-
-        this.recordBuildInfo({ commit: release.tag_name || asset.name, repo: targetRepo });
-
-        this.emit('app:update-progress', {
-          stage: 'complete',
-          percent: 100,
-          message: 'AppImage upgraded successfully! Ready to restart.',
-        });
-
-        return { ok: true, message: 'AppImage upgraded successfully. Relaunch to start the new version.' };
-      }
-
-      // -------------------------------------------------------------
-      // PATH 3: Source clone & build on Steam Deck
-      // -------------------------------------------------------------
+      // =========================================================================
+      // STRATEGY C: Source archive fallback
+      // =========================================================================
       const buildDir = path.join(HOME, 'deckromm');
       fs.mkdirSync(buildDir, { recursive: true });
 
-      const hasGit = (await execP('which', ['git'])).ok;
-      if (hasGit) {
-        this.emit('app:update-progress', {
-          stage: 'fetching_source',
-          percent: 25,
-          message: `Updating repository source from GitHub (${targetBranch})...`,
-        });
+      this.emit('app:update-progress', {
+        stage: 'downloading',
+        percent: 25,
+        message: `Downloading repository archive from GitHub (${targetBranch})...`,
+      });
 
-        const gitDir = path.join(buildDir, '.git');
-        if (fs.existsSync(gitDir)) {
-          await this.runSpawn('git', ['fetch', 'origin', targetBranch], buildDir, 'fetching', 25, 40);
-          await this.runSpawn('git', ['reset', '--hard', `origin/${targetBranch}`], buildDir, 'resetting', 40, 50);
-        } else {
-          // Initialize git in existing directory to avoid "destination path '.' already exists and is not an empty directory"
-          await execP('git', ['init'], { cwd: buildDir });
-          await execP('git', ['remote', 'add', 'origin', `https://github.com/${targetRepo}.git`], { cwd: buildDir }).catch(() => {
-            return execP('git', ['remote', 'set-url', 'origin', `https://github.com/${targetRepo}.git`], { cwd: buildDir });
-          });
-          await this.runSpawn('git', ['fetch', '--depth', '1', 'origin', targetBranch], buildDir, 'fetching', 25, 40);
-          await this.runSpawn('git', ['reset', '--hard', 'FETCH_HEAD'], buildDir, 'resetting', 40, 50);
-        }
-      } else {
-        // Tarball fallback
-        this.emit('app:update-progress', {
-          stage: 'downloading',
-          percent: 25,
-          message: `Downloading repository archive from GitHub (${targetBranch})...`,
-        });
-        const tmpTar = path.join(HOME, `.deckromm-update-${Date.now()}.tar.gz`);
-        await this.downloadFile(`https://api.github.com/repos/${targetRepo}/tarball/${targetBranch}`, tmpTar, config.githubToken);
-        await this.runSpawn('tar', ['-xzf', tmpTar, '--strip-components=1', '-C', buildDir], buildDir, 'extracting', 40, 50);
-        await fsp.unlink(tmpTar).catch(() => {});
-      }
+      const tmpTar = path.join(HOME, `.deckromm-update-${Date.now()}.tar.gz`);
+      await this.downloadFile(`https://api.github.com/repos/${targetRepo}/tarball/${targetBranch}`, tmpTar, config.githubToken);
+      await this.runSpawn('tar', ['-xzf', tmpTar, '--strip-components=1', '-C', buildDir], buildDir, 'extracting', 40, 50);
+      await fsp.unlink(tmpTar).catch(() => {});
 
       this.emit('app:update-progress', {
         stage: 'building',
         percent: 60,
-        message: 'Building updated AppImage...',
+        message: 'Building application...',
       });
 
       const buildScript = path.join(buildDir, 'build-appimage.sh');
-      if (!IS_WIN && fs.existsSync(buildScript)) {
+      if (fs.existsSync(buildScript)) {
         await fsp.chmod(buildScript, 0o755).catch(() => {});
         await this.runSpawn('bash', [buildScript], buildDir, 'building', 60, 90);
         const installScript = path.join(buildDir, 'installer.sh');
@@ -606,17 +749,11 @@ class AppUpdater {
       } else {
         const hasBun = (await execP('which', ['bun'])).ok || fs.existsSync(path.join(HOME, '.bun', 'bin', 'bun'));
         const bunCmd = hasBun ? (fs.existsSync(path.join(HOME, '.bun', 'bin', 'bun')) ? path.join(HOME, '.bun', 'bin', 'bun') : 'bun') : 'npm';
-        if (hasBun) {
-          await this.runSpawn(bunCmd, ['install'], buildDir, 'installing', 60, 75);
-          await this.runSpawn(bunCmd, ['run', 'build'], buildDir, 'building', 75, 95);
-        } else {
-          await this.runSpawn('npm', ['install', '--no-audit', '--no-fund'], buildDir, 'installing', 60, 75);
-          await this.runSpawn('npm', ['run', 'build'], buildDir, 'building', 75, 95);
-        }
+        await this.runSpawn(bunCmd, ['install'], buildDir, 'installing', 60, 75);
+        await this.runSpawn(bunCmd, ['run', 'build'], buildDir, 'building', 75, 95);
       }
 
-      const latestCommit = (await execP('git', ['rev-parse', 'HEAD'], { cwd: buildDir })).stdout || 'latest';
-      this.recordBuildInfo({ commit: latestCommit, repo: targetRepo });
+      this.recordBuildInfo({ commit: 'latest', repo: targetRepo });
 
       this.emit('app:update-progress', {
         stage: 'complete',
@@ -626,7 +763,7 @@ class AppUpdater {
 
       return {
         ok: true,
-        commit: latestCommit.slice(0, 7),
+        commit: 'latest',
         message: 'DeckRomM upgraded in place successfully. Restart to run the latest version.',
       };
     } catch (e) {
@@ -642,55 +779,43 @@ class AppUpdater {
     }
   }
 
-  downloadFile(url, dest, token) {
-    return new Promise((resolve, reject) => {
-      const headers = { 'User-Agent': 'DeckRomM-Updater/1.3.0' };
-      if (token) headers.Authorization = `Bearer ${token}`;
-
-      const get = (targetUrl) => {
-        https.get(targetUrl, { headers }, (res) => {
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            return get(res.headers.location);
-          }
-          if (res.statusCode !== 200) {
-            return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
-          }
-          const file = fs.createWriteStream(dest);
-          res.pipe(file);
-          file.on('finish', () => file.close(resolve));
-          file.on('error', reject);
-        }).on('error', reject);
-      };
-      get(url);
-    });
-  }
-
   /**
-   * Relaunch the application cleanly.
+   * Relaunch the application cleanly in SteamOS Game Mode or Desktop Mode.
    */
   relaunch() {
-    this.log('[updater] Relaunching application...');
+    this.log('[updater] Relaunching application on SteamOS...');
     if (app) {
-      if (IS_WIN) {
-        const exePath = process.execPath;
+      const launcherPath = path.join(HOME, 'Applications/DeckRomM/launch_deckromm.sh');
+      const appImagePath = process.env.APPIMAGE || path.join(HOME, 'Applications/DeckRomM/DeckRomM.AppImage');
+
+      // 1. If running under Steam with the official launcher script
+      if (fs.existsSync(launcherPath)) {
         try {
-          spawn('cmd.exe', ['/c', 'start', '""', exePath], {
+          spawn('bash', [launcherPath], {
             detached: true,
             stdio: 'ignore',
-            windowsHide: true,
+            env: process.env,
           }).unref();
-        } catch {
-          app.relaunch();
-        }
-        app.exit(0);
-        return;
+          app.exit(0);
+          return;
+        } catch {}
       }
-      const launcherPath = path.join(HOME, 'Applications/DeckRomM/launch_deckromm.sh');
-      if (fs.existsSync(launcherPath)) {
-        app.relaunch({ execPath: launcherPath });
-      } else {
-        app.relaunch();
+
+      // 2. If running directly as an AppImage binary
+      if (process.env.APPIMAGE && fs.existsSync(process.env.APPIMAGE)) {
+        try {
+          spawn(process.env.APPIMAGE, process.argv.slice(1), {
+            detached: true,
+            stdio: 'ignore',
+            env: process.env,
+          }).unref();
+          app.exit(0);
+          return;
+        } catch {}
       }
+
+      // 3. Fallback standard Electron relaunch
+      app.relaunch();
       app.exit(0);
     }
   }

@@ -297,6 +297,66 @@ function createBrowserFallback(): DeckRommBridge {
       }),
       setAutoSync: async (enabled: boolean) => ({ ok: true, autoSync: enabled }),
     },
+    playtime: {
+      get: async (romId: string | number) => {
+        try {
+          const all = JSON.parse(localStorage.getItem('deckromm_playtime') || '{}');
+          return all[String(romId)] || { romId, totalSeconds: 0, sessionsCount: 0, lastPlayed: 0 };
+        } catch {
+          return { romId, totalSeconds: 0, sessionsCount: 0, lastPlayed: 0 };
+        }
+      },
+      getAll: async () => {
+        try {
+          return JSON.parse(localStorage.getItem('deckromm_playtime') || '{}');
+        } catch {
+          return {};
+        }
+      },
+      record: async ({ romId, activeSeconds }: { romId: string | number; activeSeconds: number }) => {
+        const key = String(romId);
+        let all: Record<string, any> = {};
+        try {
+          all = JSON.parse(localStorage.getItem('deckromm_playtime') || '{}');
+        } catch {}
+        const prev = all[key] || { romId: key, totalSeconds: 0, sessionsCount: 0, lastPlayed: 0 };
+        const added = Math.max(0, Math.round(activeSeconds || 0));
+        const updated = {
+          ...prev,
+          totalSeconds: (prev.totalSeconds || 0) + added,
+          sessionsCount: (prev.sessionsCount || 0) + (added > 10 ? 1 : 0),
+          lastPlayed: Date.now(),
+        };
+        all[key] = updated;
+        try {
+          localStorage.setItem('deckromm_playtime', JSON.stringify(all));
+        } catch {}
+        emit('playtime:updated', { romId: key, record: updated });
+        return updated;
+      },
+      reconcile: async ({ romId, serverPlaytime, serverLastPlayed }: any) => {
+        const key = String(romId);
+        let all: Record<string, any> = {};
+        try {
+          all = JSON.parse(localStorage.getItem('deckromm_playtime') || '{}');
+        } catch {}
+        const prev = all[key] || { romId: key, totalSeconds: 0, sessionsCount: 0, lastPlayed: 0 };
+        const sSecs = Math.max(0, Math.round(Number(serverPlaytime) || 0));
+        const serverTs = typeof serverLastPlayed === 'number' ? serverLastPlayed : Date.parse(serverLastPlayed || '') || 0;
+        const updated = {
+          ...prev,
+          totalSeconds: Math.max(prev.totalSeconds || 0, sSecs),
+          lastPlayed: Math.max(prev.lastPlayed || 0, serverTs),
+        };
+        all[key] = updated;
+        try {
+          localStorage.setItem('deckromm_playtime', JSON.stringify(all));
+        } catch {}
+        return updated;
+      },
+      sync: async (romId: string | number) => ({ ok: true, romId: String(romId) }),
+      syncAll: async () => ({ ok: true, synced: 0 }),
+    },
     on: ((channel: string, cb: Listener) => {
       if (!listeners.has(channel)) listeners.set(channel, new Set());
       listeners.get(channel)!.add(cb);

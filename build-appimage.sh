@@ -68,7 +68,7 @@ if [[ -z "$APPIMAGE" ]]; then
   exit 1
 fi
 chmod +x "$APPIMAGE"
-cp "$APPIMAGE" release/DeckRomM.AppImage
+cp "$APPIMAGE" release/DeckRomM.AppImage.new && mv -f release/DeckRomM.AppImage.new release/DeckRomM.AppImage
 
 cat <<MSG
 

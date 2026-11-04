@@ -28,27 +28,33 @@ const KEYBOARD_TEXT: Record<HudButton, string> = {
   A: 'Enter', B: 'Esc', X: 'X', Y: 'Y', LB: 'Q', RB: 'E', LT: 'PgUp', RT: 'PgDn', START: 'M', SELECT: 'Tab', 'R-STICK': 'Wheel',
 };
 
-export const ButtonGlyph: React.FC<{ button: HudButton; keyboard?: boolean }> = ({ button, keyboard }) =>
-  keyboard ? (
-    <span className="inline-flex items-center justify-center h-7 px-2 rounded-md bg-deck-panel-2 border border-deck-line text-xs font-bold">
-      {KEYBOARD_TEXT[button]}
+export const ButtonGlyph: React.FC<{ button: HudButton; keyboard?: boolean }> = ({ button, keyboard }) => (
+  <span className="inline-flex items-center gap-1">
+    <span className={`inline-flex items-center justify-center h-6 text-xs font-black shadow-sm ${GLYPH_STYLE[button]}`}>
+      {GLYPH_TEXT[button]}
     </span>
-  ) : (
-    <span className={`inline-flex items-center justify-center h-7 text-sm font-extrabold ${GLYPH_STYLE[button]}`}>{GLYPH_TEXT[button]}</span>
-  );
+    {keyboard && (
+      <span className="text-[10px] font-mono text-deck-dim/70 hidden sm:inline">
+        ({KEYBOARD_TEXT[button]})
+      </span>
+    )}
+  </span>
+);
 
 /** Bottom hint bar (Steam footer style). Purely informational - never focusable. */
 export const ControllerHUD: React.FC<{ hints: HudHint[]; status?: React.ReactNode }> = ({ hints, status }) => {
   const pad = useGamepadState();
   const keyboard = !pad.connected;
   return (
-    <footer className="h-12 shrink-0 flex items-center justify-between px-6 bg-[#0a0d14]/95 border-t border-deck-line text-sm text-deck-dim">
-      <div className="truncate">{status}</div>
-      <div className="flex items-center gap-5">
+    <footer className="h-12 shrink-0 flex items-center justify-between px-6 bg-[#0a0d14] border-t border-deck-line text-xs sm:text-sm text-deck-dim overflow-hidden select-none">
+      <div className="truncate text-xs font-mono text-deck-dim flex items-center gap-2">
+        {status}
+      </div>
+      <div className="flex items-center gap-4 sm:gap-5 overflow-x-auto no-scrollbar py-1">
         {hints.map((h) => (
-          <span key={h.button + h.label} className="flex items-center gap-2 text-deck-text font-semibold whitespace-nowrap">
+          <span key={h.button + h.label} className="flex items-center gap-1.5 text-deck-text font-bold whitespace-nowrap text-xs">
             <ButtonGlyph button={h.button} keyboard={keyboard} />
-            {h.label}
+            <span>{h.label}</span>
           </span>
         ))}
       </div>

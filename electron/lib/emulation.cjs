@@ -21,7 +21,6 @@ const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 
 const HOME = os.homedir();
-const IS_WIN = process.platform === 'win32';
 
 /** RomM platform slug -> EmuDeck / ES-DE roms folder name. */
 const PLATFORM_FOLDERS = {
@@ -142,15 +141,11 @@ function exists(p) {
 
 function which(bin) {
   if (!bin) return null;
-  const sep = IS_WIN ? ';' : ':';
   const pathVar = process.env.PATH || '';
-  const exts = IS_WIN ? ['', '.exe', '.cmd', '.bat'] : [''];
-  for (const dir of pathVar.split(sep)) {
+  for (const dir of pathVar.split(':')) {
     if (!dir) continue;
-    for (const ext of exts) {
-      const full = path.join(dir, bin.toLowerCase().endsWith(ext) ? bin : `${bin}${ext}`);
-      if (exists(full)) return full;
-    }
+    const full = path.join(dir, bin);
+    if (exists(full)) return full;
   }
   return null;
 }
@@ -232,135 +227,7 @@ function findLocalEmulatorBinary(target) {
   return null;
 }
 
-/**
- * Check if an emulator exists on Windows (EmuDeck Windows layout, standalone installs, or system PATH).
- * Inspects <root>\tools\<emulator>\<emulator>.exe, <root>\tools\launchers\<emulator>.bat, AppData, etc.
- */
-function findWindowsEmulatorBinary(target, customRoot) {
-  if (!target) return null;
-  const root = customRoot || detectEmulationRoot();
-  const shortName = target.split('.').pop().toLowerCase();
-  const appData = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
-  const localAppData = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
-  const progFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
-
-  // 1. Direct which / PATH search
-  const directBin = which(shortName);
-  if (directBin) return directBin;
-
-  // 2. Map of common Windows emulator binaries & launchers
-  const lookup = {
-    pcsx2: [
-      path.join(root, 'tools', 'launchers', 'pcsx2.bat'),
-      path.join(root, 'tools', 'pcsx2', 'pcsx2-qt.exe'),
-      path.join(root, 'tools', 'pcsx2', 'pcsx2.exe'),
-      path.join(localAppData, 'Programs', 'PCSX2', 'pcsx2-qt.exe'),
-      path.join(progFiles, 'PCSX2', 'pcsx2-qt.exe'),
-      path.join(progFiles, 'PCSX2', 'pcsx2.exe'),
-    ],
-    duckstation: [
-      path.join(root, 'tools', 'launchers', 'duckstation.bat'),
-      path.join(root, 'tools', 'duckstation', 'duckstation-qt-x64-ReleaseLTCG.exe'),
-      path.join(root, 'tools', 'duckstation', 'duckstation.exe'),
-      path.join(localAppData, 'Programs', 'DuckStation', 'duckstation-qt-x64-ReleaseLTCG.exe'),
-      path.join(localAppData, 'DuckStation', 'duckstation-qt-x64-ReleaseLTCG.exe'),
-    ],
-    dolphin: [
-      path.join(root, 'tools', 'launchers', 'dolphin.bat'),
-      path.join(root, 'tools', 'dolphin', 'Dolphin.exe'),
-      path.join(root, 'tools', 'dolphin-emu', 'Dolphin.exe'),
-      path.join(progFiles, 'Dolphin', 'Dolphin.exe'),
-    ],
-    ppsspp: [
-      path.join(root, 'tools', 'launchers', 'ppsspp.bat'),
-      path.join(root, 'tools', 'ppsspp', 'PPSSPPWindows64.exe'),
-      path.join(root, 'tools', 'ppsspp', 'PPSSPP.exe'),
-      path.join(progFiles, 'PPSSPP', 'PPSSPPWindows64.exe'),
-    ],
-    rpcs3: [
-      path.join(root, 'tools', 'launchers', 'rpcs3.bat'),
-      path.join(root, 'tools', 'rpcs3', 'rpcs3.exe'),
-      path.join(localAppData, 'Programs', 'RPCS3', 'rpcs3.exe'),
-    ],
-    xemu: [
-      path.join(root, 'tools', 'launchers', 'xemu.bat'),
-      path.join(root, 'tools', 'xemu', 'xemu.exe'),
-      path.join(localAppData, 'Programs', 'xemu', 'xemu.exe'),
-    ],
-    cemu: [
-      path.join(root, 'tools', 'launchers', 'cemu.bat'),
-      path.join(root, 'tools', 'cemu', 'Cemu.exe'),
-      path.join(localAppData, 'Programs', 'Cemu', 'Cemu.exe'),
-    ],
-    ryujinx: [
-      path.join(root, 'tools', 'launchers', 'ryujinx.bat'),
-      path.join(root, 'tools', 'ryujinx', 'Ryujinx.exe'),
-      path.join(localAppData, 'Programs', 'Ryujinx', 'Ryujinx.exe'),
-      path.join(appData, 'Ryujinx', 'Ryujinx.exe'),
-    ],
-    ryubing: [
-      path.join(root, 'tools', 'launchers', 'ryujinx.bat'),
-      path.join(root, 'tools', 'ryujinx', 'Ryujinx.exe'),
-    ],
-    lime3ds: [
-      path.join(root, 'tools', 'launchers', 'lime3ds.bat'),
-      path.join(root, 'tools', 'lime3ds', 'lime3ds.exe'),
-      path.join(root, 'tools', 'citra', 'citra-qt.exe'),
-      path.join(localAppData, 'Programs', 'Lime3DS', 'lime3ds.exe'),
-    ],
-    citra: [
-      path.join(root, 'tools', 'launchers', 'citra.bat'),
-      path.join(root, 'tools', 'citra', 'citra-qt.exe'),
-      path.join(localAppData, 'Citra', 'citra-qt.exe'),
-    ],
-    flycast: [
-      path.join(root, 'tools', 'launchers', 'flycast.bat'),
-      path.join(root, 'tools', 'flycast', 'flycast.exe'),
-    ],
-    xenia: [
-      path.join(root, 'tools', 'launchers', 'xenia.bat'),
-      path.join(root, 'tools', 'xenia', 'xenia_canary.exe'),
-      path.join(root, 'tools', 'xenia', 'xenia.exe'),
-    ],
-    ymir: [
-      path.join(root, 'tools', 'launchers', 'saturn.bat'),
-      path.join(root, 'tools', 'ymir', 'ymir.exe'),
-    ],
-    yabasanshiro: [
-      path.join(root, 'tools', 'launchers', 'saturn.bat'),
-      path.join(root, 'tools', 'yabasanshiro', 'yabasanshiro.exe'),
-    ],
-    retroarch: [
-      path.join(root, 'tools', 'launchers', 'retroarch.bat'),
-      path.join(root, 'tools', 'retroarch', 'retroarch.exe'),
-      path.join(appData, 'RetroArch', 'retroarch.exe'),
-      'C:\\RetroArch-Win64\\retroarch.exe',
-      path.join(progFiles, 'RetroArch', 'retroarch.exe'),
-    ],
-  };
-
-  const candidates = lookup[shortName] || [];
-  candidates.push(
-    path.join(root, 'tools', shortName, `${shortName}.exe`),
-    path.join(root, 'tools', 'launchers', `${shortName}.bat`),
-    path.join(root, 'tools', 'launchers', `${shortName}.cmd`)
-  );
-
-  for (const c of candidates) {
-    if (exists(c)) return c;
-  }
-  return null;
-}
-
 async function getFlatpakStatus(flatpakIds = []) {
-  if (IS_WIN) {
-    const installedMap = {};
-    for (const id of flatpakIds) {
-      installedMap[id] = Boolean(findWindowsEmulatorBinary(id));
-    }
-    return { flatpakAvailable: true, installed: installedMap };
-  }
-
   const hasFlatpakBin = Boolean(which('flatpak'));
   const installedSet = await installedFlatpaks();
   const installedMap = {};
@@ -551,19 +418,6 @@ function detectEmulationRoot(configured) {
     // Accept either ".../Emulation" or ".../Emulation/roms" (forward or backward slashes)
     const cleaned = fromConfig.replace(/[/\\]+$/, '');
     return (cleaned.endsWith('/roms') || cleaned.endsWith('\\roms')) ? path.dirname(cleaned) : cleaned;
-  }
-
-  if (IS_WIN) {
-    // 1. Scan candidate drive letters for EmuDeck installation
-    const drives = ['C:', 'D:', 'E:', 'F:', 'G:'];
-    for (const drive of drives) {
-      const cand = path.join(drive, '\\Emulation');
-      if (exists(path.join(cand, 'roms'))) return cand;
-    }
-    // 2. Fall back to user profile Emulation folder if present
-    const homeCand = path.join(HOME, 'Emulation');
-    if (exists(path.join(homeCand, 'roms'))) return homeCand;
-    return 'C:\\Emulation'; // Default EmuDeck Windows root
   }
 
   const emudeck = emudeckEmulationPath();
@@ -1101,39 +955,6 @@ function fillTemplate(tpl, vars) {
 }
 
 async function findRetroArch(customRoot) {
-  if (IS_WIN) {
-    const root = customRoot || detectEmulationRoot();
-    const appData = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
-    const progFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
-    const candidates = [
-      path.join(root, 'tools', 'launchers', 'retroarch.bat'),
-      path.join(root, 'tools', 'retroarch', 'retroarch.exe'),
-      path.join(appData, 'RetroArch', 'retroarch.exe'),
-      'C:\\RetroArch-Win64\\retroarch.exe',
-      path.join(progFiles, 'RetroArch', 'retroarch.exe'),
-      which('retroarch'),
-    ].filter(Boolean);
-
-    for (const exe of candidates) {
-      if (exists(exe)) {
-        const exeDir = path.dirname(exe);
-        const coreDirs = [
-          path.join(root, 'tools', 'retroarch', 'cores'),
-          path.join(appData, 'RetroArch', 'cores'),
-          path.join(exeDir, 'cores'),
-          'C:\\RetroArch-Win64\\cores',
-        ].filter(exists);
-        return {
-          cmd: exe,
-          pre: [],
-          coreDirs,
-          flatpakId: 'org.libretro.RetroArch',
-        };
-      }
-    }
-    return null;
-  }
-
   const flatpaks = await installedFlatpaks();
   if (flatpaks.has('org.libretro.RetroArch')) {
     return {
@@ -1164,9 +985,7 @@ async function findRetroArch(customRoot) {
 
 function findCore(coreDirs, coreName) {
   if (!coreName) return null;
-  const candidates = IS_WIN
-    ? [`${coreName}_libretro.dll`, `${coreName}.dll`]
-    : [`${coreName}_libretro.so`];
+  const candidates = [`${coreName}_libretro.so`];
   for (const dir of coreDirs) {
     for (const fn of candidates) {
       const p = path.join(dir, fn);
@@ -1289,32 +1108,25 @@ class EmulatorManager {
     if (isStandaloneExplicit || (cfg.launcherMode !== 'retroarch' && !explicitCore)) {
       const sa = STANDALONE[slug];
       if (sa) {
-        if (IS_WIN) {
-          const winBin = findWindowsEmulatorBinary(sa.flatpak) || findWindowsEmulatorBinary(slug);
-          if (winBin) {
-            return { cmd: winBin, args: sa.args(romPath), label: path.basename(winBin), flatpakId: sa.flatpak };
-          }
-        } else {
-          const flatpaks = await installedFlatpaks();
-          let targetFlatpak = flatpaks.has(sa.flatpak) ? sa.flatpak : null;
-          if (!targetFlatpak && sa.fallbackFlatpak && flatpaks.has(sa.fallbackFlatpak)) {
-            targetFlatpak = sa.fallbackFlatpak;
-          }
-          if (!targetFlatpak && FLATPAK_FALLBACKS[sa.flatpak]) {
-            for (const alt of FLATPAK_FALLBACKS[sa.flatpak]) {
-              if (flatpaks.has(alt)) {
-                targetFlatpak = alt;
-                break;
-              }
+        const flatpaks = await installedFlatpaks();
+        let targetFlatpak = flatpaks.has(sa.flatpak) ? sa.flatpak : null;
+        if (!targetFlatpak && sa.fallbackFlatpak && flatpaks.has(sa.fallbackFlatpak)) {
+          targetFlatpak = sa.fallbackFlatpak;
+        }
+        if (!targetFlatpak && FLATPAK_FALLBACKS[sa.flatpak]) {
+          for (const alt of FLATPAK_FALLBACKS[sa.flatpak]) {
+            if (flatpaks.has(alt)) {
+              targetFlatpak = alt;
+              break;
             }
           }
-          if (targetFlatpak) {
-            return { cmd: 'flatpak', args: ['run', targetFlatpak, ...sa.args(romPath)], label: targetFlatpak, flatpakId: targetFlatpak };
-          }
-          const localBin = findLocalEmulatorBinary(sa.flatpak);
-          if (localBin) {
-            return { cmd: localBin, args: sa.args(romPath), label: path.basename(localBin), flatpakId: sa.flatpak };
-          }
+        }
+        if (targetFlatpak) {
+          return { cmd: 'flatpak', args: ['run', targetFlatpak, ...sa.args(romPath)], label: targetFlatpak, flatpakId: targetFlatpak };
+        }
+        const localBin = findLocalEmulatorBinary(sa.flatpak);
+        if (localBin) {
+          return { cmd: localBin, args: sa.args(romPath), label: path.basename(localBin), flatpakId: sa.flatpak };
         }
       }
     }
@@ -1352,39 +1164,29 @@ class EmulatorManager {
     // 3. Fall back to standalone emulator if RetroArch had no matching core
     const sa = STANDALONE[slug];
     if (sa) {
-      if (IS_WIN) {
-        const winBin = findWindowsEmulatorBinary(sa.flatpak) || findWindowsEmulatorBinary(slug);
-        if (winBin) {
-          return { cmd: winBin, args: sa.args(romPath), label: path.basename(winBin), flatpakId: sa.flatpak };
-        }
-      } else {
-        const flatpaks = await installedFlatpaks();
-        let targetFlatpak = flatpaks.has(sa.flatpak) ? sa.flatpak : null;
-        if (!targetFlatpak && sa.fallbackFlatpak && flatpaks.has(sa.fallbackFlatpak)) {
-          targetFlatpak = sa.fallbackFlatpak;
-        }
-        if (!targetFlatpak && FLATPAK_FALLBACKS[sa.flatpak]) {
-          for (const alt of FLATPAK_FALLBACKS[sa.flatpak]) {
-            if (flatpaks.has(alt)) {
-              targetFlatpak = alt;
-              break;
-            }
+      const flatpaks = await installedFlatpaks();
+      let targetFlatpak = flatpaks.has(sa.flatpak) ? sa.flatpak : null;
+      if (!targetFlatpak && sa.fallbackFlatpak && flatpaks.has(sa.fallbackFlatpak)) {
+        targetFlatpak = sa.fallbackFlatpak;
+      }
+      if (!targetFlatpak && FLATPAK_FALLBACKS[sa.flatpak]) {
+        for (const alt of FLATPAK_FALLBACKS[sa.flatpak]) {
+          if (flatpaks.has(alt)) {
+            targetFlatpak = alt;
+            break;
           }
         }
-        if (targetFlatpak) {
-          return { cmd: 'flatpak', args: ['run', targetFlatpak, ...sa.args(romPath)], label: targetFlatpak, flatpakId: targetFlatpak };
-        }
-        const localBin = findLocalEmulatorBinary(sa.flatpak);
-        if (localBin) {
-          return { cmd: localBin, args: sa.args(romPath), label: path.basename(localBin), flatpakId: sa.flatpak };
-        }
+      }
+      if (targetFlatpak) {
+        return { cmd: 'flatpak', args: ['run', targetFlatpak, ...sa.args(romPath)], label: targetFlatpak, flatpakId: targetFlatpak };
+      }
+      const localBin = findLocalEmulatorBinary(sa.flatpak);
+      if (localBin) {
+        return { cmd: localBin, args: sa.args(romPath), label: path.basename(localBin), flatpakId: sa.flatpak };
       }
     }
 
-    // Last resort: desktop association (works in Desktop Mode on Linux, or default viewer on Windows)
-    if (IS_WIN) {
-      return { cmd: 'cmd.exe', args: ['/c', 'start', '""', romPath], label: 'Windows Default Association' };
-    }
+    // Last resort: desktop association (works in Desktop Mode on Linux)
     if (which('xdg-open')) return { cmd: 'xdg-open', args: [romPath], label: 'xdg-open (desktop association)' };
     return null;
   }
@@ -1407,13 +1209,11 @@ class EmulatorManager {
     fs.writeSync(out, `\n=== ${new Date().toISOString()} ${resolved.cmd} ${resolved.args.join(' ')}\n`);
 
     let child;
-    const isBatOrCmd = IS_WIN && (resolved.cmd.endsWith('.bat') || resolved.cmd.endsWith('.cmd'));
     try {
       child = spawn(resolved.cmd, resolved.args, {
         cwd: path.dirname(req.romPath),
         env: childEnv(),
-        shell: isBatOrCmd,
-        detached: true, // new process group -> kill(-pid) or taskkill /T terminates the whole tree
+        detached: true, // new process group -> kill(-pid) terminates the whole tree
         stdio: ['ignore', out, out],
       });
     } catch (e) {
@@ -1443,7 +1243,7 @@ class EmulatorManager {
 
       // 2) Linux process stopped state: check if gamescope or OS froze/stopped the process
       let isProcessStopped = false;
-      if (!IS_WIN && child && child.pid) {
+      if (child && child.pid) {
         try {
           const stat = fs.readFileSync(`/proc/${child.pid}/stat`, 'utf8');
           const m = stat.match(/\)\s+([RSDZTtW])/);
@@ -1522,7 +1322,7 @@ class EmulatorManager {
       // If flatpak run exited cleanly in < 3500ms (e.g. flatpak daemon or sub-process handoff),
       // verify if the flatpak application is actually still active in the background before
       // prematurely popping DeckRomM back to the foreground.
-      if (!IS_WIN && code === 0 && elapsed < 3500 && flatpakId) {
+      if (code === 0 && elapsed < 3500 && flatpakId) {
         const stillRunning = await isFlatpakRunning(flatpakId);
         if (stillRunning) {
           this.log(`[launch] initial runner exited in ${elapsed}ms, but flatpak ${flatpakId} is running. Monitoring background instance...`);
@@ -1571,16 +1371,7 @@ class EmulatorManager {
     let args = ['run', flatpakId];
     let label = name || flatpakId;
 
-    if (IS_WIN) {
-      const winBin = findWindowsEmulatorBinary(flatpakId);
-      if (winBin) {
-        cmd = winBin;
-        args = [];
-        label = name || path.basename(winBin);
-      } else {
-        return { ok: false, message: `${label} was not found on this PC. Check your EmuDeck tools directory.` };
-      }
-    } else if (flatpakId === 'org.libretro.RetroArch') {
+    if (flatpakId === 'org.libretro.RetroArch') {
       const ra = await findRetroArch();
       if (ra) {
         cmd = ra.cmd;
@@ -1706,15 +1497,6 @@ class EmulatorManager {
     if (cur.monitorInterval) {
       clearInterval(cur.monitorInterval);
       cur.monitorInterval = null;
-    }
-
-    if (IS_WIN) {
-      try {
-        await execFileP('taskkill', ['/pid', String(child.pid), '/T', '/F'], graceMs);
-      } catch {
-        try { child.kill(); } catch {}
-      }
-      return { ok: true, forced: true };
     }
 
     const signalGroup = (sig) => {

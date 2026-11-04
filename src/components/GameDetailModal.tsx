@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders, CloudOff, Gamepad2 } from 'lucide-react';
-import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, getActiveCoreForGame, getStandaloneEmulatorForPlatform } from '../types';
+import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders, CloudOff, Gamepad2, Clock, RefreshCw, Cloud, Save, Layers, Sparkles, Check } from 'lucide-react';
+import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, SaveState, getActiveCoreForGame, getStandaloneEmulatorForPlatform, formatPlaytime, formatDetailedPlaytime } from '../types';
+import type { PlaytimeRecord } from '../env/electron';
 import { FocusScope } from './FocusScope';
 import { PlatformBadge } from './PlatformBadge';
 import { formatBytes } from './GameCard';
 import { rommApi } from '../services/rommApi';
+import { loadMergedStates, MergedStates } from '../services/cloudSaves';
+import { cacheStorage } from '../services/cacheStorage';
 import { CoreSelectorModal } from './CoreSelectorModal';
 import { RomPatcherModal } from './RomPatcherModal';
 import { Pcsx2MemcardManager } from './Pcsx2MemcardManager';
@@ -104,6 +107,108 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   const [flatpakInstalling, setFlatpakInstalling] = useState(false);
   const [flatpakProgress, setFlatpakProgress] = useState<number | undefined>(undefined);
   const [flatpakError, setFlatpakError] = useState<string | null>(null);
+
+  // Playtime Tracker & RomM Sync State
+  const [playtimeRecord, setPlaytimeRecord] = useState<PlaytimeRecord | null>(null);
+  const [isSyncingPlaytime, setIsSyncingPlaytime] = useState(false);
+
+  // Multi-disc / File selection state
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+
+  // Save State Timeline (Slots 1-5 & RomM Cloud)
+  const [saveStatesData, setSaveStatesData] = useState<MergedStates | null>(null);
+  const [loadingSaveStates, setLoadingSaveStates] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoadingSaveStates(true);
+    loadMergedStates(game, game.platformSlug, 5)
+      .then((data) => {
+        if (!alive) return;
+        setSaveStatesData(data);
+        setLoadingSaveStates(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setLoadingSaveStates(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [game.id, game.platformSlug]);
+
+  // Sync selectedFileIndex if game.fileName matches one of game.files
+  useEffect(() => {
+    if (game.files && game.files.length > 0) {
+      const idx = game.files.findIndex((f) => f.fileName === game.fileName);
+      if (idx !== -1) setSelectedFileIndex(idx);
+    }
+  }, [game.fileName, game.files]);
+
+  useEffect(() => {
+    let alive = true;
+    bridge.playtime.get(game.id).then((rec) => {
+      if (!alive) return;
+      if (rec && rec.totalSeconds > 0) {
+        setPlaytimeRecord(rec);
+      } else if (game.playtime && game.playtime > 0) {
+        setPlaytimeRecord({
+          romId: game.id,
+          totalSeconds: game.playtime,
+          sessionsCount: 1,
+          lastPlayed: game.lastPlayed ? Date.parse(game.lastPlayed) || 0 : 0,
+        });
+      }
+    }).catch(() => {});
+
+    const offUpdate = bridge.on('playtime:updated', (ev) => {
+      if (String(ev.romId) === String(game.id)) {
+        setPlaytimeRecord(ev.record);
+      }
+    });
+
+    return () => {
+      alive = false;
+      offUpdate();
+    };
+  }, [game.id, game.playtime, game.lastPlayed]);
+
+  const handleSyncPlaytime = async () => {
+    if (isSyncingPlaytime) return;
+    soundService.playTick();
+    setIsSyncingPlaytime(true);
+    try {
+      const res = await bridge.playtime.sync(game.id);
+      if (res.ok) {
+        soundService.playSuccess();
+        onToast?.('Playtime synced with RomM', 'ok');
+        const updated = await bridge.playtime.get(game.id);
+        setPlaytimeRecord(updated);
+      } else {
+        soundService.playBack();
+        onToast?.(res.message || 'Sync failed', 'error');
+      }
+    } catch (e: any) {
+      soundService.playBack();
+      onToast?.(e.message || 'Sync failed', 'error');
+    } finally {
+      setIsSyncingPlaytime(false);
+    }
+  };
+
+  const formatLastPlayed = (ts?: number | string) => {
+    if (!ts) return 'Never';
+    const num = typeof ts === 'number' ? ts : Date.parse(ts) || 0;
+    if (!num) return 'Never';
+    const diffDays = Math.floor((Date.now() - num) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return new Date(num).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const totalPlaytimeSeconds = Math.max(playtimeRecord?.totalSeconds || 0, game.playtime || 0);
+  const playtimeDetail = formatDetailedPlaytime(totalPlaytimeSeconds);
 
   const flatpakId = activeCoreObj?.flatpakId;
 
@@ -230,12 +335,25 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   const btn = 'h-11 px-3.5 sm:px-4 rounded-xl flex items-center gap-2 font-bold text-xs sm:text-sm border whitespace-nowrap shrink-0 transition-all cursor-pointer';
   const section = 'rounded-2xl p-5 bg-deck-panel/90 border border-deck-line shadow-sm';
 
+  const heroImage = game.backdropUrl || (game.screenshots && game.screenshots.length > 0 ? game.screenshots[0] : null) || game.coverUrl;
+
   return (
-    <div className="fixed inset-0 z-[100] bg-deck-bg deck-enter">
-      {game.coverUrl && (
-        <img src={game.coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-2xl scale-110 pointer-events-none" />
+    <div className="fixed inset-0 z-[100] bg-deck-bg deck-enter overflow-hidden">
+      {/* Dynamic Cinematic Hero Backdrop with dark vignette & gradient mask */}
+      {heroImage && (
+        <div className="absolute top-0 left-0 right-0 h-[400px] overflow-hidden pointer-events-none select-none z-0">
+          <img
+            src={heroImage}
+            alt=""
+            className="w-full h-full object-cover object-top opacity-35 scale-105 filter blur-[0.5px] hero-backdrop-mask transition-all duration-700"
+          />
+          {/* Handheld-tailored optical gradient layers for sharp text contrast */}
+          <div className="absolute inset-0 bg-gradient-to-t from-deck-bg via-deck-bg/70 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-deck-bg/95 via-deck-bg/50 to-deck-bg/85" />
+          <div className="absolute inset-0 hero-vignette opacity-80" />
+        </div>
       )}
-      <FocusScope name="game-detail" onBack={onClose} onAction={onAction} initialFocus="#detail-primary" className="relative h-full flex gap-6 px-8 pt-6 pb-12">
+      <FocusScope name="game-detail" onBack={onClose} onAction={onAction} initialFocus="#detail-primary" className="relative z-10 h-full flex gap-6 px-8 pt-6 pb-12">
         <div className="w-[280px] sm:w-[300px] shrink-0 flex flex-col gap-4">
           <div className="rounded-2xl overflow-hidden shadow-2xl aspect-[3/4] bg-deck-panel-2 relative flex items-center justify-center border border-deck-line/60">
             {game.coverUrl && !coverError ? (
@@ -647,38 +765,275 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               )}
             </section>
 
-            {/* Multi-File / Disc Browser */}
+            {/* Playtime Tracker Section */}
+            <section data-focusable tabIndex={-1} className={`${section} flex flex-col gap-3.5`}>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-11 w-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
+                    <Clock size={22} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-deck-accent">Hours Played</span>
+                      <span className="text-[10px] text-deck-dim/70 font-mono">(active play)</span>
+                    </div>
+                    <div className="flex items-baseline gap-2.5 flex-wrap">
+                      <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">{playtimeDetail.primary}</span>
+                      {playtimeDetail.secondary && (
+                        <span className="text-xs font-mono text-deck-dim font-medium">({playtimeDetail.secondary})</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* RomM Sync indicator & manual sync button */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {isSyncingPlaytime ? (
+                    <div className="flex items-center gap-2 text-xs font-bold text-deck-dim bg-deck-panel-2 px-3 py-2 rounded-xl border border-deck-line">
+                      <Loader2 size={14} className="animate-spin text-deck-accent" />
+                      <span>Syncing with RomM...</span>
+                    </div>
+                  ) : playtimeRecord?.lastSyncedAt ? (
+                    <button
+                      data-focusable
+                      onClick={handleSyncPlaytime}
+                      title="Playtime is synchronized with your RomM server. Click to re-sync."
+                      className="flex items-center gap-2 text-xs font-bold text-deck-ok bg-deck-ok/10 hover:bg-deck-ok/20 border border-deck-ok/30 px-3.5 py-2 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+                    >
+                      <Cloud size={14} className="text-deck-ok" />
+                      <span>Synced with RomM</span>
+                      <RefreshCw size={12} className="opacity-60 ml-0.5" />
+                    </button>
+                  ) : totalPlaytimeSeconds > 0 ? (
+                    <button
+                      data-focusable
+                      onClick={handleSyncPlaytime}
+                      title="Sync this game's playtime to your RomM server"
+                      className="flex items-center gap-2 text-xs font-bold text-sky-200 bg-sky-950/60 hover:bg-sky-900/70 border border-sky-400/40 px-3.5 py-2 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+                    >
+                      <RefreshCw size={14} className="text-sky-400" />
+                      <span>Sync to RomM</span>
+                    </button>
+                  ) : (
+                    <div className="text-xs text-deck-dim/70 font-mono px-3 py-1.5 rounded-lg bg-deck-panel-2/40 border border-deck-line/40">
+                      Unplayed
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Session breakdown & pause immunity guarantee */}
+              <div className="flex items-center justify-between gap-3 text-xs text-deck-dim pt-2 border-t border-deck-line/40 flex-wrap">
+                <div className="flex items-center gap-4 flex-wrap">
+                  {Boolean(playtimeRecord?.sessionsCount && playtimeRecord.sessionsCount > 0) && (
+                    <span>
+                      <strong className="text-white font-semibold">{playtimeRecord.sessionsCount}</strong> {playtimeRecord.sessionsCount === 1 ? 'session' : 'sessions'}
+                    </span>
+                  )}
+                  <span>
+                    Last played:{' '}
+                    <span className="text-white font-mono font-medium">
+                      {formatLastPlayed(playtimeRecord?.lastPlayed || game.lastPlayed)}
+                    </span>
+                  </span>
+                </div>
+                <div className="text-[11px] text-deck-dim/60 flex items-center gap-1.5 ml-auto italic">
+                  <span>✓ Paused & suspended time excluded</span>
+                </div>
+              </div>
+            </section>
+
+            {/* Multi-Disc & Revision Carousel */}
             {game.files && game.files.length > 1 && (
               <section data-focusable tabIndex={-1} className={section}>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent flex items-center gap-2">
-                    <Disc size={15} /> Associated Files & Discs ({game.files.length})
-                  </h2>
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {game.files.map((file, idx) => (
-                    <div
-                      key={file.id || idx}
-                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-deck-panel-2 border border-deck-line text-xs"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="px-2 py-0.5 rounded font-mono font-bold bg-deck-bg text-deck-accent shrink-0">
-                          {idx + 1}
-                        </span>
-                        <span className="font-mono text-white truncate" title={file.fileName}>
-                          {file.fileName}
-                        </span>
-                      </div>
-                      <span className="text-deck-dim font-mono shrink-0">{formatBytes(file.fileSizeBytes)}</span>
+                <div className="flex items-center justify-between mb-3.5">
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-lg bg-deck-accent/15 border border-deck-accent/30 flex items-center justify-center text-deck-accent">
+                      <Disc size={15} />
                     </div>
-                  ))}
+                    <div>
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent flex items-center gap-2">
+                        Multi-Disc & File Carousel ({game.files.length} Discs)
+                      </h2>
+                      <div className="text-[11px] text-deck-dim">
+                        Select which disc or revision to boot on launch
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-deck-panel-2 border border-deck-line text-deck-dim font-bold">
+                    Active: Disc {selectedFileIndex + 1}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {game.files.map((file, idx) => {
+                    const isSelected = selectedFileIndex === idx;
+                    const ext = file.fileName.split('.').pop()?.toUpperCase() || 'ROM';
+                    return (
+                      <button
+                        key={file.id || idx}
+                        data-focusable
+                        onClick={() => {
+                          setSelectedFileIndex(idx);
+                          setGame((g) => ({ ...g, fileName: file.fileName, fileSizeBytes: file.fileSizeBytes }));
+                          soundService.playSelect();
+                          onToast?.(`Boot target set to Disc ${idx + 1} (${file.fileName})`, 'ok');
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                          isSelected
+                            ? 'bg-deck-accent/20 border-deck-accent shadow-md'
+                            : 'bg-deck-panel-2/90 border-deck-line hover:border-deck-dim'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 font-bold font-mono text-xs ${
+                              isSelected
+                                ? 'bg-deck-accent text-white shadow-sm'
+                                : 'bg-black/40 text-deck-dim border border-deck-line'
+                            }`}
+                          >
+                            <Disc size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-extrabold text-white flex items-center gap-1.5 truncate">
+                              <span>Disc {idx + 1}</span>
+                              <span className="px-1.5 py-0.2 rounded bg-black/40 text-[9px] font-mono font-bold text-sky-300 border border-sky-400/30">
+                                {ext}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-mono text-deck-dim truncate mt-0.5" title={file.fileName}>
+                              {file.fileName}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end shrink-0 gap-1">
+                          <span className="text-[11px] font-mono text-deck-dim">{formatBytes(file.fileSizeBytes)}</span>
+                          {isSelected && (
+                            <span className="text-[10px] font-bold text-deck-ok bg-deck-ok/20 border border-deck-ok/40 px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                              <Check size={10} /> Active Target
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
             )}
 
+            {/* Rich Save State Timeline with Thumbnails */}
+            <section data-focusable tabIndex={-1} className={section}>
+              <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-7 w-7 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                    <Save size={15} />
+                  </div>
+                  <div>
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent flex items-center gap-2">
+                      Save State Timeline (Slots 1–5)
+                    </h2>
+                    <div className="text-[11px] text-deck-dim">
+                      In-game screenshot snapshots & RomM cloud synchronisation
+                    </div>
+                  </div>
+                </div>
+
+                {loadingSaveStates ? (
+                  <div className="flex items-center gap-1.5 text-xs text-deck-dim">
+                    <Loader2 size={13} className="animate-spin text-deck-accent" />
+                    <span>Loading states...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-deck-dim flex items-center gap-1">
+                      <Cloud size={13} className={saveStatesData?.cloudOk ? 'text-deck-ok' : 'text-deck-dim'} />
+                      <span>{saveStatesData?.cloudOk ? 'RomM Cloud Linked' : 'Deck Local'}</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Slot Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                {[1, 2, 3, 4, 5].map((slotNum) => {
+                  const state = saveStatesData?.slots[slotNum];
+                  const hasState = Boolean(state);
+                  const isCloud = state?.cloudId != null;
+                  const isLocal = state?.source === 'local' || state?.data != null;
+                  const isBoth = isCloud && isLocal;
+
+                  const dateFormatted = state?.timestamp
+                    ? new Date(state.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : null;
+
+                  return (
+                    <div
+                      key={slotNum}
+                      className={`relative rounded-xl border overflow-hidden flex flex-col transition-all ${
+                        hasState
+                          ? 'bg-deck-panel-2 border-deck-line shadow-sm'
+                          : 'bg-deck-panel-2/40 border-deck-line/40 opacity-75'
+                      }`}
+                    >
+                      {/* Slot Header Banner */}
+                      <div className="px-2.5 py-1.5 bg-black/40 border-b border-deck-line/60 flex items-center justify-between text-[11px]">
+                        <span className="font-extrabold text-white font-mono">Slot {slotNum}</span>
+                        {hasState ? (
+                          isBoth ? (
+                            <span className="text-[9px] font-bold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-500/30 flex items-center gap-1">
+                              <Check size={9} /> Synced
+                            </span>
+                          ) : isCloud ? (
+                            <span className="text-[9px] font-bold text-sky-300 bg-sky-500/20 px-1.5 py-0.2 rounded border border-sky-500/30 flex items-center gap-1">
+                              <Cloud size={9} /> Cloud
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold text-amber-300 bg-amber-500/20 px-1.5 py-0.2 rounded border border-amber-500/30">
+                              Local Deck
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-[9px] text-deck-dim/60 font-mono">Empty</span>
+                        )}
+                      </div>
+
+                      {/* 16:9 Thumbnail Image */}
+                      <div className="relative aspect-video bg-[#080c14] flex items-center justify-center overflow-hidden">
+                        {state?.screenshot ? (
+                          <img
+                            src={state.screenshot}
+                            alt={`Slot ${slotNum} snapshot`}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-deck-dim/50 p-2 text-center gap-1">
+                            <Gamepad2 size={22} className="opacity-40" />
+                            <span className="text-[10px] font-mono">{hasState ? 'State Saved' : 'No State'}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Slot Footer info */}
+                      <div className="p-2 flex flex-col justify-between gap-1 flex-1 bg-black/20 text-[10px]">
+                        <div className="truncate text-deck-text/90 font-mono" title={state?.levelName || `Slot ${slotNum}`}>
+                          {state?.levelName || (hasState ? 'In-Game State' : 'Unused')}
+                        </div>
+                        <div className="text-deck-dim text-[9px] font-mono">
+                          {dateFormatted || 'Available slot'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
             <section data-focusable tabIndex={-1} className={`${section} grid grid-cols-2 gap-x-8 gap-y-2.5 text-sm`}>
               <h2 className="col-span-2 text-xs font-bold uppercase tracking-wider text-deck-accent mb-1.5">Details</h2>
               {[
+                ['Hours Played', playtimeDetail.primary],
+                ['Last Played', formatLastPlayed(playtimeRecord?.lastPlayed || game.lastPlayed)],
                 ['Emulator Core', `${activeCoreName} (${activeCoreObj?.type === 'standalone' ? 'Standalone' : 'RetroArch'})`],
                 ['File', game.fileName],
                 ['Size', formatBytes(game.fileSizeBytes)],

@@ -1,6 +1,6 @@
 {
-  "summary": "Comprehensive architecture and implementation plan for native Windows standalone portable EXE support alongside SteamOS, featuring EmuDeck Windows layout detection, taskkill process management, Windows git in-place updater, and GitHub Actions dual-platform CI/CD.",
-  "updatedAt": "2026-11-02T22:24:21.092836506Z",
+  "summary": "Documenting rollback to version 1.1.0, removal of Windows builds, and SteamOS in-place upgrade fixes.",
+  "updatedAt": "2026-11-04T00:38:49.516836666Z",
   "requestFeedback": true,
   "userFacing": true
 }
