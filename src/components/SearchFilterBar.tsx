@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDownAZ, LayoutGrid, List, GalleryHorizontal, RefreshCw, Filter, X, ChevronDown, Globe, HardDrive, CloudOff } from 'lucide-react';
+import { ArrowDownAZ, LayoutGrid, List, GalleryHorizontal, RefreshCw, Filter, X, ChevronDown, Globe, HardDrive, CloudOff, Dices } from 'lucide-react';
 import { FilterTag, LibraryViewMode, SortOption } from '../types';
 import { getGenreIcon } from './GenrePickerModal';
 import { LanguageCountOption } from './LanguagePickerModal';
@@ -32,6 +32,7 @@ interface SearchFilterBarProps {
   onRefresh: () => void;
   onOpenStorage?: () => void;
   offlineMode?: boolean;
+  onOpenRandomGame?: () => void;
 }
 
 const FILTERS: Array<{ id: FilterTag; label: string }> = [
@@ -74,6 +75,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   onRefresh,
   onOpenStorage,
   offlineMode,
+  onOpenRandomGame,
 }) => {
   const nextSort = () => {
     const i = SORTS.findIndex((s) => s.id === sortBy);
@@ -170,6 +172,19 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
               <span className="text-deck-accent font-semibold ml-1 text-xs">({currentLangLabel})</span>
             )}
           </span>
+          {onOpenRandomGame && (
+            <button
+              data-focusable
+              id="filter-random-game"
+              onClick={onOpenRandomGame}
+              className="deck-chip h-9 px-2.5 rounded-lg border border-amber-500/40 bg-amber-950/40 text-amber-200 hover:text-white hover:border-amber-400 flex items-center gap-1.5 shrink-0 transition-colors"
+              title="Surprise Me! Pick a random game from your library"
+              aria-label="Surprise Me (Random Game)"
+            >
+              <Dices size={15} className="text-amber-400 shrink-0" />
+              <span className="hidden sm:inline font-bold text-xs">Roll</span>
+            </button>
+          )}
           <button
             data-focusable
             onClick={nextSort}

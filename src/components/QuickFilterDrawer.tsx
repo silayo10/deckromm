@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Star, Clock, Trophy, Sparkles, Filter, X, Hash, HardDrive } from 'lucide-react';
+import { CheckCircle2, Star, Clock, Trophy, Sparkles, Filter, X, Hash, HardDrive, Dices } from 'lucide-react';
 import { FilterTag } from '../types';
 import { FocusScope } from './FocusScope';
 import { ButtonGlyph } from './ControllerHUD';
@@ -19,6 +19,7 @@ interface QuickFilterDrawerProps {
   availableLetters: string[];
   onJumpToLetter: (letter: string) => void;
   gameCount: number;
+  onOpenRandomGame?: () => void;
 }
 
 export const QuickFilterDrawer: React.FC<QuickFilterDrawerProps> = ({
@@ -35,6 +36,7 @@ export const QuickFilterDrawer: React.FC<QuickFilterDrawerProps> = ({
   availableLetters,
   onJumpToLetter,
   gameCount,
+  onOpenRandomGame,
 }) => {
   if (!open) return null;
 
@@ -91,6 +93,36 @@ export const QuickFilterDrawer: React.FC<QuickFilterDrawerProps> = ({
         <div className="flex-1 overflow-y-auto deck-scroll py-4 space-y-6">
           {mode === 'filters' ? (
             <>
+              {onOpenRandomGame && (
+                <div className="space-y-2">
+                  <button
+                    data-focusable
+                    id="quick-surprise-me"
+                    onClick={() => {
+                      soundService.playSelect();
+                      onClose();
+                      onOpenRandomGame();
+                    }}
+                    className="deck-row w-full p-3 rounded-xl flex items-center gap-3 text-left border border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-deck-panel to-deck-panel hover:border-amber-400 transition-all group"
+                  >
+                    <div className="h-8 w-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-400 group-hover:scale-110 transition-transform">
+                      <Dices size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-sm leading-tight text-white flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          Surprise Me!
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-extrabold border border-amber-500/30">
+                            RANDOM
+                          </span>
+                        </span>
+                      </div>
+                      <div className="text-xs text-deck-dim truncate mt-0.5">Can&apos;t decide? Roll a random game</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+
               {/* Presets */}
               <div className="space-y-2">
                 <div className="text-xs font-bold text-deck-dim uppercase tracking-wider px-1">Library Filters</div>

@@ -33,6 +33,7 @@ import { StorageManagerModal } from './components/StorageManagerModal';
 import { UpdateManagerModal } from './components/UpdateManagerModal';
 import { LaunchingOverlay } from './components/LaunchingOverlay';
 import { QuickFilterDrawer } from './components/QuickFilterDrawer';
+import { RandomGameModal } from './components/RandomGameModal';
 import { AppUpdateInfo } from './types';
 
 interface KeyboardRequest {
@@ -110,6 +111,7 @@ export default function App() {
   const [biosPlatformFilter, setBiosPlatformFilter] = useState<string | undefined>();
   const [storageModalOpen, setStorageModalOpen] = useState(false);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [randomModalOpen, setRandomModalOpen] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo | null>(null);
   const [quickDrawer, setQuickDrawer] = useState<{ open: boolean; mode: 'filters' | 'alphabet' }>({ open: false, mode: 'filters' });
   const [keyboard, setKeyboard] = useState<KeyboardRequest | null>(null);
@@ -974,6 +976,7 @@ export default function App() {
           onRefresh={refresh}
           onOpenStorage={() => setStorageModalOpen(true)}
           offlineMode={offlineMode}
+          onOpenRandomGame={() => setRandomModalOpen(true)}
         />
         <GameGrid
           games={visibleGames}
@@ -1134,6 +1137,10 @@ export default function App() {
             setMenuOpen(false);
             setTimeout(openSearch, 60);
           }}
+          onSurpriseMe={() => {
+            setMenuOpen(false);
+            setRandomModalOpen(true);
+          }}
           onRefresh={() => {
             setMenuOpen(false);
             refresh();
@@ -1279,7 +1286,19 @@ export default function App() {
         availableLetters={availableLetters}
         onJumpToLetter={handleJumpToLetter}
         gameCount={visibleGames.length}
+        onOpenRandomGame={() => setRandomModalOpen(true)}
       />
+
+      {randomModalOpen && (
+        <RandomGameModal
+          isOpen={randomModalOpen}
+          onClose={() => setRandomModalOpen(false)}
+          games={visibleGames.length > 0 ? visibleGames : games}
+          onLaunch={handleLaunch}
+          onOpenDetails={(g) => setSelectedGame(g)}
+          currentScopeName={sourceLabel(source)}
+        />
+      )}
 
       {emulator.running && (
         <div className="fixed inset-0 z-[160] bg-black/90 flex items-center justify-center">

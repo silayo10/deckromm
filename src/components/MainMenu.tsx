@@ -1,5 +1,5 @@
 import React from 'react';
-import { Library, Search, RefreshCw, Download, HardDrive, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders, Cpu, ArrowUpCircle, CloudOff } from 'lucide-react';
+import { Library, Search, RefreshCw, Download, HardDrive, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders, Cpu, ArrowUpCircle, CloudOff, Dices } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { isNativeApp } from '../services/bridge';
 
@@ -12,6 +12,7 @@ interface MainMenuProps {
   onClose: () => void;
   onLibrary: () => void;
   onSearch: () => void;
+  onSurpriseMe?: () => void;
   onRefresh: () => void;
   onDownloads: () => void;
   onStorage?: () => void;
@@ -57,6 +58,17 @@ export const MainMenu: React.FC<MainMenuProps> = (p) => {
         </div>
         <Item id="menu-library" icon={<Library size={22} />} label="Library" onClick={p.onLibrary} />
         <Item icon={<Search size={22} />} label="Search" onClick={p.onSearch} />
+        {p.onSurpriseMe && (
+          <Item
+            id="menu-surprise-me"
+            icon={<Dices size={22} className="text-amber-400" />}
+            label="Surprise Me! (Random)"
+            onClick={() => {
+              p.onClose();
+              p.onSurpriseMe?.();
+            }}
+          />
+        )}
         <Item icon={<RefreshCw size={22} />} label="Refresh library" onClick={p.onRefresh} />
         {p.onPatcher && <Item icon={<Wand2 size={22} />} label="ROM Hacks & Patches" onClick={p.onPatcher} />}
         {p.onEmulators && <Item icon={<Sliders size={22} />} label="Standalone Emulators" onClick={p.onEmulators} />}
