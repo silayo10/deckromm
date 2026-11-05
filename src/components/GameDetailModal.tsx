@@ -13,6 +13,10 @@ import { RomPatcherModal } from './RomPatcherModal';
 import { Pcsx2MemcardManager } from './Pcsx2MemcardManager';
 import { RetroAchievementsPanel } from './RetroAchievementsPanel';
 import { RelatedGamesSection } from './RelatedGamesSection';
+import { DeckPowerBadge } from './DeckPowerBadge';
+import { DeckPowerCard } from './DeckPowerCard';
+import { SaveVaultSection } from './SaveVaultSection';
+import { getDeckPowerProfile } from '../utils/steamDeckPower';
 import { bridge, isNativeApp } from '../services/bridge';
 import { soundService } from '../services/soundService';
 
@@ -381,6 +385,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
           </div>
           <div className="flex items-center gap-2 text-sm text-deck-dim flex-wrap">
             <PlatformBadge platformSlug={game.platformSlug} platformName={game.platformName} size="md" />
+            <DeckPowerBadge platformSlug={game.platformSlug} size="sm" />
             {installed && (
               <span className="flex items-center gap-1 text-deck-ok font-bold text-xs bg-deck-ok/10 border border-deck-ok/30 px-2 py-0.5 rounded-md">
                 <CheckCircle2 size={14} /> Installed
@@ -843,6 +848,9 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               </div>
             </section>
 
+            {/* Steam Deck Battery & TDP Profile Optimizer */}
+            <DeckPowerCard platformSlug={game.platformSlug} platformName={game.platformName} />
+
             {/* Multi-Disc & Revision Carousel */}
             {game.files && game.files.length > 1 && (
               <section data-focusable tabIndex={-1} className={section}>
@@ -921,6 +929,9 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
                 </div>
               </section>
             )}
+
+            {/* Cloud & Local Save Manager • RPG Backup Vault */}
+            <SaveVaultSection game={game} onToast={onToast} />
 
             {/* Rich Save State Timeline with Thumbnails */}
             <section data-focusable tabIndex={-1} className={section}>
@@ -1035,6 +1046,8 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
                 ['Hours Played', playtimeDetail.primary],
                 ['Last Played', formatLastPlayed(playtimeRecord?.lastPlayed || game.lastPlayed)],
                 ['Emulator Core', `${activeCoreName} (${activeCoreObj?.type === 'standalone' ? 'Standalone' : 'RetroArch'})`],
+                ['Steam Deck Power', `${getDeckPowerProfile(game.platformSlug).tdpRange} (${getDeckPowerProfile(game.platformSlug).label})`],
+                ['Est. Battery', `${getDeckPowerProfile(game.platformSlug).estimatedBatteryHours} (LCD) / ${getDeckPowerProfile(game.platformSlug).oledBatteryHours} (OLED)`],
                 ['File', game.fileName],
                 ['Size', formatBytes(game.fileSizeBytes)],
                 ['Publisher', game.publisher],

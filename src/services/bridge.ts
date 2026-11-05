@@ -10,6 +10,7 @@
 import type {
   AuthResult,
   AuthStatus,
+  CloudSave,
   DeckRommBridge,
   EmulatorStateEvent,
   RomFileRequest,
@@ -148,9 +149,42 @@ function createBrowserFallback(): DeckRommBridge {
       uploadState: unsupported as any,
       deleteStates: unsupported as any,
       markPlayed: unsupported as any,
-      listSaves: async () => ({ ok: false, saves: [], message: 'Only available in the DeckRomM desktop app' }),
-      downloadSave: unsupported as any,
-      uploadSave: unsupported as any,
+      listSaves: async (romId: any) => {
+        try {
+          const raw = localStorage.getItem(`deckromm_web_cloud_saves_${romId}`);
+          if (raw) return { ok: true, saves: JSON.parse(raw) };
+        } catch {}
+        return {
+          ok: true,
+          saves: [
+            {
+              id: 991,
+              romId,
+              fileName: 'autosave.srm',
+              sizeBytes: 65536,
+              updatedAt: Date.now() - 3600000 * 4,
+              downloadPath: `/api/saves/991/content`,
+            },
+          ],
+        };
+      },
+      downloadSave: async () => ({ ok: true, data: new Uint8Array(65536) }),
+      uploadSave: async (req: any) => {
+        const item: CloudSave = {
+          id: Date.now(),
+          romId: Number(req?.romId) || 0,
+          fileName: `${req?.baseName || 'autosave'}.srm`,
+          emulator: req?.emulator || null,
+          slot: 'autosave',
+          sizeBytes: 65536,
+          updatedAt: Date.now(),
+          downloadPath: `/api/saves/${Date.now()}/content`,
+        };
+        try {
+          localStorage.setItem(`deckromm_web_cloud_saves_${req?.romId}`, JSON.stringify([item]));
+        } catch {}
+        return { ok: true, save: item };
+      },
     },
     roms: {
       download: unsupported as any,

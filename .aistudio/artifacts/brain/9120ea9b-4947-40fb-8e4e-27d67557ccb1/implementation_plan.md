@@ -75,9 +75,36 @@ Per the user request:
 
 ---
 
-## 5. Verification Results
+## 5. Cloud & Local Save Manager • RPG Backup Vault
+- **Problem**: In retro RPGs, corrupted save states or uncoordinated emulator writes risk wiping tens of hours of progress.
+- **Solution (`src/services/saveVaultService.ts`, `src/components/SaveVaultSection.tsx`)**:
+  - Live comparison of Steam Deck local battery saves (`.srm`, `.sav`) vs RomM Cloud saves with timestamp & size diffing.
+  - Clear sync badges: `Cloud & Local in Sync`, `Local Save is Newer (by Xm/h)`, `RomM Cloud is Newer`, `Saved Locally Only`, or `Cloud Save Available`.
+  - 1-click **Upload to RomM** and **Download from RomM**.
+  - **RPG Backup Vault**:
+    - Stores up to 5 rotating local backup snapshots per game with custom labels (e.g. "Before Final Boss", "Chapter 4 Start").
+    - 1-click **Rollback** with automatic pre-rollback safety snapshot creation so no progress is ever lost.
+    - Delete and management controls tailored for controller navigation.
+
+---
+
+## 6. Steam Deck Battery & TDP Profile Optimizer
+- **Problem**: Running simple 8-bit/16-bit retro games on the Steam Deck's default 15W TDP needlessly drains the battery in ~2 hours and runs the fan unnecessarily.
+- **Solution (`src/utils/steamDeckPower.ts`, `src/components/DeckPowerBadge.tsx`, `src/components/DeckPowerCard.tsx`)**:
+  - Intelligent per-platform power profiling:
+    - **Ultra-Low Power (3W–5W TDP)** for NES/SNES/GBA/Genesis: **~7.5–9h battery (LCD) / ~9–11.5h (OLED)**.
+    - **Balanced Efficiency (6W–8W TDP)** for PS1/N64/NDS: **~5–6.5h battery (LCD) / ~6.5–8h (OLED)**.
+    - **Performance Mode (9W–11W TDP)** for PS2/GameCube/Dreamcast/PSP: **~3.5–4.5h battery (LCD) / ~4.5–5.5h (OLED)**.
+    - **High Power / Full APU (12W–15W TDP)** for PS3/Xbox/Switch.
+  - Interactive **DeckPowerCard** in `GameDetailModal` with live metrics (Watts, LCD/OLED hours, FPS, GPU clock) and step-by-step Gamescope Quick Access Menu (`...` button) instructions.
+  - Compact **DeckPowerBadge** on hero badge rows and in `RandomGameModal`.
+  - Included in the Details specs table.
+
+---
+
+## 7. Verification Results
 - `npm run check:main`: All Electron main process scripts validated (`node --check`) with 0 errors.
 - `compile_applet`: React Vite applet built successfully.
 - `lint_applet`: Completed with 0 linting issues (`tsc --noEmit` clean).
-- `npm run build`: Production bundle transformed 1,721 modules and built in 6.93s with zero errors.
+- `npm run build`: Production bundle transformed 1,726 modules and built in 7.39s with zero errors.
 - Version integrity: Maintained strictly at `1.3.0` with atomic in-place updater and continuous GitHub release workflows.

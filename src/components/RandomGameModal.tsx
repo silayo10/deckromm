@@ -3,6 +3,7 @@ import { Dices, Play, RefreshCw, Star, X, Gamepad2, Sparkles, Clock, CheckCircle
 import { Game } from '../types';
 import { FocusScope } from './FocusScope';
 import { PlatformBadge } from './PlatformBadge';
+import { DeckPowerBadge } from './DeckPowerBadge';
 import { ButtonGlyph } from './ControllerHUD';
 import { formatBytes } from './GameCard';
 import { soundService } from '../services/soundService';
@@ -153,6 +154,7 @@ export const RandomGameModal: React.FC<RandomGameModalProps> = ({
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <PlatformBadge platformSlug={game.platformSlug} platformName={game.platformName} size="sm" />
+                    <DeckPowerBadge platformSlug={game.platformSlug} size="sm" />
                     {Boolean(game.releaseYear && game.releaseYear > 0) && (
                       <span className="text-xs text-white/90 font-mono font-bold bg-deck-panel-2 px-2 py-0.5 rounded border border-deck-line">
                         {game.releaseYear}
