@@ -25,14 +25,29 @@ const { app } = require('electron');
 
 const HOME = process.env.HOME || '/home/deck';
 
-const EXTRA_PATHS = [
-  path.join(HOME, '.bun', 'bin'),
-  path.join(HOME, '.nvm', 'versions', 'node', 'current', 'bin'),
-  path.join(HOME, '.local', 'bin'),
-  '/usr/local/bin',
-  '/usr/bin',
-  '/bin',
-].filter(Boolean).join(':');
+function getExtraPaths() {
+  const list = [
+    path.join(HOME, '.bun', 'bin'),
+    path.join(HOME, '.nvm', 'versions', 'node', 'current', 'bin'),
+    path.join(HOME, '.local', 'bin'),
+    path.join(HOME, '.cargo', 'bin'),
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+  ];
+  try {
+    const nvmNodeDir = path.join(HOME, '.nvm', 'versions', 'node');
+    if (fs.existsSync(nvmNodeDir)) {
+      const versions = fs.readdirSync(nvmNodeDir);
+      for (const v of versions) {
+        list.push(path.join(nvmNodeDir, v, 'bin'));
+      }
+    }
+  } catch {}
+  return list.filter(Boolean).join(':');
+}
+
+const EXTRA_PATHS = getExtraPaths();
 
 const BUILD_ENV = {
   ...process.env,
@@ -303,7 +318,7 @@ class AppUpdater {
 
       this.log(`[updater] Checking GitHub for ${targetRepo} on branch ${targetBranch}...`);
 
-      // 1. Check latest release if running as an AppImage
+      // 1. Check releases if running as an AppImage
       let releaseAsset = null;
       let releaseTag = '';
       try {
@@ -316,7 +331,26 @@ class AppUpdater {
           }
         }
       } catch (err) {
-        this.log(`[updater] Release check note: ${err.message}`);
+        this.log(`[updater] Latest release check note: ${err.message}`);
+      }
+
+      // Fallback: check releases list (e.g. rolling 'latest' release or pre-releases)
+      if (!releaseAsset) {
+        try {
+          const releases = await fetchJson(`https://api.github.com/repos/${targetRepo}/releases`, config.githubToken);
+          if (Array.isArray(releases) && !releases.rateLimited) {
+            for (const r of releases) {
+              const appImageAsset = r.assets?.find((a) => a.name.endsWith('.AppImage'));
+              if (appImageAsset) {
+                releaseAsset = appImageAsset;
+                releaseTag = r.tag_name || '';
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          this.log(`[updater] Releases list note: ${err.message}`);
+        }
       }
 
       // 2. Check latest commit on target branch
@@ -374,10 +408,21 @@ class AppUpdater {
       const author = data.commit?.author?.name || data.author?.login || 'GitHub';
       const date = data.commit?.author?.date || '';
 
-      const isDifferent = Boolean(
-        !currentSha ||
-        (latestSha && !latestSha.startsWith(currentSha) && !currentSha.startsWith(latestSha) && currentSha !== `v${APP_VERSION}`)
+      const isReleaseDifferent = Boolean(
+        releaseTag &&
+        releaseTag !== `v${APP_VERSION}` &&
+        releaseTag !== currentSha
       );
+
+      const isCommitDifferent = Boolean(
+        latestSha &&
+        (!currentSha || (
+          !latestSha.startsWith(currentSha) &&
+          !currentSha.startsWith(latestSha)
+        ))
+      );
+
+      const isDifferent = isReleaseDifferent || isCommitDifferent;
 
       return {
         hasUpdate: isDifferent,
@@ -587,7 +632,24 @@ class AppUpdater {
           this.log(`[updater] Could not query releases: ${e.message}`);
         }
 
-        const asset = release?.assets?.find((a) => a.name.endsWith('.AppImage'));
+        let asset = release?.assets?.find((a) => a.name.endsWith('.AppImage'));
+        if (!asset) {
+          try {
+            const releases = await fetchJson(`https://api.github.com/repos/${targetRepo}/releases`, config.githubToken);
+            if (Array.isArray(releases) && !releases.rateLimited) {
+              for (const r of releases) {
+                const found = r.assets?.find((a) => a.name.endsWith('.AppImage'));
+                if (found) {
+                  asset = found;
+                  release = r;
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            this.log(`[updater] Releases list query note: ${e.message}`);
+          }
+        }
 
         if (asset && asset.browser_download_url) {
           const sizeMb = asset.size ? (asset.size / 1048576).toFixed(1) : 'download';

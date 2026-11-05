@@ -47,7 +47,7 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     needs: [build-linux]
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event.inputs.create_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
@@ -59,11 +59,17 @@ jobs:
         run: |
           mkdir -p dist-release
           find release-artifacts/ -type f -name "*.AppImage" -exec cp {} dist-release/ \;
+          PRIMARY=$(ls -t dist-release/*.AppImage 2>/dev/null | head -n1 || true)
+          if [ -n "$PRIMARY" ] && [ "$PRIMARY" != "dist-release/DeckRomM.AppImage" ]; then
+            cp "$PRIMARY" dist-release/DeckRomM.AppImage
+          fi
           ls -la dist-release/
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'DeckRomM Latest (SteamOS)' }}
           files: dist-release/*
           generate_release_notes: true
           draft: false
