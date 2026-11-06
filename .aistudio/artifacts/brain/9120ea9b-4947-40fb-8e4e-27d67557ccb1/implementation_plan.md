@@ -1,110 +1,89 @@
-# DeckRomM SteamOS In-Place Upgrade Fix & Version Rollback
+# DeckRomM SteamOS Feature Enhancements (Items 2, 5, 6)
 
-## Summary of Changes
-Per the user request:
-1. **Target Build Reversion (1 Build Ago)**: Preserved version naming **`1.3.0`** so existing Steam Game Mode shortcuts pointing directly to `DeckRomM-1.3.0-x86_64.AppImage` or `DeckRomM.AppImage` continue working seamlessly without re-adding shortcuts in Steam.
-2. **Removed Windows version completely**: Stripped all Windows targets, scripts, CI/CD jobs, emulator paths, and UI drive pickers.
-3. **Fixed Steam Deck In-Place Upgrades**: Solved root cause failure modes on SteamOS Game Mode, and ensured both canonical (`DeckRomM.AppImage`) and versioned (`DeckRomM-1.3.0-x86_64.AppImage`) files are atomically synchronized on every update.
+## Summary of Completed Implementations
 
----
+Following the user request to implement **Items 2, 5, and 6**:
+1. **Item 2: Tactile Steam Deck Controller Haptic Feedback**
+   - Vibration actuator integration across gamepad navigation, chimes, button selections, roulette spins, and customizable intensity (`soft`, `medium`, `strong`).
+2. **Item 5: Retro Game Manual & Strategy Map / Guide Viewer**
+   - Dedicated handheld modal (`ManualViewerModal.tsx`) with controller-driven page navigation (`L1/R1`), zoom (`X`), and curated retro strategy, controls, and cheat guides accessible via `GameDetailModal.tsx`.
+3. **Item 6: Pure Black OLED Theme & CRT Scanline Filter**
+   - Steam Deck OLED pure black `#000000` theme, Midnight Blue theme, and authentic CRT scanline phosphor filter toggles.
 
-## 1. Upgrade Failure Analysis & Root Cause Fixes
-
-### Issue 1: `Text file busy` (`ETXTBSY`) on Running AppImage
-- **Root Cause**: When DeckRomM is running in Game Mode, `~/Applications/DeckRomM/DeckRomM.AppImage` is held open and executing by the Linux kernel. Overwriting it with `install -m 755 "$SRC" "$DEST/DeckRomM.AppImage"` or `cp` causes `ETXTBSY (Text file busy)` and fails with exit code 1.
-- **Fix**: Replaced direct file truncation in `installer.sh` and `build-appimage.sh` with atomic rename:
-  ```bash
-  install -m 755 "$SRC" "$DEST/DeckRomM.AppImage.new"
-  mv -f "$DEST/DeckRomM.AppImage.new" "$DEST/DeckRomM.AppImage"
-  ```
-  The Linux kernel allows directory entry replacement via `rename(2)` while the old inode is still executing.
-
-### Issue 2: GitHub Release Asset Download HTTP 400 Bad Request
-- **Root Cause**: When downloading the pre-built `DeckRomM-*.AppImage` release asset from GitHub, GitHub issues a 302 redirect to Amazon S3 (`objects.githubusercontent.com` / `s3.amazonaws.com`) with pre-signed query authentication parameters. Passing `Authorization: Bearer <githubToken>` to Amazon S3 causes AWS to reject the request with `HTTP 400: Only one auth mechanism allowed`.
-- **Fix**: In `AppUpdater.downloadFile()`, stripped the `Authorization` header when redirected to third-party CDNs and S3 domains. Added stream draining (`res.resume()`) to prevent hanging connections, and added live byte/percentage download progress reporting.
-
-### Issue 3: Inappropriate Strategy Selection on Packaged Steam Deck Runs
-- **Root Cause**: If the user initially cloned the repo to `~/deckromm`, `findGitDirectory()` returned true even when running the installed AppImage in Game Mode, triggering an unnecessary local source re-compilation that exhausted memory or timed out.
-- **Fix**: When running as an AppImage (`process.env.APPIMAGE` or `app.isPackaged`), prioritize downloading the pre-built GitHub release AppImage first. If available, the upgrade is instant and requires no local compilers or tools on SteamOS.
-
-### Issue 4: Clean SteamOS Game Mode Relaunch
-- **Root Cause**: Calling standard `app.relaunch()` inside an AppImage under Gamescope could fail to detach from the old process group.
-- **Fix**: If `launch_deckromm.sh` or `process.env.APPIMAGE` exists, spawns the launcher script detached with `stdio: 'ignore'`, unrefs, and cleanly terminates via `app.exit(0)`.
+Operating Environment: SteamOS 3.x (Arch Linux) running under Gamescope compositor in Game Mode on a 1280x800 handheld screen. Version locked to `1.3.0` with zero Windows dependencies.
 
 ---
 
-## 2. Removal of Windows Platform Support
+## 1. Tactile Steam Deck Controller Haptic Feedback (Item 2)
 
-1. **`electron-builder.json`**:
-   - Removed `win` and `portable` target configurations.
-   - Preserves only the Linux AppImage target (`DeckRomM-${version}-x86_64.AppImage`).
-2. **`package.json`**:
-   - Removed `dist:win:portable` and `dist:all` scripts.
-   - Version updated to `1.1.0`.
-3. **`.github/workflows/build.yml`**:
-   - Removed `build-windows` matrix job.
-   - Release workflow depends solely on `build-linux` and packages only the `.AppImage` asset.
-4. **`electron/lib/emulation.cjs`**:
-   - Removed `findWindowsEmulatorBinary`, Windows drive letter scanning, and `taskkill`.
-   - Native SteamOS POSIX process groups, Flatpaks, and EmuDeck Linux paths preserved.
-5. **`electron/main.cjs`**:
-   - Removed Windows RetroAchievements configuration scan paths.
-6. **`src/components/SettingsScreen.tsx`**:
-   - Removed Windows drive quick-select buttons and Windows platform labels.
-7. **`README.md`**:
-   - Removed Windows setup and portable EXE documentation.
-
----
-
-## 4. Quality of Life Improvement: "Surprise Me!" Random Game Picker
-- **Problem**: In retro emulation libraries containing hundreds or thousands of ROMs, players frequently experience decision paralysis when trying to choose what to play.
-- **Solution (`RandomGameModal.tsx`)**:
-  - Implemented an animated retro slot-machine roulette picker designed specifically for the Steam Deck (1280x800 Gamescope handheld viewport).
-  - Ticking sound effect audio cues (`soundService.playTick()`, `soundService.playSuccess()`) that decelerate during spin to build anticipation.
-  - Displays high-resolution box art, platform badge, release year, genres, offline status, and summary description.
-  - Gamepad-first shortcuts:
-    - **(A)**: Instantly launch the chosen game via configured emulator or browser player.
-    - **(X)**: "Reroll / Spin Again" to roll another title without leaving the modal.
-    - **(Y)**: Open detailed Game Modal with playtime tracker, screenshots, and ROM options.
-    - **(B)**: Close / Dismiss.
-  - **Access Points**:
-    - Top Filter Bar: Quick "Roll" action button with `Dices` icon (`#filter-random-game`).
-    - Quick Filter Drawer (`L2`): Highlighted "Surprise Me!" action card (`#quick-surprise-me`).
-    - Main Menu (`START`): "Surprise Me! (Random)" entry.
-    - Respects active view filter (e.g. rolls within current platform, genre, or offline games).
+### Architecture
+- **Hardware Integration (`src/services/hapticsService.ts`)**:
+  - Leverages the W3C Gamepad API's `vibrationActuator` (`playEffect('dual-rumble', ...)`) available directly in the Steam Deck Gamescope Chromium runtime.
+  - Automatically iterates all connected gamepads and virtual Steam controllers, firing pulses to actuators.
+  - Configurable intensity multiplier via `hapticsIntensity`:
+    - `soft` (0.45x multiplier): Gentle fingertip feedback for late-night play and subtle clicks.
+    - `medium` (1.0x multiplier, default): Punchy, tactile response matching native SteamOS UI feedback.
+    - `strong` (1.55x multiplier): Pronounced rumble for retro immersion and confirmations.
+- **Synchronized Audio & Haptic System (`src/services/soundService.ts`)**:
+  - Synchronized directly into sound synthesizer methods so tactile sensation and acoustic clicks fire in lockstep:
+    - `tick()`: Subtle 18ms high-frequency pulse for D-Pad, thumbstick, and bumper movements.
+    - `select()`: Confirm buzz (40ms, dual rumble) when selecting items or pressing A.
+    - `back()`: Soft double-pulse (30ms) when navigating back or pressing B.
+    - `success()`: Harmonious fanfare vibration (60ms) on download completion, game save, or roulette roll.
+    - `spinTick()`: Fast, crisp 12ms tick for high-speed roulette cycling.
+    - `warning()`: Deeper, low-frequency pulse for cancellation or destructive warnings.
+- **Config & Persistence (`src/types.ts`, `src/App.tsx`, `src/components/SettingsScreen.tsx`)**:
+  - Added `hapticsEnabled` (boolean) and `hapticsIntensity` (`'soft' | 'medium' | 'strong'`) to `RommConfig`.
+  - Live toggles and intensity buttons in the Settings screen under "Steam Deck Display & Controller Haptics".
 
 ---
 
-## 5. Cloud & Local Save Manager • RPG Backup Vault
-- **Problem**: In retro RPGs, corrupted save states or uncoordinated emulator writes risk wiping tens of hours of progress.
-- **Solution (`src/services/saveVaultService.ts`, `src/components/SaveVaultSection.tsx`)**:
-  - Live comparison of Steam Deck local battery saves (`.srm`, `.sav`) vs RomM Cloud saves with timestamp & size diffing.
-  - Clear sync badges: `Cloud & Local in Sync`, `Local Save is Newer (by Xm/h)`, `RomM Cloud is Newer`, `Saved Locally Only`, or `Cloud Save Available`.
-  - 1-click **Upload to RomM** and **Download from RomM**.
-  - **RPG Backup Vault**:
-    - Stores up to 5 rotating local backup snapshots per game with custom labels (e.g. "Before Final Boss", "Chapter 4 Start").
-    - 1-click **Rollback** with automatic pre-rollback safety snapshot creation so no progress is ever lost.
-    - Delete and management controls tailored for controller navigation.
+## 2. Retro Game Manual & Strategy Guide Viewer (Item 5)
+
+### Architecture
+- **Dedicated Handheld Modal (`src/components/ManualViewerModal.tsx`)**:
+  - Handheld-optimized 1280x800 Gamescope layout with high contrast, oversized typography, and `data-focusable` controller targets.
+  - Curated multi-page retro guides per platform and title:
+    1. **Controls & Controller Mapping**: Direct comparison of Steam Deck buttons (A, B, X, Y, L1/R1, D-Pad) to native retro console pads (NES, SNES, Genesis, PS1, N64, GBA, etc.).
+    2. **Story & Objective**: Narrative setup, main quest goal, and win conditions.
+    3. **Key Items & Power-Ups**: Critical items, health containers, weapons, and pickups.
+    4. **Secrets, Cheats & Passwords**: Classic button combos (e.g. Konami Code), level selects, and invincibility codes.
+  - If a game has `guideNotes` or `manualUrl` defined in RomM metadata, it seamlessly incorporates them into the viewer.
+- **Controller Navigation**:
+  - **(L1 / R1)** or **(LT / RT)**: Turn pages back and forth.
+  - **(X Button)**: Toggle zoom magnification (`1.0x` -> `1.25x` -> `1.50x`) for comfortable reading on the 7-inch display.
+  - **(B Button)**: Dismiss / close modal.
+- **Access Point**:
+  - Prominent "Manual & Guide" action button in `GameDetailModal.tsx` (`#detail-manual-btn`) with warm amber aesthetic and `BookOpen` icon.
 
 ---
 
-## 6. Steam Deck Battery & TDP Profile Optimizer
-- **Problem**: Running simple 8-bit/16-bit retro games on the Steam Deck's default 15W TDP needlessly drains the battery in ~2 hours and runs the fan unnecessarily.
-- **Solution (`src/utils/steamDeckPower.ts`, `src/components/DeckPowerBadge.tsx`, `src/components/DeckPowerCard.tsx`)**:
-  - Intelligent per-platform power profiling:
-    - **Ultra-Low Power (3W–5W TDP)** for NES/SNES/GBA/Genesis: **~7.5–9h battery (LCD) / ~9–11.5h (OLED)**.
-    - **Balanced Efficiency (6W–8W TDP)** for PS1/N64/NDS: **~5–6.5h battery (LCD) / ~6.5–8h (OLED)**.
-    - **Performance Mode (9W–11W TDP)** for PS2/GameCube/Dreamcast/PSP: **~3.5–4.5h battery (LCD) / ~4.5–5.5h (OLED)**.
-    - **High Power / Full APU (12W–15W TDP)** for PS3/Xbox/Switch.
-  - Interactive **DeckPowerCard** in `GameDetailModal` with live metrics (Watts, LCD/OLED hours, FPS, GPU clock) and step-by-step Gamescope Quick Access Menu (`...` button) instructions.
-  - Compact **DeckPowerBadge** on hero badge rows and in `RandomGameModal`.
-  - Included in the Details specs table.
+## 3. Pure Black OLED Theme & CRT Scanline Filter (Item 6)
+
+### Architecture
+- **Steam Deck OLED Pure Black Theme (`src/index.css`)**:
+  - `.theme-oled`: Overrides CSS tokens with true `#000000` pitch black pixels for panel backgrounds (`--color-deck-bg: #000000; --color-deck-panel: #080808; --color-deck-panel-2: #121212; --color-deck-line: #222222;`).
+  - Maximizes contrast and conserves OLED battery by shutting off pixels across the background.
+  - Enhanced neon blue focus rings (`--focus-glow: rgba(0, 150, 255, 0.95)`).
+- **Midnight Blue Theme (`src/index.css`)**:
+  - `.theme-midnight`: Classic 90s console gaming aesthetic with dark navy/indigo tones (`#060a14` / `#0d1527` / `#203154`).
+- **Standard SteamOS Dark Theme**:
+  - Preserved default SteamOS Big Picture slate/charcoal styling (`#0b0f17` / `#131a26`).
+- **CRT Scanline Phosphor Filter (`.crt-scanlines`)**:
+  - Authentic retro scanline filter utilizing GPU-accelerated CSS pseudo-elements:
+    - 3px horizontal scanline raster.
+    - Subtle RGB phosphor subpixel dispersion (`linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.015), rgba(0, 0, 255, 0.03))`).
+    - Applied directly to game cover art in `GameDetailModal.tsx` when enabled.
+- **Settings & Integration (`src/components/SettingsScreen.tsx`, `src/App.tsx`)**:
+  - "Steam Deck Display & Controller Haptics" section in Settings with interactive Theme cards and CRT Scanline switch.
+  - Dynamically synchronizes `.theme-oled` and `.theme-midnight` onto `document.documentElement` and the top-level app wrapper.
 
 ---
 
-## 7. Verification Results
+## 4. Verification & Status
+
+- `compile_applet`: Build succeeded with 0 errors.
+- `lint_applet`: `tsc --noEmit` passed cleanly with 0 errors.
 - `npm run check:main`: All Electron main process scripts validated (`node --check`) with 0 errors.
-- `compile_applet`: React Vite applet built successfully.
-- `lint_applet`: Completed with 0 linting issues (`tsc --noEmit` clean).
-- `npm run build`: Production bundle transformed 1,726 modules and built in 7.39s with zero errors.
-- Version integrity: Maintained strictly at `1.3.0` with atomic in-place updater and continuous GitHub release workflows.
+- `npm run build`: Production bundle built in 8.81s (1,728 modules transformed) with 0 errors.
+- Version: Strictly maintained at `1.3.0`.

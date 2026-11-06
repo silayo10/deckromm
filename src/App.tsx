@@ -8,6 +8,7 @@ import { markPlayed } from './services/cloudSaves';
 import { gamepadService } from './services/gamepadService';
 import { focusManager, isTextInput } from './services/focusManager';
 import { soundService } from './services/soundService';
+import { hapticsService } from './services/hapticsService';
 import { useFocusScope } from './hooks/useFocusScope';
 import { HeaderBar } from './components/HeaderBar';
 import { LibrarySource, PlatformBar, sourceKey } from './components/PlatformBar';
@@ -203,6 +204,8 @@ export default function App() {
         if (!alive) return;
         const a = rommApi.getAuthStatus();
         soundService.enabled = cfg.audioFeedback !== false;
+        if (cfg.hapticsEnabled !== undefined) hapticsService.enabled = cfg.hapticsEnabled;
+        if (cfg.hapticsIntensity) hapticsService.intensity = cfg.hapticsIntensity;
         setConfig(cfg);
         setAuth(a);
         if (cfg.languageFilter || cfg.hideJapanese) {
@@ -624,6 +627,8 @@ export default function App() {
   // ------------------------------------------------------------ config
   const updateConfig = useCallback((patch: Partial<RommConfig>) => {
     if (patch.audioFeedback !== undefined) soundService.enabled = patch.audioFeedback;
+    if (patch.hapticsEnabled !== undefined) hapticsService.enabled = patch.hapticsEnabled;
+    if (patch.hapticsIntensity !== undefined) hapticsService.intensity = patch.hapticsIntensity;
     setConfig(rommApi.saveConfig(patch));
   }, []);
 
@@ -909,10 +914,27 @@ export default function App() {
   const activeDownloads = Object.keys(progressById).length;
   const serverLabel = config.isDemoMode ? 'Demo library' : (auth.baseUrl || config.serverUrl || 'No server').replace(/^https?:\/\//, '');
 
+  const themeClass =
+    config.theme === 'oled_black'
+      ? 'theme-oled'
+      : config.theme === 'midnight_blue'
+      ? 'theme-midnight'
+      : '';
+
+  useEffect(() => {
+    const theme = config.theme || 'steamos_dark';
+    document.documentElement.classList.remove('theme-oled', 'theme-midnight');
+    if (theme === 'oled_black') {
+      document.documentElement.classList.add('theme-oled');
+    } else if (theme === 'midnight_blue') {
+      document.documentElement.classList.add('theme-midnight');
+    }
+  }, [config.theme]);
+
   // ------------------------------------------------------------ render
   if (!booted) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 bg-deck-bg">
+      <div className={`h-full flex flex-col items-center justify-center gap-4 bg-deck-bg ${themeClass}`}>
         <div className="text-4xl font-extrabold tracking-tight">DeckRomM</div>
         <Loader2 className="animate-spin text-deck-accent" size={32} />
       </div>
@@ -920,7 +942,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden">
+    <div className={`h-full w-full flex flex-col overflow-hidden bg-deck-bg ${themeClass}`}>
       <div ref={rootRef} className="flex-1 min-h-0 flex flex-col">
         <HeaderBar
           title={sourceLabel(source)}

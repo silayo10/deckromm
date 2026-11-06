@@ -241,3 +241,44 @@ iframe:focus-visible,
     scroll-behavior: auto !important;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Handheld Themes & Retro Visual Effects                                      */
+/* -------------------------------------------------------------------------- */
+
+/* Steam Deck OLED Pure Black: true #000000 pixels for infinite contrast & battery saving */
+.theme-oled {
+  --color-deck-bg: #000000;
+  --color-deck-panel: #080808;
+  --color-deck-panel-2: #121212;
+  --color-deck-line: #222222;
+  --focus-glow: rgba(0, 150, 255, 0.95);
+}
+
+/* Midnight Blue: classic 90s console gaming aesthetic */
+.theme-midnight {
+  --color-deck-bg: #060a14;
+  --color-deck-panel: #0d1527;
+  --color-deck-panel-2: #131e38;
+  --color-deck-line: #203154;
+  --color-deck-accent: #0088ff;
+  --focus-glow: rgba(0, 136, 255, 0.9);
+}
+
+/* CRT Scanline Retro Filter: authentic arcade/phosphor scanlines */
+.crt-scanlines {
+  position: relative;
+}
+.crt-scanlines::after {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.32) 50%),
+              linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.015), rgba(0, 0, 255, 0.03));
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 25;
+}
+

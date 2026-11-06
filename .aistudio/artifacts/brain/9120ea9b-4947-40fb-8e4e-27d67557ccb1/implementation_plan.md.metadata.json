@@ -1,6 +1,6 @@
 {
-  "summary": "Documenting rollback to version 1.1.0, removal of Windows builds, and SteamOS in-place upgrade fixes.",
-  "updatedAt": "2026-11-04T00:38:49.516836666Z",
+  "summary": "Implementation plan detailing items 2, 5, and 6: Steam Deck Controller Haptic Feedback, Retro Game Manual & Strategy Guide Viewer, and Pure Black OLED Theme with CRT Scanline Filter.",
+  "updatedAt": "2026-11-06T02:07:32.454189849Z",
   "requestFeedback": true,
   "userFacing": true
 }

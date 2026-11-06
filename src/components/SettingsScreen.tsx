@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Play, Sliders, ArrowUpCircle, Sparkles, Trophy, Key } from 'lucide-react';
+import { ArrowLeft, FolderOpen, HardDrive, Info, LogIn, LogOut, Server, SlidersHorizontal, Gamepad2, Cpu, ChevronRight, Download, CheckCircle2, AlertTriangle, Loader2, RefreshCw, Play, Sliders, ArrowUpCircle, Sparkles, Trophy, Key, Vibrate, Palette } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { PLATFORM_AVAILABLE_CORES, RommConfig, SUPPORTED_STANDALONE_EMULATORS } from '../types';
 import { AppInfo, AuthStatus, NativeStorage } from '../env/electron';
 import { bridge, isNativeApp } from '../services/bridge';
 import { soundService } from '../services/soundService';
+import { hapticsService } from '../services/hapticsService';
 import { rommApi } from '../services/rommApi';
 import { retroAchievementsService } from '../services/retroAchievementsService';
 import { formatBytes } from './GameCard';
@@ -647,6 +648,100 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <span>{syncingArt ? 'Downloading...' : 'Sync Offline Art'}</span>
                 </button>
               </div>
+            </Section>
+
+            <Section icon={<Palette size={16} />} title="Steam Deck Display & Controller Haptics">
+              {/* Theme Picker */}
+              <div className="p-4 rounded-xl bg-deck-panel/70 flex flex-col gap-3">
+                <div>
+                  <div className="font-semibold text-sm text-white">Interface Theme</div>
+                  <div className="text-xs text-deck-dim">Color palette optimized for the Steam Deck 7-inch LCD / OLED display</div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    { id: 'oled_black', label: '🖤 OLED Pure Black', desc: 'True #000000 pixels (Max battery & contrast)' },
+                    { id: 'steamos_dark', label: '🕹️ SteamOS Dark', desc: 'Default dark slate (#0b0f17)' },
+                    { id: 'midnight_blue', label: '🎮 Midnight Blue', desc: 'Classic 90s console gaming aesthetic' },
+                  ].map((t) => {
+                    const isSelected = (config.theme || 'steamos_dark') === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        data-focusable
+                        onClick={() => {
+                          soundService.playSelect();
+                          onChange({ theme: t.id as any });
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? 'bg-deck-accent/20 border-deck-accent text-white shadow-sm'
+                            : 'bg-deck-panel-2/60 border-deck-line text-deck-dim hover:text-white hover:border-deck-dim'
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-white">{t.label}</div>
+                        <div className="text-[10px] text-deck-dim mt-0.5">{t.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* CRT Scanline Toggle */}
+              <Toggle
+                label="CRT Retro Scanlines Filter"
+                hint="Overlay authentic arcade/phosphor scanlines on box art and screenshot previews"
+                value={Boolean(config.crtScanlines)}
+                onChange={(v) => onChange({ crtScanlines: v })}
+              />
+
+              {/* Haptics Toggle */}
+              <Toggle
+                label="Steam Deck Tactile Haptics (Vibration Actuators)"
+                hint="Physical tactile feedback for D-pad navigation, button confirmation, and roulette rolls"
+                value={config.hapticsEnabled !== false}
+                onChange={(v) => {
+                  hapticsService.enabled = v;
+                  onChange({ hapticsEnabled: v });
+                  if (v) hapticsService.select();
+                }}
+              />
+
+              {/* Haptics Intensity */}
+              {config.hapticsEnabled !== false && (
+                <div className="p-4 rounded-xl bg-deck-panel/70 flex items-center justify-between gap-4">
+                  <div>
+                    <div className="font-semibold text-sm text-white flex items-center gap-2">
+                      <Vibrate size={16} className="text-deck-accent" />
+                      <span>Haptic Intensity</span>
+                    </div>
+                    <div className="text-xs text-deck-dim">Strength of actuator clicks during navigation</div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {(['soft', 'medium', 'strong'] as const).map((lvl) => {
+                      const isCurrent = (config.hapticsIntensity || 'medium') === lvl;
+                      return (
+                        <button
+                          key={lvl}
+                          data-focusable
+                          onClick={() => {
+                            hapticsService.intensity = lvl;
+                            hapticsService.select();
+                            onChange({ hapticsIntensity: lvl });
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold capitalize border transition-all ${
+                            isCurrent
+                              ? 'bg-deck-accent text-white border-deck-accent shadow-sm'
+                              : 'bg-deck-panel-2 border-deck-line text-deck-dim hover:text-white'
+                          }`}
+                        >
+                          {lvl}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </Section>
 
             <Section icon={<Trophy size={16} />} title="RetroAchievements">

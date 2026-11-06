@@ -56,6 +56,8 @@ export interface Game {
   isMultiFile?: boolean;
   tags?: string[];
   files?: Array<{ id: number | string; fileName: string; fileSizeBytes: number; path?: string }>;
+  manualUrl?: string;
+  guideNotes?: string;
 }
 
 export interface RetroAchievement {
@@ -153,6 +155,12 @@ export interface RommConfig {
   raHardcoreOnly?: boolean;
   raSource?: 'romm_server' | 'steam_deck_emulator' | 'manual' | 'none';
   raServerConnected?: boolean;
+  // Haptics & Controller Feedback
+  hapticsEnabled?: boolean;
+  hapticsIntensity?: 'soft' | 'medium' | 'strong';
+  // Theme & Visual Effects
+  theme?: 'oled_black' | 'steamos_dark' | 'midnight_blue';
+  crtScanlines?: boolean;
 }
 
 export interface Collection {

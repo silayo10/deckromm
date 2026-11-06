@@ -1,3 +1,5 @@
+import { hapticsService } from './hapticsService';
+
 // Web Audio synthesizer for native SteamOS / Deck UI controller sounds
 class SoundService {
   private ctx: AudioContext | null = null;
@@ -17,6 +19,7 @@ class SoundService {
 
   // SteamOS D-Pad / Thumbstick subtle navigation tick
   playTick() {
+    hapticsService.tick();
     if (!this.enabled) return;
     try {
       this.initCtx();
@@ -43,6 +46,7 @@ class SoundService {
 
   // SteamOS 'A' button select confirm chime
   playSelect() {
+    hapticsService.select();
     if (!this.enabled) return;
     try {
       this.initCtx();
@@ -68,6 +72,7 @@ class SoundService {
 
   // SteamOS 'B' button back / cancel whoosh
   playBack() {
+    hapticsService.back();
     if (!this.enabled) return;
     try {
       this.initCtx();
@@ -93,6 +98,7 @@ class SoundService {
 
   // Download start / item cached chime
   playSuccess() {
+    hapticsService.success();
     if (!this.enabled) return;
     try {
       this.initCtx();

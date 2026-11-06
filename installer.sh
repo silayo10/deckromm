@@ -14,6 +14,18 @@ SRC="${1:-}"
 if [[ -z "$SRC" ]]; then
   SRC="$(ls -t "$SCRIPT_DIR"/release/DeckRomM-*.AppImage "$SCRIPT_DIR"/DeckRomM-*.AppImage "$SCRIPT_DIR"/DeckRomM.AppImage 2>/dev/null | head -n1 || true)"
 fi
+
+if [[ -z "$SRC" || ! -f "$SRC" ]]; then
+  echo "No local AppImage found. Fetching latest v1.3.0 release from GitHub..."
+  TMP_APPIMAGE="/tmp/DeckRomM-1.3.0-x86_64.AppImage"
+  if curl -fL --progress-bar -o "$TMP_APPIMAGE" "https://github.com/tonydancestudiom/deckromm/releases/download/v1.3.0/DeckRomM-1.3.0-x86_64.AppImage" || \
+     curl -fL --progress-bar -o "$TMP_APPIMAGE" "https://github.com/tonydancestudiom/deckromm/releases/latest/download/DeckRomM.AppImage"; then
+    if [[ -f "$TMP_APPIMAGE" && -s "$TMP_APPIMAGE" ]]; then
+      SRC="$TMP_APPIMAGE"
+    fi
+  fi
+fi
+
 if [[ -z "$SRC" || ! -f "$SRC" ]]; then
   echo "No AppImage found. Build one with ./build-appimage.sh, or pass a path: ./installer.sh /path/to/DeckRomM.AppImage" >&2
   exit 1

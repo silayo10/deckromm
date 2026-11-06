@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders, CloudOff, Gamepad2, Clock, RefreshCw, Cloud, Save, Layers, Sparkles, Check } from 'lucide-react';
+import { Play, Download, Trash2, Star, Globe, X, CheckCircle2, Loader2, Square, Cpu, HardDrive, ChevronDown, AlertTriangle, Tag, Disc, Wand2, Sliders, CloudOff, Gamepad2, Clock, RefreshCw, Cloud, Save, Layers, Sparkles, Check, BookOpen } from 'lucide-react';
 import { CoreOption, Game, NavigationAction, PLATFORM_AVAILABLE_CORES, RommConfig, SaveState, getActiveCoreForGame, getStandaloneEmulatorForPlatform, formatPlaytime, formatDetailedPlaytime } from '../types';
 import type { PlaytimeRecord } from '../env/electron';
 import { FocusScope } from './FocusScope';
@@ -16,6 +16,7 @@ import { RelatedGamesSection } from './RelatedGamesSection';
 import { DeckPowerBadge } from './DeckPowerBadge';
 import { DeckPowerCard } from './DeckPowerCard';
 import { SaveVaultSection } from './SaveVaultSection';
+import { ManualViewerModal } from './ManualViewerModal';
 import { getDeckPowerProfile } from '../utils/steamDeckPower';
 import { bridge, isNativeApp } from '../services/bridge';
 import { soundService } from '../services/soundService';
@@ -76,6 +77,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   const [loadingDetails, setLoadingDetails] = useState(true);
   const [coreModalOpen, setCoreModalOpen] = useState(false);
   const [patcherOpen, setPatcherOpen] = useState(false);
+  const [manualModalOpen, setManualModalOpen] = useState(false);
   const [coverError, setCoverError] = useState(false);
 
   useEffect(() => {
@@ -359,7 +361,7 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
       )}
       <FocusScope name="game-detail" onBack={onClose} onAction={onAction} initialFocus="#detail-primary" className="relative z-10 h-full flex gap-6 px-8 pt-6 pb-12">
         <div className="w-[280px] sm:w-[300px] shrink-0 flex flex-col gap-4">
-          <div className="rounded-2xl overflow-hidden shadow-2xl aspect-[3/4] bg-deck-panel-2 relative flex items-center justify-center border border-deck-line/60">
+          <div className={`rounded-2xl overflow-hidden shadow-2xl aspect-[3/4] bg-deck-panel-2 relative flex items-center justify-center border border-deck-line/60 ${config.crtScanlines ? 'crt-scanlines' : ''}`}>
             {game.coverUrl && !coverError ? (
               <img
                 src={game.coverUrl}
@@ -649,6 +651,21 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
               >
                 <Wand2 size={16} className="text-deck-accent shrink-0" />
                 <span>Patch ROM</span>
+              </button>
+
+              {/* Retro Game Manual & Strategy Guide Button */}
+              <button
+                data-focusable
+                id="detail-manual-btn"
+                onClick={() => {
+                  soundService.playTick();
+                  setManualModalOpen(true);
+                }}
+                className={`${btn} bg-amber-950/40 border-amber-500/40 text-amber-200 hover:bg-amber-900/50 hover:border-amber-400 flex items-center gap-2`}
+                title="View original retro game manual, controls, and strategy guide"
+              >
+                <BookOpen size={16} className="text-amber-400 shrink-0" />
+                <span>Manual & Guide</span>
               </button>
 
               {/* Offline Play Option if streamable and installed */}
@@ -1124,6 +1141,16 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
           onSuccess={(patchedName) => {
             setGame((g) => ({ ...g, isInstalled: true }));
           }}
+        />
+      )}
+
+      {/* Retro Game Manual & Strategy Guide Modal */}
+      {manualModalOpen && (
+        <ManualViewerModal
+          isOpen={manualModalOpen}
+          onClose={() => setManualModalOpen(false)}
+          game={game}
+          onToast={onToast}
         />
       )}
     </div>
