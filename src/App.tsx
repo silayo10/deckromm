@@ -35,6 +35,7 @@ import { UpdateManagerModal } from './components/UpdateManagerModal';
 import { LaunchingOverlay } from './components/LaunchingOverlay';
 import { QuickFilterDrawer } from './components/QuickFilterDrawer';
 import { RandomGameModal } from './components/RandomGameModal';
+import { FirstRunWizardModal } from './components/FirstRunWizardModal';
 import { AppUpdateInfo } from './types';
 
 interface KeyboardRequest {
@@ -112,6 +113,7 @@ export default function App() {
   const [biosPlatformFilter, setBiosPlatformFilter] = useState<string | undefined>();
   const [storageModalOpen, setStorageModalOpen] = useState(false);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [randomModalOpen, setRandomModalOpen] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo | null>(null);
   const [quickDrawer, setQuickDrawer] = useState<{ open: boolean; mode: 'filters' | 'alphabet' }>({ open: false, mode: 'filters' });
@@ -214,7 +216,9 @@ export default function App() {
         if (cfg.genreFilter) {
           setSelectedGenre(cfg.genreFilter);
         }
-        if (!a.authenticated && !cfg.isDemoMode && !cfg.offlineOnlyMode && (typeof navigator === 'undefined' || navigator.onLine)) {
+        if (rommApi.isFirstLaunch()) {
+          setWizardOpen(true);
+        } else if (!a.authenticated && !cfg.isDemoMode && !cfg.offlineOnlyMode && (typeof navigator === 'undefined' || navigator.onLine)) {
           setLogin({ open: true });
         }
       })
@@ -1134,6 +1138,10 @@ export default function App() {
             setSettingsOpen(false);
             setStorageModalOpen(true);
           }}
+          onOpenWizard={() => {
+            setSettingsOpen(false);
+            setWizardOpen(true);
+          }}
         />
       )}
 
@@ -1195,6 +1203,10 @@ export default function App() {
           onUpdate={() => {
             setMenuOpen(false);
             setUpdateModalOpen(true);
+          }}
+          onWizard={() => {
+            setMenuOpen(false);
+            setWizardOpen(true);
           }}
           onSignIn={() => {
             setMenuOpen(false);
@@ -1291,6 +1303,23 @@ export default function App() {
           onChangeConfig={updateConfig}
           onToast={toast}
           initialUpdateInfo={availableUpdate}
+        />
+      )}
+
+      {wizardOpen && (
+        <FirstRunWizardModal
+          isOpen={wizardOpen}
+          config={config}
+          onClose={() => setWizardOpen(false)}
+          onComplete={(patch) => {
+            updateConfig(patch);
+            refresh();
+          }}
+          onOpenLogin={() => {
+            setWizardOpen(false);
+            setLogin({ open: true });
+          }}
+          onToast={toast}
         />
       )}
 

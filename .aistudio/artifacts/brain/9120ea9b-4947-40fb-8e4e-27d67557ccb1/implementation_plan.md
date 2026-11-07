@@ -1,89 +1,106 @@
-# DeckRomM SteamOS Feature Enhancements (Items 2, 5, 6)
+# DeckRomM Handheld UX & Settings Streamlining (v1.3.0)
 
-## Summary of Completed Implementations
-
-Following the user request to implement **Items 2, 5, and 6**:
-1. **Item 2: Tactile Steam Deck Controller Haptic Feedback**
-   - Vibration actuator integration across gamepad navigation, chimes, button selections, roulette spins, and customizable intensity (`soft`, `medium`, `strong`).
-2. **Item 5: Retro Game Manual & Strategy Map / Guide Viewer**
-   - Dedicated handheld modal (`ManualViewerModal.tsx`) with controller-driven page navigation (`L1/R1`), zoom (`X`), and curated retro strategy, controls, and cheat guides accessible via `GameDetailModal.tsx`.
-3. **Item 6: Pure Black OLED Theme & CRT Scanline Filter**
-   - Steam Deck OLED pure black `#000000` theme, Midnight Blue theme, and authentic CRT scanline phosphor filter toggles.
-
-Operating Environment: SteamOS 3.x (Arch Linux) running under Gamescope compositor in Game Mode on a 1280x800 handheld screen. Version locked to `1.3.0` with zero Windows dependencies.
+## Overview & User Request Alignment
+Implemented three core ergonomic and organizational enhancements tailored specifically for SteamOS Gamescope Game Mode on the 1280x800 Steam Deck display:
+1. **Details Modal Tab Reorganization**: Reorganized `GameDetailModal.tsx` into 4 handheld-optimized controller tabs (`Overview & Play`, `Saves & Vault`, `Manual & Tools`, `Media & Specs`) navigated with physical bumper shortcuts (`LB`/`RB`).
+2. **First Run & Handheld Onboarding Wizard**: Guided 3-step setup modal (`FirstRunWizardModal.tsx`) auto-detecting SteamOS storage & EmuDeck flatpaks, configuring display theme and tactile haptics, and offering one-click RomM server connection, demo library exploration, or local offline mode.
+3. **Settings Menu Reorganization & Redundancy Cleanup**: Reordered `SettingsScreen.tsx` into 6 logical categories, eliminated duplicate toggles, grouped physical feedback (audio cues + tactile vibration), and integrated quick launchers for the onboarding wizard and EmuDeck standalone tools.
 
 ---
 
-## 1. Tactile Steam Deck Controller Haptic Feedback (Item 2)
+## 1. Details Modal Tab Reorganization (`src/components/GameDetailModal.tsx`)
 
-### Architecture
-- **Hardware Integration (`src/services/hapticsService.ts`)**:
-  - Leverages the W3C Gamepad API's `vibrationActuator` (`playEffect('dual-rumble', ...)`) available directly in the Steam Deck Gamescope Chromium runtime.
-  - Automatically iterates all connected gamepads and virtual Steam controllers, firing pulses to actuators.
-  - Configurable intensity multiplier via `hapticsIntensity`:
-    - `soft` (0.45x multiplier): Gentle fingertip feedback for late-night play and subtle clicks.
-    - `medium` (1.0x multiplier, default): Punchy, tactile response matching native SteamOS UI feedback.
-    - `strong` (1.55x multiplier): Pronounced rumble for retro immersion and confirmations.
-- **Synchronized Audio & Haptic System (`src/services/soundService.ts`)**:
-  - Synchronized directly into sound synthesizer methods so tactile sensation and acoustic clicks fire in lockstep:
-    - `tick()`: Subtle 18ms high-frequency pulse for D-Pad, thumbstick, and bumper movements.
-    - `select()`: Confirm buzz (40ms, dual rumble) when selecting items or pressing A.
-    - `back()`: Soft double-pulse (30ms) when navigating back or pressing B.
-    - `success()`: Harmonious fanfare vibration (60ms) on download completion, game save, or roulette roll.
-    - `spinTick()`: Fast, crisp 12ms tick for high-speed roulette cycling.
-    - `warning()`: Deeper, low-frequency pulse for cancellation or destructive warnings.
-- **Config & Persistence (`src/types.ts`, `src/App.tsx`, `src/components/SettingsScreen.tsx`)**:
-  - Added `hapticsEnabled` (boolean) and `hapticsIntensity` (`'soft' | 'medium' | 'strong'`) to `RommConfig`.
-  - Live toggles and intensity buttons in the Settings screen under "Steam Deck Display & Controller Haptics".
+### Tab Architecture
+- Replaced the previous single vertical scrolling container with 4 dedicated, focused views navigated instantly via controller bumpers (`LB` / `RB`, `PAGE_UP` / `PAGE_DOWN`, or `PREV_PLATFORM` / `NEXT_PLATFORM`):
+  1. **`Overview & Play`**:
+     - Primary play action (`#detail-play-btn`) with active emulator/core indicator.
+     - Emulator core selector dropdown card.
+     - Favorite toggle and Download / Local status cards.
+     - Standalone launcher config (EmuDeck Flatpak launch shortcut).
+     - Missing BIOS warnings and system dependency alerts.
+     - DeckPowerCard (TDP/GPU clock recommendation and estimated battery runtime).
+     - Playtime tracker (sessions, total hours, last played date).
+     - Multi-disc carousel (for PS1, PS2, Saturn, Dreamcast multi-disc sets).
+     - Story synopsis and developer metadata.
+  2. **`Saves & Vault`**:
+     - Cloud Save Vault sync status (RomM server save sync).
+     - Save state visual timeline with screenshot thumbnails and timestamps.
+     - PlayStation 2 PCSX2 memory card slot selector and status.
+     - Local ROM storage paths and target drive (SSD / microSD).
+     - Local ROM deletion action for freed storage space.
+  3. **`Manual & Tools`**:
+     - Retro Game Manual & Strategy Guide launch card with direct button shortcut.
+     - ROM Hacks & Community Patches launcher card.
+     - RetroAchievements badges, points, and unlock timeline panel.
+  4. **`Media & Specs`**:
+     - High-resolution screenshot gallery preview.
+     - Complete technical specifications table (SHA-1 checksum, CRC32, file format, exact file size, release region, language count).
+     - Related Games in Series recommendations.
 
----
-
-## 2. Retro Game Manual & Strategy Guide Viewer (Item 5)
-
-### Architecture
-- **Dedicated Handheld Modal (`src/components/ManualViewerModal.tsx`)**:
-  - Handheld-optimized 1280x800 Gamescope layout with high contrast, oversized typography, and `data-focusable` controller targets.
-  - Curated multi-page retro guides per platform and title:
-    1. **Controls & Controller Mapping**: Direct comparison of Steam Deck buttons (A, B, X, Y, L1/R1, D-Pad) to native retro console pads (NES, SNES, Genesis, PS1, N64, GBA, etc.).
-    2. **Story & Objective**: Narrative setup, main quest goal, and win conditions.
-    3. **Key Items & Power-Ups**: Critical items, health containers, weapons, and pickups.
-    4. **Secrets, Cheats & Passwords**: Classic button combos (e.g. Konami Code), level selects, and invincibility codes.
-  - If a game has `guideNotes` or `manualUrl` defined in RomM metadata, it seamlessly incorporates them into the viewer.
-- **Controller Navigation**:
-  - **(L1 / R1)** or **(LT / RT)**: Turn pages back and forth.
-  - **(X Button)**: Toggle zoom magnification (`1.0x` -> `1.25x` -> `1.50x`) for comfortable reading on the 7-inch display.
-  - **(B Button)**: Dismiss / close modal.
-- **Access Point**:
-  - Prominent "Manual & Guide" action button in `GameDetailModal.tsx` (`#detail-manual-btn`) with warm amber aesthetic and `BookOpen` icon.
+### Controller & Handheld Ergonomics
+- Visual tab bar at top of modal displaying current tab index and explicit `LB` / `RB` gamepad hints.
+- Sound and tactile haptic feedback on tab changes (`soundService.playTick()`).
 
 ---
 
-## 3. Pure Black OLED Theme & CRT Scanline Filter (Item 6)
+## 2. First Run & Handheld Onboarding Wizard (`src/components/FirstRunWizardModal.tsx`)
 
-### Architecture
-- **Steam Deck OLED Pure Black Theme (`src/index.css`)**:
-  - `.theme-oled`: Overrides CSS tokens with true `#000000` pitch black pixels for panel backgrounds (`--color-deck-bg: #000000; --color-deck-panel: #080808; --color-deck-panel-2: #121212; --color-deck-line: #222222;`).
-  - Maximizes contrast and conserves OLED battery by shutting off pixels across the background.
-  - Enhanced neon blue focus rings (`--focus-glow: rgba(0, 150, 255, 0.95)`).
-- **Midnight Blue Theme (`src/index.css`)**:
-  - `.theme-midnight`: Classic 90s console gaming aesthetic with dark navy/indigo tones (`#060a14` / `#0d1527` / `#203154`).
-- **Standard SteamOS Dark Theme**:
-  - Preserved default SteamOS Big Picture slate/charcoal styling (`#0b0f17` / `#131a26`).
-- **CRT Scanline Phosphor Filter (`.crt-scanlines`)**:
-  - Authentic retro scanline filter utilizing GPU-accelerated CSS pseudo-elements:
-    - 3px horizontal scanline raster.
-    - Subtle RGB phosphor subpixel dispersion (`linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.015), rgba(0, 0, 255, 0.03))`).
-    - Applied directly to game cover art in `GameDetailModal.tsx` when enabled.
-- **Settings & Integration (`src/components/SettingsScreen.tsx`, `src/App.tsx`)**:
-  - "Steam Deck Display & Controller Haptics" section in Settings with interactive Theme cards and CRT Scanline switch.
-  - Dynamically synchronizes `.theme-oled` and `.theme-midnight` onto `document.documentElement` and the top-level app wrapper.
+### 3-Step Guided Handheld Flow
+- Automatically displayed on initial launch (`rommApi.isFirstLaunch() === true`) and accessible anytime on-demand from the Main Menu (`Item id="menu-wizard"`) and Settings screen.
+- **Step 1: Handheld Welcome & Tactile Display**:
+  - Theme selection: OLED Pure Black (`#000000`), SteamOS Dark Slate, or Midnight Blue.
+  - Tactile Haptics toggle with live "Test Haptic Pulse" button to test Deck actuators immediately.
+  - CRT Scanline toggle.
+- **Step 2: SteamOS & EmuDeck Auto-Discovery**:
+  - Auto-scans `bridge.system.storage()` to locate internal SSD and microSD card paths.
+  - Scans for EmuDeck directory (`~/Emulation/roms` or `/run/media/mmcblk0p1/Emulation/roms`).
+  - Scans Flathub emulator Flatpaks via `bridge.system.flatpakStatus()` (RetroArch, PCSX2, DuckStation, Dolphin, PPSSPP, Ryujinx, RPCS3, Lime3DS).
+- **Step 3: Library Connection Options**:
+  - **Option A: Connect RomM Server** (opens gamepad login modal with server URL / username / password or API token).
+  - **Option B: Explore Demo Library** (immediately loads offline curated retro sample library).
+  - **Option C: Offline Local Mode** (browses local downloaded games already present in EmuDeck folders).
 
 ---
 
-## 4. Verification & Status
+## 3. Settings Menu Reorganization & Redundancy Cleanup (`src/components/SettingsScreen.tsx`)
 
-- `compile_applet`: Build succeeded with 0 errors.
-- `lint_applet`: `tsc --noEmit` passed cleanly with 0 errors.
-- `npm run check:main`: All Electron main process scripts validated (`node --check`) with 0 errors.
-- `npm run build`: Production bundle built in 8.81s (1,728 modules transformed) with 0 errors.
-- Version: Strictly maintained at `1.3.0`.
+### Streamlined 6-Category Structure
+1. **`RomM Server & Connection`**:
+   - Server endpoint display and sign-in/sign-out buttons.
+   - **Single canonical Offline Mode toggle** (eliminated duplicate toggle previously in Library section).
+   - Demo Library Mode toggle.
+   - RomM server tasks & scans (Quick scan for new files, Full rescan & metadata refresh).
+2. **`Steam Deck Display & Physical Feedback`**:
+   - OLED Pure Black, SteamOS Dark, and Midnight Blue theme cards.
+   - CRT Retro Scanlines filter switch.
+   - **Navigation Sounds & Audio Cues toggle** (moved from Library to Display & Physical Feedback).
+   - **Tactile Haptics toggle & intensity selector** (`soft`, `medium`, `strong`).
+3. **`Emulation & EmuDeck`**:
+   - Emulation root path and directory browser.
+   - Launcher mode selector (`auto`, `retroarch`, `custom`) and fullscreen flag.
+   - **EmuDeck & Emulator Management Card**: One-click launchers for Standalone Emulators modal, BIOS & Firmware manager modal, and Open BIOS folder in Dolphin file manager.
+   - PCSX2 Memory Card Manager embedded card.
+   - Platform Default Cores & Overrides list.
+4. **`Storage & Offline Library`**:
+   - Internal SSD vs microSD storage breakdown and free space telemetry.
+   - Downloaded games manager button.
+   - Hide BIOS / info files toggle.
+   - Download All Offline Covers pre-caching action.
+5. **`RetroAchievements`**:
+   - Server integration callout banner (explains zero client API key requirement when RomM server is configured).
+   - Username and optional Web API key inputs.
+   - Hardcore Mode toggle.
+   - Auto-Detect from RomM Server and Test Connection actions with status alerts.
+6. **`System, Setup & Updates`**:
+   - **First-Run Setup Wizard Launcher card** (convenient re-trigger for onboarding).
+   - GitHub in-place updates configuration and check button.
+   - System Diagnostics card (**cleaned of duplicate Session row** duplicating Platform).
+
+---
+
+## Verification & Build Results
+- `compile_applet`: Clean build passed.
+- `lint_applet`: `tsc --noEmit` passed with 0 errors.
+- Version: Strictly locked to `1.3.0`.
+- Handheld Viewport: 1280x800 Gamescope 16:10 aspect ratio.
+- Navigation: 100% controller-first with `data-focusable` and D-Pad / Thumbstick / A/B/X/Y/LB/RB bindings.

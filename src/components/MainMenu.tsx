@@ -1,5 +1,5 @@
 import React from 'react';
-import { Library, Search, RefreshCw, Download, HardDrive, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders, Cpu, ArrowUpCircle, CloudOff, Dices } from 'lucide-react';
+import { Library, Search, RefreshCw, Download, HardDrive, Settings, LogIn, LogOut, Maximize, Power, Wand2, Sliders, Cpu, ArrowUpCircle, CloudOff, Dices, Sparkles } from 'lucide-react';
 import { FocusScope } from './FocusScope';
 import { isNativeApp } from '../services/bridge';
 
@@ -21,6 +21,7 @@ interface MainMenuProps {
   onEmulators?: () => void;
   onBios?: () => void;
   onUpdate?: () => void;
+  onWizard?: () => void;
   onSignIn: () => void;
   onLogout: () => void;
   onToggleFullscreen: () => void;
@@ -87,6 +88,7 @@ export const MainMenu: React.FC<MainMenuProps> = (p) => {
           />
         )}
         {isNativeApp && <Item icon={<Download size={22} />} label="Downloads" onClick={p.onDownloads} />}
+        {p.onWizard && <Item id="menu-wizard" icon={<Sparkles size={22} className="text-sky-400" />} label="Setup Wizard" onClick={p.onWizard} />}
         <Item icon={<Settings size={22} />} label="Server & settings" onClick={p.onSettings} />
         {p.authenticated ? (
           <Item icon={<LogOut size={22} />} label="Sign out" onClick={p.onLogout} />

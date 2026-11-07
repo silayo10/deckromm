@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan detailing items 2, 5, and 6: Steam Deck Controller Haptic Feedback, Retro Game Manual & Strategy Guide Viewer, and Pure Black OLED Theme with CRT Scanline Filter.",
-  "updatedAt": "2026-11-06T02:07:32.454189849Z",
+  "summary": "Implementation plan and architecture summary for the Details Modal Tab Reorganization, First-Run Guided Handheld Onboarding Wizard, and Settings Menu Reorganization & Redundancy Cleanup.",
+  "updatedAt": "2026-11-07T00:30:45.279163297Z",
   "requestFeedback": true,
   "userFacing": true
 }

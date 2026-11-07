@@ -23,6 +23,7 @@ interface SettingsScreenProps {
   onOpenBiosModal?: () => void;
   onOpenUpdateModal?: () => void;
   onOpenStorage?: () => void;
+  onOpenWizard?: () => void;
   onToast?: (msg: string, tone?: 'ok' | 'error' | 'info') => void;
 }
 
@@ -81,6 +82,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onOpenBiosModal,
   onOpenUpdateModal,
   onOpenStorage,
+  onOpenWizard,
   onToast,
 }) => {
   const [storage, setStorage] = useState<NativeStorage | null>(null);
@@ -281,45 +283,60 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
 
         <div data-scroll-primary className="deck-scroll flex-1 min-h-0 px-8 pb-16">
-          <div className="max-w-[900px] mx-auto">
-            <Section icon={<Server size={16} />} title="RomM server">
+          <div className="max-w-[900px] mx-auto flex flex-col gap-6">
+            {/* 1. RomM Server & Connection */}
+            <Section icon={<Server size={16} />} title="RomM Server & Connection">
               <div className="rounded-xl bg-deck-panel/70 p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="font-mono truncate">{auth.baseUrl || config.serverUrl || 'Not configured'}</div>
                   <div className="text-sm text-deck-dim">
                     {config.isDemoMode
-                      ? 'Demo library (offline)'
+                      ? 'Demo library mode (offline test games)'
                       : auth.authenticated
-                      ? `Signed in as ${auth.username || 'unknown'} via ${auth.method}  -  secrets stored with ${auth.storage || 'encrypted file'}`
+                      ? `Signed in as ${auth.username || 'unknown'} via ${auth.method} • secrets stored with ${auth.storage || 'encrypted file'}`
                       : 'Not signed in'}
                   </div>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button data-focusable onClick={onSignIn} className="h-11 px-4 rounded-xl bg-deck-accent text-white font-bold flex items-center gap-2">
+                  <button data-focusable onClick={onSignIn} className="h-11 px-4 rounded-xl bg-deck-accent text-white font-bold flex items-center gap-2 cursor-pointer shadow-sm">
                     <LogIn size={18} /> {auth.authenticated ? 'Change server' : 'Sign in'}
                   </button>
                   {auth.authenticated && (
-                    <button data-focusable onClick={onLogout} className="h-11 px-4 rounded-xl bg-deck-panel-2 border border-deck-line font-semibold flex items-center gap-2">
+                    <button data-focusable onClick={onLogout} className="h-11 px-4 rounded-xl bg-deck-panel-2 border border-deck-line font-semibold flex items-center gap-2 cursor-pointer">
                       <LogOut size={18} /> Sign out
                     </button>
                   )}
                 </div>
               </div>
 
+              {/* Offline Mode Toggle (Single canonical location) */}
+              <Toggle
+                label="Offline Mode (Downloaded Games Only)"
+                hint="Only display games downloaded to this Steam Deck that can be played locally without an internet connection"
+                value={Boolean(config.offlineOnlyMode)}
+                onChange={(v) => onChange({ offlineOnlyMode: v })}
+              />
+
+              {/* Demo Mode Toggle */}
+              <Toggle
+                label="Demo Library Mode"
+                hint="Explore DeckRomM with built-in retro sample titles without connecting to a RomM server"
+                value={Boolean(config.isDemoMode)}
+                onChange={(v) => onChange({ isDemoMode: v })}
+              />
+
               {auth.authenticated && !config.isDemoMode && (
-                <div className="mt-3 p-4 rounded-xl bg-deck-panel/50 border border-deck-line flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-sm text-white">RomM Server Tasks & Scans</h4>
-                      <p className="text-xs text-deck-dim">Trigger background scans directly on your remote RomM server</p>
-                    </div>
+                <div className="p-4 rounded-xl bg-deck-panel/50 border border-deck-line flex flex-col gap-3">
+                  <div>
+                    <h4 className="font-bold text-sm text-white">RomM Server Tasks & Scans</h4>
+                    <p className="text-xs text-deck-dim">Trigger background library scans directly on your remote RomM instance</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       data-focusable
                       disabled={scanningServer}
                       onClick={() => handleTriggerScan('quick')}
-                      className="px-3.5 py-2 rounded-lg bg-deck-panel-2 hover:bg-deck-panel border border-deck-line text-xs font-bold text-white flex items-center gap-2 transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                      className="px-3.5 py-2 rounded-lg bg-deck-panel-2 hover:bg-deck-panel border border-deck-line text-xs font-bold text-white flex items-center gap-2 transition-all shrink-0 active:scale-95 disabled:opacity-50 cursor-pointer"
                     >
                       <RefreshCw size={14} className={scanningServer ? 'animate-spin' : ''} />
                       Quick Scan (New Files)
@@ -328,7 +345,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       data-focusable
                       disabled={scanningServer}
                       onClick={() => handleTriggerScan('full')}
-                      className="px-3.5 py-2 rounded-lg bg-deck-panel-2 hover:bg-deck-panel border border-deck-line text-xs font-bold text-deck-accent flex items-center gap-2 transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                      className="px-3.5 py-2 rounded-lg bg-deck-panel-2 hover:bg-deck-panel border border-deck-line text-xs font-bold text-deck-accent flex items-center gap-2 transition-all shrink-0 active:scale-95 disabled:opacity-50 cursor-pointer"
                     >
                       <RefreshCw size={14} className={scanningServer ? 'animate-spin' : ''} />
                       Full Rescan & Metadata Refresh
@@ -343,314 +360,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               )}
             </Section>
 
-            {isNativeApp && (
-              <Section icon={<Gamepad2 size={16} />} title="Emulation">
-                <div className="flex gap-3">
-                  <input
-                    data-focusable
-                    data-keyboard-title="Emulation folder (contains roms/)"
-                    value={emuPath}
-                    placeholder={
-                      storage?.emulationRoot
-                        ? `Auto: ${storage.emulationRoot}`
-                        : 'Auto-detect (EmuDeck / SD card)'
-                    }
-                    onChange={(e) => {
-                      setEmuPath(e.target.value);
-                      onChange({ emulationPath: e.target.value.trim() });
-                    }}
-                    className={input}
-                  />
-                  <button data-focusable onClick={browse} className="h-12 px-4 rounded-xl bg-deck-panel-2 border border-deck-line font-semibold flex items-center gap-2">
-                    <FolderOpen size={18} /> Browse
-                  </button>
-                </div>
-                <button data-focusable onClick={cycleLauncher} className="deck-row w-full min-h-14 px-4 py-2 rounded-xl flex items-center justify-between gap-4 text-left bg-deck-panel/70">
-                  <span>
-                    <span className="block font-semibold">Launcher</span>
-                    <span className="block text-sm text-deck-dim">{launcher.hint}</span>
-                  </span>
-                  <span className="font-bold text-deck-accent-2">{'\u25C0'} {launcher.label} {'\u25B6'}</span>
-                </button>
-                {config.launcherMode === 'custom' && (
-                  <input
-                    data-focusable
-                    data-keyboard-title="Custom launch command"
-                    value={customCmd}
-                    placeholder='flatpak run org.libretro.RetroArch -L {core} "{rom}"'
-                    onChange={(e) => {
-                      setCustomCmd(e.target.value);
-                      onChange({ customLaunchCommand: e.target.value });
-                    }}
-                    className={input}
-                  />
-                )}
-                <Toggle label="RetroArch fullscreen" hint="Pass -f so games open fullscreen in Game Mode" value={config.retroarchFullscreen !== false} onChange={(v) => onChange({ retroarchFullscreen: v })} />
-              </Section>
-            )}
-
-            <Section icon={<Cpu size={16} />} title="Emulator Cores (Native Defaults & Overrides)">
-              <div className="flex flex-col gap-2">
-                {CONFIGURABLE_PLATFORMS.map((p) => {
-                  const activeCore = config.platformCores?.[p.slug] || p.defaultCore;
-                  const coreObj = PLATFORM_AVAILABLE_CORES[p.slug]?.find((c) => c.id === activeCore);
-                  const coreName = coreObj ? coreObj.name : activeCore;
-
-                  return (
-                    <button
-                      key={p.slug}
-                      data-focusable
-                      onClick={() => setEditingPlatformSlug(p.slug)}
-                      className="deck-row w-full min-h-14 px-4 py-2.5 rounded-xl flex items-center justify-between gap-4 text-left bg-deck-panel/70 border border-deck-line hover:border-deck-dim/50 transition-colors"
-                    >
-                      <div className="min-w-0">
-                        <span className="font-semibold block text-white">{p.name}</span>
-                        <span className="text-xs text-deck-dim">Default: {p.defaultCore}</span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-sm font-bold text-deck-accent">{coreName}</span>
-                        <ChevronRight size={16} className="text-deck-dim" />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </Section>
-
-            {isNativeApp && (
-              <Section
-                icon={<Download size={16} />}
-                title="Standalone Emulators (Flatpaks)"
-              >
-                {launchMessage && (
-                  <div className="mb-2 p-3 rounded-xl bg-sky-950/60 border border-sky-400/40 text-sky-200 text-xs font-mono font-bold animate-in fade-in flex items-center justify-between">
-                    <span>{launchMessage}</span>
-                  </div>
-                )}
-                {onOpenEmulatorsModal && (
-                  <div className="mb-3 flex justify-end">
-                    <button
-                      data-focusable
-                      onClick={onOpenEmulatorsModal}
-                      className="px-4 py-2 rounded-xl text-xs font-extrabold bg-sky-600/30 hover:bg-sky-600/50 border border-sky-400/40 text-sky-200 flex items-center gap-2 transition-all cursor-pointer shadow-sm"
-                    >
-                      <Sliders size={14} className="text-sky-300" />
-                      <span>Open Standalone Emulators Manager</span>
-                    </button>
-                  </div>
-                )}
-                <div className="flex flex-col gap-2">
-                  {SUPPORTED_STANDALONE_EMULATORS.map((emu) => {
-                    const isInstalled = Boolean(installedFlatpaks[emu.flatpakId]);
-                    const isInstalling = Boolean(installingFlatpaks[emu.flatpakId]);
-                    const progress = installingFlatpaks[emu.flatpakId]?.progress;
-                    const errMsg = installErrors[emu.flatpakId];
-
-                    return (
-                      <div
-                        key={emu.id}
-                        className="rounded-xl bg-deck-panel/70 border border-deck-line p-4 flex items-center justify-between gap-4"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-extrabold text-white text-base">{emu.name}</span>
-                            <span className="text-xs font-mono text-deck-dim">({emu.flatpakId})</span>
-                            {isInstalled ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                                <CheckCircle2 size={11} /> Installed
-                              </span>
-                            ) : isInstalling ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
-                                <Loader2 size={11} className="animate-spin" /> Installing {progress != null ? `${progress}%` : ''}
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                                <AlertTriangle size={11} /> Not Installed
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-deck-dim mt-0.5">{emu.description}</p>
-                          <p className="text-[11px] text-deck-accent font-medium mt-0.5">Platforms: {emu.platforms.join(', ')}</p>
-                          {errMsg && <p className="text-xs text-red-400 font-semibold mt-1">{errMsg}</p>}
-                        </div>
-
-                        {isInstalled ? (
-                          <button
-                            data-focusable
-                            onClick={() => handleLaunchStandalone(emu.flatpakId, emu.name)}
-                            className="px-4 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white flex items-center gap-2 border border-sky-400/40 shadow-md transition-all shrink-0 active:scale-95 cursor-pointer"
-                            title={`Launch ${emu.name} without a game running to update settings`}
-                          >
-                            <Play size={13} className="fill-white" />
-                            <span>Launch Settings / GUI</span>
-                          </button>
-                        ) : (
-                          <button
-                            data-focusable
-                            disabled={isInstalling}
-                            onClick={() => handleInstallEmulator(emu.flatpakId)}
-                            className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-2 border border-blue-400/30 shadow-md transition-all shrink-0 disabled:opacity-50"
-                          >
-                            {isInstalling ? (
-                              <>
-                                <Loader2 size={14} className="animate-spin" />
-                                <span>Installing...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Download size={14} />
-                                <span>Install Flatpak</span>
-                              </>
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </Section>
-            )}
-
-            <Section icon={<Cpu size={16} />} title="BIOS & Firmware">
-              <div className="rounded-xl bg-deck-panel/70 p-4 border border-deck-line space-y-3">
-                <div className="text-sm text-deck-dim leading-relaxed">
-                  Standalone emulators like <strong className="text-white">PCSX2 (PlayStation 2)</strong>, <strong className="text-white">DuckStation (PS1)</strong>, and <strong className="text-white">Flycast (Dreamcast)</strong> require system BIOS files to boot games. DeckRomM pulls them down directly from your RomM server into <code className="text-deck-accent font-mono">~/Emulation/bios</code> and auto-syncs them to Flatpak emulator directories.
-                </div>
-                <div className="flex flex-wrap items-center gap-3 pt-1">
-                  {onOpenBiosModal && (
-                    <button
-                      data-focusable
-                      onClick={onOpenBiosModal}
-                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-deck-accent hover:bg-deck-accent-hover text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
-                    >
-                      <Cpu size={15} />
-                      <span>Open BIOS & Firmware Manager</span>
-                    </button>
-                  )}
-                  {isNativeApp && (
-                    <button
-                      data-focusable
-                      onClick={() => bridge.bios.openFolder()}
-                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-white flex items-center gap-2 transition-all cursor-pointer"
-                    >
-                      <FolderOpen size={15} />
-                      <span>Open BIOS Directory</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            </Section>
-
-            <Section icon={<HardDrive size={16} />} title="PlayStation 2 (PCSX2) Memory Cards">
-              <Pcsx2MemcardManager onToast={onToast || ((msg) => {})} />
-            </Section>
-
-            <Section icon={<ArrowUpCircle size={16} />} title="App Updates & GitHub">
-              <div className="rounded-xl bg-deck-panel/70 p-4 border border-deck-line space-y-3">
-                <div className="text-sm text-deck-dim">
-                  DeckRomM can check GitHub on launch for newer commits and upgrade the application in place.
-                </div>
-                <Toggle
-                  label="Check for updates on launch"
-                  hint="Automatically check GitHub for new commits when DeckRomM starts"
-                  value={config.autoCheckUpdates !== false}
-                  onChange={(v) => onChange({ autoCheckUpdates: v })}
-                />
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="block text-deck-dim mb-1 text-xs font-semibold">Repository (owner/repo):</label>
-                    <input
-                      id="settings-github-repo"
-                      data-focusable
-                      type="text"
-                      value={config.githubRepo || ''}
-                      onChange={(e) => onChange({ githubRepo: e.target.value.trim() || undefined })}
-                      placeholder="e.g. username/deckromm"
-                      data-keyboard-title="GitHub Repository (owner/repo)"
-                      data-keyboard-mode="text"
-                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-deck-dim mb-1 text-xs font-semibold">Branch:</label>
-                    <input
-                      id="settings-github-branch"
-                      data-focusable
-                      type="text"
-                      value={config.githubBranch || ''}
-                      onChange={(e) => onChange({ githubBranch: e.target.value.trim() || undefined })}
-                      placeholder="main"
-                      data-keyboard-title="GitHub Branch"
-                      data-keyboard-mode="text"
-                      className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs"
-                    />
-                  </div>
-                </div>
-                <div className="pt-2">
-                  {onOpenUpdateModal && (
-                    <button
-                      data-focusable
-                      onClick={onOpenUpdateModal}
-                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
-                    >
-                      <ArrowUpCircle size={15} />
-                      <span>Check for Updates & Upgrade in Place</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            </Section>
-
-            <Section icon={<SlidersHorizontal size={16} />} title="Library">
-              <Toggle
-                label="Offline Mode (Downloaded Games Only)"
-                hint="Only display games downloaded to this Steam Deck that can be played locally without an internet connection"
-                value={Boolean(config.offlineOnlyMode)}
-                onChange={(v) => onChange({ offlineOnlyMode: v })}
-              />
-              <Toggle
-                label="Hide Japanese ROMs by default"
-                hint="Exclude untranslated Japanese releases from library lists"
-                value={Boolean(config.hideJapanese || config.languageFilter === 'no-ja')}
-                onChange={(v) => onChange({ hideJapanese: v, languageFilter: v ? 'no-ja' : 'all' })}
-              />
-              <Toggle label="Hide BIOS / info files" hint="Skip .txt, .nfo, .jpg and similar entries" value={config.hideInfoFiles !== false} onChange={(v) => onChange({ hideInfoFiles: v })} />
-              <Toggle label="Navigation sounds" value={config.audioFeedback !== false} onChange={(v) => onChange({ audioFeedback: v })} />
-
-              <div className="pt-3 pb-1 border-t border-white/10 flex items-center justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold text-white text-sm">Download All Offline Covers</div>
-                  <div className="text-xs text-deck-dim">Pre-cache box art for all downloaded games on disk so everything is visible while offline</div>
-                  {artSyncMsg && <div className="text-xs font-bold text-emerald-400 mt-1 animate-in fade-in">{artSyncMsg}</div>}
-                </div>
-                <button
-                  data-focusable
-                  onClick={async () => {
-                    soundService.playTick();
-                    setSyncingArt(true);
-                    try {
-                      const res = await rommApi.syncAllOfflineArtwork();
-                      soundService.playSuccess();
-                      setArtSyncMsg(res.message);
-                      setTimeout(() => setArtSyncMsg(null), 5000);
-                    } catch (e: any) {
-                      soundService.playBack();
-                      setArtSyncMsg(`Failed: ${e.message}`);
-                      setTimeout(() => setArtSyncMsg(null), 5000);
-                    } finally {
-                      setSyncingArt(false);
-                    }
-                  }}
-                  disabled={syncingArt}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
-                >
-                  <Sparkles size={14} className={syncingArt ? 'animate-spin' : ''} />
-                  <span>{syncingArt ? 'Downloading...' : 'Sync Offline Art'}</span>
-                </button>
-              </div>
-            </Section>
-
-            <Section icon={<Palette size={16} />} title="Steam Deck Display & Controller Haptics">
+            {/* 2. Steam Deck Display & Physical Feedback */}
+            <Section icon={<Palette size={16} />} title="Steam Deck Display & Physical Feedback">
               {/* Theme Picker */}
               <div className="p-4 rounded-xl bg-deck-panel/70 flex flex-col gap-3">
                 <div>
@@ -672,7 +383,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                           soundService.playSelect();
                           onChange({ theme: t.id as any });
                         }}
-                        className={`p-3 rounded-xl border text-left transition-all ${
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-deck-accent/20 border-deck-accent text-white shadow-sm'
                             : 'bg-deck-panel-2/60 border-deck-line text-deck-dim hover:text-white hover:border-deck-dim'
@@ -692,6 +403,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 hint="Overlay authentic arcade/phosphor scanlines on box art and screenshot previews"
                 value={Boolean(config.crtScanlines)}
                 onChange={(v) => onChange({ crtScanlines: v })}
+              />
+
+              {/* Navigation Sounds (Grouped with Physical Feedback) */}
+              <Toggle
+                label="Navigation Sounds & Audio Cues"
+                hint="Play subtle Steam-style audio clicks on D-pad movements and button selections"
+                value={config.audioFeedback !== false}
+                onChange={(v) => {
+                  soundService.enabled = v;
+                  onChange({ audioFeedback: v });
+                  if (v) soundService.playTick();
+                }}
               />
 
               {/* Haptics Toggle */}
@@ -729,7 +452,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                             hapticsService.select();
                             onChange({ hapticsIntensity: lvl });
                           }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold capitalize border transition-all ${
+                          className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold capitalize border transition-all cursor-pointer ${
                             isCurrent
                               ? 'bg-deck-accent text-white border-deck-accent shadow-sm'
                               : 'bg-deck-panel-2 border-deck-line text-deck-dim hover:text-white'
@@ -744,6 +467,216 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               )}
             </Section>
 
+            {/* 3. Emulation & EmuDeck */}
+            <Section icon={<Gamepad2 size={16} />} title="Emulation & EmuDeck">
+              {isNativeApp && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-3">
+                    <input
+                      data-focusable
+                      data-keyboard-title="Emulation folder (contains roms/)"
+                      value={emuPath}
+                      placeholder={
+                        storage?.emulationRoot
+                          ? `Auto: ${storage.emulationRoot}`
+                          : 'Auto-detect (EmuDeck / SD card)'
+                      }
+                      onChange={(e) => {
+                        setEmuPath(e.target.value);
+                        onChange({ emulationPath: e.target.value.trim() });
+                      }}
+                      className={input}
+                    />
+                    <button data-focusable onClick={browse} className="h-12 px-4 rounded-xl bg-deck-panel-2 border border-deck-line font-semibold flex items-center gap-2 cursor-pointer">
+                      <FolderOpen size={18} /> Browse
+                    </button>
+                  </div>
+                  <button data-focusable onClick={cycleLauncher} className="deck-row w-full min-h-14 px-4 py-2 rounded-xl flex items-center justify-between gap-4 text-left bg-deck-panel/70">
+                    <span>
+                      <span className="block font-semibold">Launcher</span>
+                      <span className="block text-sm text-deck-dim">{launcher.hint}</span>
+                    </span>
+                    <span className="font-bold text-deck-accent-2">{'\u25C0'} {launcher.label} {'\u25B6'}</span>
+                  </button>
+                  {config.launcherMode === 'custom' && (
+                    <input
+                      data-focusable
+                      data-keyboard-title="Custom launch command"
+                      value={customCmd}
+                      placeholder='flatpak run org.libretro.RetroArch -L {core} "{rom}"'
+                      onChange={(e) => {
+                        setCustomCmd(e.target.value);
+                        onChange({ customLaunchCommand: e.target.value });
+                      }}
+                      className={input}
+                    />
+                  )}
+                  <Toggle label="RetroArch fullscreen" hint="Pass -f so games open fullscreen in Game Mode" value={config.retroarchFullscreen !== false} onChange={(v) => onChange({ retroarchFullscreen: v })} />
+                </div>
+              )}
+
+              {/* EmuDeck Quick Tools Card */}
+              <div className="p-4 rounded-xl bg-deck-panel/70 border border-deck-line flex flex-col gap-3">
+                <div>
+                  <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                    <Sliders size={16} className="text-deck-accent" />
+                    <span>EmuDeck & Emulator Management</span>
+                  </h4>
+                  <p className="text-xs text-deck-dim mt-0.5">Quick access to standalone Flatpak emulators, system BIOS managers, and memory card sync</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                  {onOpenEmulatorsModal && (
+                    <button
+                      data-focusable
+                      onClick={onOpenEmulatorsModal}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-sky-600/30 hover:bg-sky-600/50 border border-sky-400/40 text-sky-200 flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                    >
+                      <Sliders size={14} className="text-sky-300" />
+                      <span>Manage Standalone Emulators</span>
+                    </button>
+                  )}
+                  {onOpenBiosModal && (
+                    <button
+                      data-focusable
+                      onClick={onOpenBiosModal}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-deck-accent hover:bg-deck-accent-hover text-white flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                    >
+                      <Cpu size={14} />
+                      <span>BIOS & Firmware Manager</span>
+                    </button>
+                  )}
+                  {isNativeApp && (
+                    <button
+                      data-focusable
+                      onClick={() => bridge.bios.openFolder()}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-deck-panel-2 hover:bg-deck-panel border border-deck-line text-white flex items-center gap-2 transition-all cursor-pointer"
+                    >
+                      <FolderOpen size={14} />
+                      <span>Open BIOS Folder</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* PCSX2 Memory Card Sync */}
+              <div className="rounded-xl bg-deck-panel/70 p-4 border border-deck-line space-y-3">
+                <div className="flex items-center gap-2">
+                  <HardDrive size={16} className="text-amber-400" />
+                  <span className="font-bold text-sm text-white">PlayStation 2 (PCSX2) Memory Cards</span>
+                </div>
+                <Pcsx2MemcardManager onToast={onToast || ((msg) => {})} />
+              </div>
+
+              {/* Platform Core Associations */}
+              <div className="rounded-xl bg-deck-panel/70 p-4 border border-deck-line space-y-3">
+                <div>
+                  <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                    <Cpu size={16} className="text-deck-accent" />
+                    <span>Platform Default Cores & Overrides</span>
+                  </h4>
+                  <p className="text-xs text-deck-dim mt-0.5">Select preferred emulator core or standalone runner per retro console</p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {CONFIGURABLE_PLATFORMS.map((p) => {
+                    const activeCore = config.platformCores?.[p.slug] || p.defaultCore;
+                    const coreObj = PLATFORM_AVAILABLE_CORES[p.slug]?.find((c) => c.id === activeCore);
+                    const coreName = coreObj ? coreObj.name : activeCore;
+
+                    return (
+                      <button
+                        key={p.slug}
+                        data-focusable
+                        onClick={() => setEditingPlatformSlug(p.slug)}
+                        className="deck-row w-full min-h-12 px-4 py-2 rounded-xl flex items-center justify-between gap-4 text-left bg-deck-panel-2/60 border border-deck-line hover:border-deck-dim/50 transition-colors cursor-pointer"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-semibold block text-white text-sm">{p.name}</span>
+                          <span className="text-[11px] text-deck-dim">Default: {p.defaultCore}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs font-bold text-deck-accent">{coreName}</span>
+                          <ChevronRight size={16} className="text-deck-dim" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </Section>
+
+            {/* 4. Storage & Library Rules */}
+            <Section icon={<SlidersHorizontal size={16} />} title="Storage & Offline Library">
+              {storage && (
+                <div data-focusable tabIndex={-1} className="rounded-xl bg-deck-panel/70 p-4 grid grid-cols-2 gap-3 text-sm border border-deck-line">
+                  <div>
+                    <div className="text-deck-dim">ROM folder</div>
+                    <div className="font-mono truncate">{storage.emulationRoot}/roms</div>
+                  </div>
+                  <div>
+                    <div className="text-deck-dim">Target</div>
+                    <div>{storage.storageTarget === 'sdcard' ? 'microSD card' : 'Internal SSD'}</div>
+                  </div>
+                  <div>
+                    <div className="text-deck-dim">Internal free</div>
+                    <div>{formatBytes(storage.internalFreeBytes)} of {formatBytes(storage.internalTotalBytes)}</div>
+                  </div>
+                  <div>
+                    <div className="text-deck-dim">microSD free</div>
+                    <div>{storage.sdCardMounted ? `${formatBytes(storage.sdFreeBytes)} of ${formatBytes(storage.sdTotalBytes)}` : 'Not inserted'}</div>
+                  </div>
+                </div>
+              )}
+
+              {onOpenStorage && (
+                <div>
+                  <button
+                    data-focusable
+                    onClick={onOpenStorage}
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                  >
+                    <HardDrive size={15} />
+                    <span>Manage Downloaded Games & Storage Space</span>
+                  </button>
+                </div>
+              )}
+
+              <Toggle label="Hide BIOS / info files" hint="Skip .txt, .nfo, .jpg and similar non-game files in library lists" value={config.hideInfoFiles !== false} onChange={(v) => onChange({ hideInfoFiles: v })} />
+
+              {/* Pre-cache All Box Art */}
+              <div className="p-4 rounded-xl bg-deck-panel/70 border border-deck-line flex items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-white text-sm">Download All Offline Covers</div>
+                  <div className="text-xs text-deck-dim">Pre-cache box art for all downloaded games on disk so everything is visible while offline</div>
+                  {artSyncMsg && <div className="text-xs font-bold text-emerald-400 mt-1 animate-in fade-in">{artSyncMsg}</div>}
+                </div>
+                <button
+                  data-focusable
+                  onClick={async () => {
+                    soundService.playTick();
+                    setSyncingArt(true);
+                    try {
+                      const res = await rommApi.syncAllOfflineArtwork();
+                      soundService.playSuccess();
+                      setArtSyncMsg(res.message);
+                      setTimeout(() => setArtSyncMsg(null), 5000);
+                    } catch (e: any) {
+                      soundService.playBack();
+                      setArtSyncMsg(`Failed: ${e.message}`);
+                      setTimeout(() => setArtSyncMsg(null), 5000);
+                    } finally {
+                      setSyncingArt(false);
+                    }
+                  }}
+                  disabled={syncingArt}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+                >
+                  <Sparkles size={14} className={syncingArt ? 'animate-spin' : ''} />
+                  <span>{syncingArt ? 'Downloading...' : 'Sync Offline Art'}</span>
+                </button>
+              </div>
+            </Section>
+
+            {/* 5. RetroAchievements */}
             <Section icon={<Trophy size={16} />} title="RetroAchievements">
               <div className="p-4 rounded-xl bg-deck-panel/70 flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -771,7 +704,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </div>
                 </div>
 
-                {/* RomM Server Key Callout Banner */}
                 <div className="p-3 rounded-xl bg-sky-950/40 border border-sky-500/30 text-xs text-sky-200/90 leading-relaxed flex items-start gap-2.5">
                   <Sparkles size={16} className="text-sky-400 shrink-0 mt-0.5" />
                   <div>
@@ -860,54 +792,98 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </div>
             </Section>
 
-            {storage && (
-              <Section icon={<HardDrive size={16} />} title="Storage">
-                <div data-focusable tabIndex={-1} className="rounded-xl bg-deck-panel/70 p-4 grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-deck-dim">ROM folder</div>
-                    <div className="font-mono truncate">{storage.emulationRoot}/roms</div>
-                  </div>
-                  <div>
-                    <div className="text-deck-dim">Target</div>
-                    <div>{storage.storageTarget === 'sdcard' ? 'microSD card' : 'Internal SSD'}</div>
-                  </div>
-                  <div>
-                    <div className="text-deck-dim">Internal free</div>
-                    <div>{formatBytes(storage.internalFreeBytes)} of {formatBytes(storage.internalTotalBytes)}</div>
-                  </div>
-                  <div>
-                    <div className="text-deck-dim">microSD free</div>
-                    <div>{storage.sdCardMounted ? `${formatBytes(storage.sdFreeBytes)} of ${formatBytes(storage.sdTotalBytes)}` : 'Not inserted'}</div>
-                  </div>
-                </div>
-                {onOpenStorage && (
-                  <div className="pt-2">
+            {/* 6. System, Setup & Updates */}
+            <Section icon={<Info size={16} />} title="System, Setup & Updates">
+              <div className="rounded-xl bg-deck-panel/70 p-4 border border-deck-line space-y-4">
+                {/* Onboarding Wizard Launcher */}
+                {onOpenWizard && (
+                  <div className="p-3.5 rounded-xl bg-sky-950/40 border border-sky-400/30 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-bold text-white text-sm flex items-center gap-2">
+                        <Sparkles size={16} className="text-sky-400" />
+                        <span>First-Run Setup Wizard</span>
+                      </div>
+                      <div className="text-xs text-deck-dim mt-0.5">Re-run the initial handheld guided onboarding to auto-detect EmuDeck, test haptics, or switch libraries</div>
+                    </div>
                     <button
                       data-focusable
-                      onClick={onOpenStorage}
-                      className="px-4 py-2.5 rounded-xl text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                      onClick={onOpenWizard}
+                      className="px-4 py-2 rounded-xl text-xs font-extrabold bg-sky-600 hover:bg-sky-500 text-white flex items-center gap-2 shadow-sm transition-all active:scale-95 shrink-0 cursor-pointer"
                     >
-                      <HardDrive size={15} />
-                      <span>Manage Downloaded Games & Storage Space</span>
+                      <Sparkles size={14} />
+                      <span>Launch Wizard</span>
                     </button>
                   </div>
                 )}
-              </Section>
-            )}
 
-            {info && (
-              <Section icon={<Info size={16} />} title="About">
-                <div data-focusable tabIndex={-1} className="rounded-xl bg-deck-panel/70 p-4 text-sm grid grid-cols-2 gap-2">
-                  <span className="text-deck-dim">DeckRomM</span><span>{info.version}</span>
-                  <span className="text-deck-dim">Platform</span>
-                  <span>{info.gameMode ? 'SteamOS Game Mode' : 'Linux Desktop'}</span>
-                  <span className="text-deck-dim">Electron</span><span>{info.electron}</span>
-                  <span className="text-deck-dim">Session</span><span>{info.gameMode ? 'SteamOS Game Mode' : 'Desktop'}</span>
-                  <span className="text-deck-dim">Secret storage</span><span>{info.secureStorage}</span>
-                  <span className="text-deck-dim">Data folder</span><span className="font-mono truncate">{info.userData}</span>
+                {/* GitHub In-Place Updates */}
+                <div>
+                  <div className="text-sm font-semibold text-white mb-2">DeckRomM In-Place Updates</div>
+                  <Toggle
+                    label="Check for updates on launch"
+                    hint="Automatically check GitHub for new releases when DeckRomM starts"
+                    value={config.autoCheckUpdates !== false}
+                    onChange={(v) => onChange({ autoCheckUpdates: v })}
+                  />
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="block text-deck-dim mb-1 text-xs font-semibold">Repository (owner/repo):</label>
+                      <input
+                        id="settings-github-repo"
+                        data-focusable
+                        type="text"
+                        value={config.githubRepo || ''}
+                        onChange={(e) => onChange({ githubRepo: e.target.value.trim() || undefined })}
+                        placeholder="e.g. username/deckromm"
+                        data-keyboard-title="GitHub Repository (owner/repo)"
+                        data-keyboard-mode="text"
+                        className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-deck-dim mb-1 text-xs font-semibold">Branch:</label>
+                      <input
+                        id="settings-github-branch"
+                        data-focusable
+                        type="text"
+                        value={config.githubBranch || ''}
+                        onChange={(e) => onChange({ githubBranch: e.target.value.trim() || undefined })}
+                        placeholder="main"
+                        data-keyboard-title="GitHub Branch"
+                        data-keyboard-mode="text"
+                        className="w-full px-3 py-2 rounded-lg bg-black/40 border border-deck-line text-white font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                  {onOpenUpdateModal && (
+                    <div className="pt-3">
+                      <button
+                        data-focusable
+                        onClick={onOpenUpdateModal}
+                        className="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+                      >
+                        <ArrowUpCircle size={15} />
+                        <span>Check for Updates & Upgrade in Place</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </Section>
-            )}
+
+                {/* About Specs Card (Cleaned of duplicate session row) */}
+                {info && (
+                  <div className="pt-2 border-t border-white/10">
+                    <div className="text-xs font-bold text-deck-dim uppercase tracking-wide mb-2">System Diagnostics</div>
+                    <div data-focusable tabIndex={-1} className="rounded-xl bg-black/30 p-3.5 text-xs grid grid-cols-2 gap-2 border border-deck-line/60">
+                      <span className="text-deck-dim">DeckRomM Version</span><span className="font-mono text-white">{info.version}</span>
+                      <span className="text-deck-dim">Platform Environment</span><span className="text-white">{info.gameMode ? 'SteamOS Game Mode (Gamescope)' : 'Linux Desktop'}</span>
+                      <span className="text-deck-dim">Electron Runtime</span><span className="font-mono text-white">{info.electron}</span>
+                      <span className="text-deck-dim">Secret Storage</span><span className="text-white">{info.secureStorage}</span>
+                      <span className="text-deck-dim">User Data Folder</span><span className="font-mono truncate text-white">{info.userData}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Section>
           </div>
         </div>
       </FocusScope>

@@ -17,6 +17,7 @@ import { DeckPowerBadge } from './DeckPowerBadge';
 import { DeckPowerCard } from './DeckPowerCard';
 import { SaveVaultSection } from './SaveVaultSection';
 import { ManualViewerModal } from './ManualViewerModal';
+import { ButtonGlyph } from './ControllerHUD';
 import { getDeckPowerProfile } from '../utils/steamDeckPower';
 import { bridge, isNativeApp } from '../services/bridge';
 import { soundService } from '../services/soundService';
@@ -79,6 +80,26 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
   const [patcherOpen, setPatcherOpen] = useState(false);
   const [manualModalOpen, setManualModalOpen] = useState(false);
   const [coverError, setCoverError] = useState(false);
+  type DetailTab = 'overview' | 'saves' | 'guides' | 'media';
+  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+
+  const TABS: Array<{ id: DetailTab; label: string; icon: React.ReactNode }> = [
+    { id: 'overview', label: 'Overview & Play', icon: <Play size={14} /> },
+    { id: 'saves', label: 'Saves & Vault', icon: <Save size={14} /> },
+    { id: 'guides', label: 'Manual & Tools', icon: <BookOpen size={14} /> },
+    { id: 'media', label: 'Media & Specs', icon: <Layers size={14} /> },
+  ];
+
+  const cycleTab = (direction: 'next' | 'prev') => {
+    soundService.playTick();
+    const order: DetailTab[] = ['overview', 'saves', 'guides', 'media'];
+    const idx = order.indexOf(activeTab);
+    if (direction === 'next') {
+      setActiveTab(order[(idx + 1) % order.length]);
+    } else {
+      setActiveTab(order[(idx - 1 + order.length) % order.length]);
+    }
+  };
 
   useEffect(() => {
     setGame((g) => ({ ...g, ...initial }));
@@ -334,8 +355,15 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
       else onDownload(game);
       return true;
     }
-    // Swallow library-level shortcuts while the page is open.
-    return a === 'PREV_PLATFORM' || a === 'NEXT_PLATFORM' || a === 'FILTER' || a === 'VIEW_MODE_TOGGLE';
+    if (a === 'PREV_PLATFORM' || a === 'PAGE_UP') {
+      cycleTab('prev');
+      return true;
+    }
+    if (a === 'NEXT_PLATFORM' || a === 'PAGE_DOWN') {
+      cycleTab('next');
+      return true;
+    }
+    return a === 'FILTER' || a === 'VIEW_MODE_TOGGLE';
   };
 
   const btn = 'h-11 px-3.5 sm:px-4 rounded-xl flex items-center gap-2 font-bold text-xs sm:text-sm border whitespace-nowrap shrink-0 transition-all cursor-pointer';
@@ -441,683 +469,804 @@ export const GameDetailModal: React.FC<GameDetailModalProps> = ({
             )}
           </div>
 
-          {/* BIOS requirement indicator for PS2, PS1, Dreamcast */}
-          {(['ps2', 'playstation-2', 'playstation2', 'psx', 'ps1', 'playstation', 'dc', 'dreamcast'].includes(game.platformSlug?.toLowerCase() || '')) && (
-            <div className="mt-4 flex items-center gap-3 px-3.5 py-2 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs max-w-xl">
-              <Cpu size={16} className="text-purple-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <span className="font-bold text-purple-200">
-                  {['ps2', 'playstation-2', 'playstation2'].includes(game.platformSlug?.toLowerCase() || '') ? 'PS2 BIOS Required: ' : 'System BIOS: '}
-                </span>
-                <span className="text-purple-300/80">
-                  {['ps2', 'playstation-2', 'playstation2'].includes(game.platformSlug?.toLowerCase() || '')
-                    ? 'PCSX2 requires a PS2 BIOS file to boot.'
-                    : 'Ensure system BIOS files are in ~/Emulation/bios.'}
-                </span>
-              </div>
-              {onOpenBiosModal && (
-                <button
-                  data-focusable
-                  onClick={() => onOpenBiosModal(game.platformSlug)}
-                  className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all"
-                >
-                  Manage BIOS
-                </button>
-              )}
+          {/* Steam Deck Tab Bar with Bumper Navigation */}
+          <div className="mt-4 mb-4 flex items-center gap-2 p-1.5 rounded-2xl bg-deck-panel/90 border border-deck-line shadow-sm">
+            <div className="flex items-center gap-1 text-[11px] font-mono text-deck-dim px-2">
+              <ButtonGlyph button="LB" />
             </div>
-          )}
-
-          {/* Xbox Environment requirement indicator */}
-          {(['xbox', 'og-xbox', 'original-xbox'].includes(game.platformSlug?.toLowerCase() || '')) && (
-            <div className="mt-4 flex flex-wrap items-center gap-3 px-3.5 py-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs max-w-xl">
-              <HardDrive size={16} className="text-emerald-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-bold text-emerald-200">Xbox (xemu) Environment:</span>
-                  <span className="text-emerald-300/80">
-                    Requires 8GB Virtual Hard Disk (xbox_hdd.qcow2), MCPX Boot ROM, & BIOS.
-                  </span>
-                </div>
-                {xboxSetupMessage && (
-                  <div className="text-[11px] text-emerald-300 font-semibold mt-1">{xboxSetupMessage}</div>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 flex-1">
+              {TABS.map((tab) => (
                 <button
+                  key={tab.id}
                   data-focusable
-                  disabled={settingUpXbox}
-                  onClick={async () => {
-                    setSettingUpXbox(true);
+                  id={`detail-tab-${tab.id}`}
+                  onClick={() => {
                     soundService.playTick();
-                    try {
-                      const res = await rommApi.autoSetupXbox();
-                      if (res.ok) {
-                        soundService.playSuccess();
-                        setXboxSetupMessage('✓ 8GB HDD created & xemu.toml configured!');
-                      } else {
-                        soundService.playBack();
-                        setXboxSetupMessage(`Setup note: ${res.message}`);
-                      }
-                    } catch (e: any) {
-                      soundService.playBack();
-                      setXboxSetupMessage(`Error: ${e.message}`);
-                    } finally {
-                      setSettingUpXbox(false);
-                    }
+                    setActiveTab(tab.id);
                   }}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all disabled:opacity-50"
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+                    activeTab === tab.id
+                      ? 'bg-deck-accent text-white shadow-lg ring-1 ring-deck-accent/50'
+                      : 'text-deck-dim hover:text-white hover:bg-white/5'
+                  }`}
                 >
-                  {settingUpXbox ? 'Configuring...' : '1-Click Setup Xbox'}
+                  {tab.icon}
+                  <span>{tab.label}</span>
                 </button>
-                {onOpenBiosModal && (
-                  <button
-                    data-focusable
-                    onClick={() => onOpenBiosModal('xbox')}
-                    className="px-2.5 py-1 rounded-lg bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all"
-                  >
-                    Manage BIOS & HDD
-                  </button>
-                )}
-              </div>
+              ))}
             </div>
-          )}
-
-          {/* Action Rows: Primary Actions + Secondary Tools */}
-          <div className="mt-5 space-y-3">
-            {/* Primary Action Row */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* Primary Action Button */}
-              <button
-                id="detail-primary"
-                data-focusable
-                disabled={emulatorRunning || launching}
-                onClick={handlePrimaryPlay}
-                className={`${btn} bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-white shadow-xl ring-1 ring-emerald-400/30 font-extrabold disabled:opacity-70 transition-all`}
-              >
-                {launching ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin text-white" />
-                    <span>Starting {activeCoreName}...</span>
-                  </>
-                ) : downloading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    <span>Downloading ({Math.round(progress || 0)}%)...</span>
-                  </>
-                ) : installed ? (
-                  <>
-                    <Play size={18} className="fill-white" />
-                    <span>{offlineMode ? 'Play Offline' : 'Play Game'}</span>
-                    <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
-                  </>
-                ) : streamable ? (
-                  <>
-                    <Globe size={18} />
-                    <span>Play (Stream)</span>
-                    <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
-                  </>
-                ) : (
-                  <>
-                    <Play size={18} className="fill-white" />
-                    <span>Download & Play</span>
-                    <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
-                  </>
-                )}
-              </button>
-
-              {/* Core Selector Button */}
-              <button
-                data-focusable
-                id="detail-core-selector"
-                onClick={() => setCoreModalOpen(true)}
-                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-accent hover:text-white flex items-center gap-2`}
-                title="Select which core or emulator to use for this game"
-              >
-                <Cpu size={16} className="text-deck-accent shrink-0" />
-                <span className="text-xs uppercase text-deck-dim font-bold">Core:</span>
-                <span className="font-extrabold text-white text-xs">{activeCoreName}</span>
-                <ChevronDown size={14} className="opacity-70 ml-0.5 shrink-0" />
-              </button>
-
-              {/* Favorite Button */}
-              <button
-                data-focusable
-                id="detail-favorite"
-                onClick={() => onToggleFavorite(game)}
-                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-dim flex items-center gap-2`}
-                title="Toggle favorite (Y button shortcut)"
-              >
-                <Star size={16} className={game.isFavorite ? 'text-yellow-400 fill-yellow-400' : 'text-deck-dim'} />
-                <span>{game.isFavorite ? 'Favorited' : 'Favorite'}</span>
-                <span className="ml-0.5 px-1.5 py-0.5 rounded bg-deck-bg text-[10px] font-mono font-bold text-deck-dim">Y</span>
-              </button>
-
-              {/* Download / Status Button */}
-              {downloading ? (
-                <button
-                  data-focusable
-                  onClick={() => onCancelDownload(game)}
-                  className={`${btn} bg-deck-panel-2 border-deck-line text-deck-danger hover:bg-deck-danger/20 flex items-center gap-2`}
-                >
-                  <Square size={16} />
-                  <span>Cancel ({Math.round(progress!)}%)</span>
-                </button>
-              ) : offlineMode ? (
-                <div
-                  className={`${btn} bg-deck-panel-2/50 border-deck-line text-deck-dim opacity-75 cursor-default flex items-center gap-2`}
-                  title="RomM server is offline; downloading requires an active network connection"
-                >
-                  <CloudOff size={16} className="text-amber-400" />
-                  <span>Offline ({installed ? 'Installed' : 'Unavailable'})</span>
-                </div>
-              ) : (
-                <button
-                  data-focusable
-                  id="detail-download"
-                  onClick={() => onDownload(game)}
-                  className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-dim flex items-center gap-2`}
-                  title="Download ROM locally (X button shortcut)"
-                >
-                  <Download size={16} />
-                  <span>{installed ? 'Re-download' : 'Download'}</span>
-                  <span className="ml-0.5 px-1.5 py-0.5 rounded bg-deck-bg text-[10px] font-mono font-bold text-deck-dim">X</span>
-                </button>
-              )}
-            </div>
-
-            {/* Secondary Tools & Standalone Emulator Row */}
-            <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
-              {/* Configure Standalone Emulator Directly */}
-              {standaloneEmu && (
-                <button
-                  data-focusable
-                  id="detail-configure-emulator"
-                  onClick={handleLaunchStandaloneConfig}
-                  className={`${btn} bg-sky-950/40 border-sky-500/40 text-sky-200 hover:bg-sky-900/50 hover:border-sky-400 flex items-center gap-2`}
-                  title={`Launch ${standaloneEmu.name} emulator directly to update settings, graphics, and controls`}
-                >
-                  <Sliders size={16} className="text-sky-400 shrink-0" />
-                  <span>Configure {standaloneEmu.name}</span>
-                </button>
-              )}
-
-              {/* Patch ROM / Hacks Button */}
-              <button
-                data-focusable
-                id="detail-patch-rom"
-                onClick={() => setPatcherOpen(true)}
-                className={`${btn} bg-deck-panel-2 border-deck-line text-deck-accent hover:border-deck-accent/50 flex items-center gap-2`}
-                title="Apply fan translations, color patches, or ROM hacks"
-              >
-                <Wand2 size={16} className="text-deck-accent shrink-0" />
-                <span>Patch ROM</span>
-              </button>
-
-              {/* Retro Game Manual & Strategy Guide Button */}
-              <button
-                data-focusable
-                id="detail-manual-btn"
-                onClick={() => {
-                  soundService.playTick();
-                  setManualModalOpen(true);
-                }}
-                className={`${btn} bg-amber-950/40 border-amber-500/40 text-amber-200 hover:bg-amber-900/50 hover:border-amber-400 flex items-center gap-2`}
-                title="View original retro game manual, controls, and strategy guide"
-              >
-                <BookOpen size={16} className="text-amber-400 shrink-0" />
-                <span>Manual & Guide</span>
-              </button>
-
-              {/* Offline Play Option if streamable and installed */}
-              {streamable && isNative && installed && (
-                <button
-                  data-focusable
-                  disabled={emulatorRunning}
-                  onClick={() => onLaunch(game)}
-                  className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text flex items-center gap-2`}
-                >
-                  <Play size={16} />
-                  <span>Launch Native</span>
-                </button>
-              )}
-
-              {/* Delete button */}
-              {installed && (
-                <button
-                  data-focusable
-                  id="detail-delete"
-                  onClick={() => onDelete(game)}
-                  className={`${btn} bg-deck-panel-2 border-deck-line text-red-400 hover:text-white hover:bg-red-950/40 hover:border-red-500/50 flex items-center gap-2`}
-                  title="Delete local ROM copy to free storage"
-                >
-                  <Trash2 size={16} className="text-red-400 shrink-0" />
-                  <span>Delete</span>
-                </button>
-              )}
+            <div className="flex items-center gap-1 text-[11px] font-mono text-deck-dim px-2">
+              <ButtonGlyph button="RB" />
             </div>
           </div>
 
-          {standaloneLaunchMessage && (
-            <div className="mt-3 p-3.5 rounded-xl bg-sky-950/70 border border-sky-400/50 text-sky-200 text-xs font-mono font-bold animate-in fade-in flex items-center gap-2.5">
-              <Sliders size={16} className="text-sky-400 shrink-0" />
-              <span>{standaloneLaunchMessage}</span>
-            </div>
-          )}
-
-          {downloading && (
-            <div className="mt-4 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between text-xs text-deck-dim">
-                <span>Downloading ROM for seamless offline play...</span>
-                <span className="font-mono font-bold text-white">{Math.round(progress || 0)}%</span>
-              </div>
-              <div className="h-2.5 rounded-full bg-deck-panel-2 overflow-hidden border border-deck-line">
-                <div className="h-full bg-deck-accent transition-[width] duration-200" style={{ width: `${progress}%` }} />
-              </div>
-            </div>
-          )}
-
-          {/* Missing Standalone Emulator Alert Banner */}
-          {isNative && flatpakId && flatpakInstalled === false && (
-            <div className="mt-4 p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="h-10 w-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
-                  <AlertTriangle size={20} />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-white flex items-center gap-2">
-                    Standalone Emulator Required ({activeCoreName})
-                  </h3>
-                  <p className="text-xs text-amber-200/80">
-                    {activeCoreName} ({flatpakId}) is not installed on this Steam Deck. Install it directly from DeckRomM.
-                  </p>
-                  {flatpakError && <p className="text-xs text-red-400 font-semibold mt-1">{flatpakError}</p>}
-                </div>
-              </div>
-
-              <button
-                data-focusable
-                disabled={flatpakInstalling}
-                onClick={handleInstallFlatpak}
-                className="px-4 py-2.5 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-2 border border-blue-400/30 shadow-lg transition-all shrink-0 active:scale-95 disabled:opacity-50"
-              >
-                {flatpakInstalling ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Installing {flatpakProgress != null ? `${flatpakProgress}%` : ''}</span>
-                  </>
-                ) : (
-                  <>
-                    <Download size={16} />
-                    <span>Install {activeCoreName}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          <div className="mt-6 flex flex-col gap-4">
-            {/* PCSX2 Memory Card Sync (PlayStation 2) */}
-            {game.platformSlug === 'ps2' && (
-              <Pcsx2MemcardManager game={game} onToast={onToast || ((msg) => {})} />
-            )}
-            {/* Server Tags */}
-            {game.tags && game.tags.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <Tag size={14} className="text-deck-dim" />
-                <span className="text-xs font-bold text-deck-dim uppercase tracking-wider">Tags:</span>
-                {game.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2.5 py-1 rounded-md text-xs font-semibold bg-deck-accent/15 border border-deck-accent/30 text-deck-accent"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <section data-focusable tabIndex={-1} className={section}>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent mb-2.5">About</h2>
-              {loadingDetails && !game.summary ? (
-                <div className="flex items-center gap-2 text-deck-dim">
-                  <Loader2 size={16} className="animate-spin" /> Loading details
-                </div>
-              ) : (
-                <p className="text-sm sm:text-base leading-relaxed whitespace-pre-line text-deck-text/90">{game.summary || 'No description available.'}</p>
-              )}
-            </section>
-
-            {/* Playtime Tracker Section */}
-            <section data-focusable tabIndex={-1} className={`${section} flex flex-col gap-3.5`}>
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-11 w-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
-                    <Clock size={22} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-deck-accent">Hours Played</span>
-                      <span className="text-[10px] text-deck-dim/70 font-mono">(active play)</span>
-                    </div>
-                    <div className="flex items-baseline gap-2.5 flex-wrap">
-                      <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">{playtimeDetail.primary}</span>
-                      {playtimeDetail.secondary && (
-                        <span className="text-xs font-mono text-deck-dim font-medium">({playtimeDetail.secondary})</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* RomM Sync indicator & manual sync button */}
-                <div className="flex items-center gap-2 shrink-0">
-                  {isSyncingPlaytime ? (
-                    <div className="flex items-center gap-2 text-xs font-bold text-deck-dim bg-deck-panel-2 px-3 py-2 rounded-xl border border-deck-line">
-                      <Loader2 size={14} className="animate-spin text-deck-accent" />
-                      <span>Syncing with RomM...</span>
-                    </div>
-                  ) : playtimeRecord?.lastSyncedAt ? (
-                    <button
-                      data-focusable
-                      onClick={handleSyncPlaytime}
-                      title="Playtime is synchronized with your RomM server. Click to re-sync."
-                      className="flex items-center gap-2 text-xs font-bold text-deck-ok bg-deck-ok/10 hover:bg-deck-ok/20 border border-deck-ok/30 px-3.5 py-2 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
-                    >
-                      <Cloud size={14} className="text-deck-ok" />
-                      <span>Synced with RomM</span>
-                      <RefreshCw size={12} className="opacity-60 ml-0.5" />
-                    </button>
-                  ) : totalPlaytimeSeconds > 0 ? (
-                    <button
-                      data-focusable
-                      onClick={handleSyncPlaytime}
-                      title="Sync this game's playtime to your RomM server"
-                      className="flex items-center gap-2 text-xs font-bold text-sky-200 bg-sky-950/60 hover:bg-sky-900/70 border border-sky-400/40 px-3.5 py-2 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
-                    >
-                      <RefreshCw size={14} className="text-sky-400" />
-                      <span>Sync to RomM</span>
-                    </button>
+          {/* TAB 1: OVERVIEW & PLAY */}
+          {activeTab === 'overview' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Primary Action Row */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Primary Action Button */}
+                <button
+                  id="detail-primary"
+                  data-focusable
+                  disabled={emulatorRunning || launching}
+                  onClick={handlePrimaryPlay}
+                  className={`${btn} bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-white shadow-xl ring-1 ring-emerald-400/30 font-extrabold disabled:opacity-70 transition-all`}
+                >
+                  {launching ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin text-white" />
+                      <span>Starting {activeCoreName}...</span>
+                    </>
+                  ) : downloading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>Downloading ({Math.round(progress || 0)}%)...</span>
+                    </>
+                  ) : installed ? (
+                    <>
+                      <Play size={18} className="fill-white" />
+                      <span>{offlineMode ? 'Play Offline' : 'Play Game'}</span>
+                      <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
+                    </>
+                  ) : streamable ? (
+                    <>
+                      <Globe size={18} />
+                      <span>Play (Stream)</span>
+                      <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
+                    </>
                   ) : (
-                    <div className="text-xs text-deck-dim/70 font-mono px-3 py-1.5 rounded-lg bg-deck-panel-2/40 border border-deck-line/40">
-                      Unplayed
-                    </div>
+                    <>
+                      <Play size={18} className="fill-white" />
+                      <span>Download & Play</span>
+                      <span className="ml-1 px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono font-bold text-white/90">A</span>
+                    </>
                   )}
-                </div>
+                </button>
+
+                {/* Core Selector Button */}
+                <button
+                  data-focusable
+                  id="detail-core-selector"
+                  onClick={() => setCoreModalOpen(true)}
+                  className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-accent hover:text-white flex items-center gap-2`}
+                  title="Select which core or emulator to use for this game"
+                >
+                  <Cpu size={16} className="text-deck-accent shrink-0" />
+                  <span className="text-xs uppercase text-deck-dim font-bold">Core:</span>
+                  <span className="font-extrabold text-white text-xs">{activeCoreName}</span>
+                  <ChevronDown size={14} className="opacity-70 ml-0.5 shrink-0" />
+                </button>
+
+                {/* Favorite Button */}
+                <button
+                  data-focusable
+                  id="detail-favorite"
+                  onClick={() => onToggleFavorite(game)}
+                  className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-dim flex items-center gap-2`}
+                  title="Toggle favorite (Y button shortcut)"
+                >
+                  <Star size={16} className={game.isFavorite ? 'text-yellow-400 fill-yellow-400' : 'text-deck-dim'} />
+                  <span>{game.isFavorite ? 'Favorited' : 'Favorite'}</span>
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded bg-deck-bg text-[10px] font-mono font-bold text-deck-dim">Y</span>
+                </button>
+
+                {/* Download / Status Button */}
+                {downloading ? (
+                  <button
+                    data-focusable
+                    onClick={() => onCancelDownload(game)}
+                    className={`${btn} bg-deck-panel-2 border-deck-line text-deck-danger hover:bg-deck-danger/20 flex items-center gap-2`}
+                  >
+                    <Square size={16} />
+                    <span>Cancel ({Math.round(progress!)}%)</span>
+                  </button>
+                ) : offlineMode ? (
+                  <div
+                    className={`${btn} bg-deck-panel-2/50 border-deck-line text-deck-dim opacity-75 cursor-default flex items-center gap-2`}
+                    title="RomM server is offline; downloading requires an active network connection"
+                  >
+                    <CloudOff size={16} className="text-amber-400" />
+                    <span>Offline ({installed ? 'Installed' : 'Unavailable'})</span>
+                  </div>
+                ) : (
+                  <button
+                    data-focusable
+                    id="detail-download"
+                    onClick={() => onDownload(game)}
+                    className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text hover:border-deck-dim flex items-center gap-2`}
+                    title="Download ROM locally (X button shortcut)"
+                  >
+                    <Download size={16} />
+                    <span>{installed ? 'Re-download' : 'Download'}</span>
+                    <span className="ml-0.5 px-1.5 py-0.5 rounded bg-deck-bg text-[10px] font-mono font-bold text-deck-dim">X</span>
+                  </button>
+                )}
+
+                {/* Configure Standalone Emulator Directly */}
+                {standaloneEmu && (
+                  <button
+                    data-focusable
+                    id="detail-configure-emulator"
+                    onClick={handleLaunchStandaloneConfig}
+                    className={`${btn} bg-sky-950/40 border-sky-500/40 text-sky-200 hover:bg-sky-900/50 hover:border-sky-400 flex items-center gap-2`}
+                    title={`Launch ${standaloneEmu.name} emulator directly to update settings, graphics, and controls`}
+                  >
+                    <Sliders size={16} className="text-sky-400 shrink-0" />
+                    <span>Configure {standaloneEmu.name}</span>
+                  </button>
+                )}
+
+                {/* Offline Play Option if streamable and installed */}
+                {streamable && isNative && installed && (
+                  <button
+                    data-focusable
+                    disabled={emulatorRunning}
+                    onClick={() => onLaunch(game)}
+                    className={`${btn} bg-deck-panel-2 border-deck-line text-deck-text flex items-center gap-2`}
+                  >
+                    <Play size={16} />
+                    <span>Launch Native</span>
+                  </button>
+                )}
               </div>
 
-              {/* Session breakdown & pause immunity guarantee */}
-              <div className="flex items-center justify-between gap-3 text-xs text-deck-dim pt-2 border-t border-deck-line/40 flex-wrap">
-                <div className="flex items-center gap-4 flex-wrap">
-                  {Boolean(playtimeRecord?.sessionsCount && playtimeRecord.sessionsCount > 0) && (
-                    <span>
-                      <strong className="text-white font-semibold">{playtimeRecord.sessionsCount}</strong> {playtimeRecord.sessionsCount === 1 ? 'session' : 'sessions'}
-                    </span>
-                  )}
-                  <span>
-                    Last played:{' '}
-                    <span className="text-white font-mono font-medium">
-                      {formatLastPlayed(playtimeRecord?.lastPlayed || game.lastPlayed)}
-                    </span>
-                  </span>
+              {standaloneLaunchMessage && (
+                <div className="p-3.5 rounded-xl bg-sky-950/70 border border-sky-400/50 text-sky-200 text-xs font-mono font-bold animate-in fade-in flex items-center gap-2.5">
+                  <Sliders size={16} className="text-sky-400 shrink-0" />
+                  <span>{standaloneLaunchMessage}</span>
                 </div>
-                <div className="text-[11px] text-deck-dim/60 flex items-center gap-1.5 ml-auto italic">
-                  <span>✓ Paused & suspended time excluded</span>
+              )}
+
+              {downloading && (
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-deck-panel-2 border border-deck-line">
+                  <div className="flex items-center justify-between text-xs text-deck-dim">
+                    <span>Downloading ROM for seamless offline play...</span>
+                    <span className="font-mono font-bold text-white">{Math.round(progress || 0)}%</span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-black/50 overflow-hidden border border-deck-line">
+                    <div className="h-full bg-deck-accent transition-[width] duration-200" style={{ width: `${progress}%` }} />
+                  </div>
                 </div>
-              </div>
-            </section>
+              )}
 
-            {/* Steam Deck Battery & TDP Profile Optimizer */}
-            <DeckPowerCard platformSlug={game.platformSlug} platformName={game.platformName} />
-
-            {/* Multi-Disc & Revision Carousel */}
-            {game.files && game.files.length > 1 && (
-              <section data-focusable tabIndex={-1} className={section}>
-                <div className="flex items-center justify-between mb-3.5">
-                  <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-lg bg-deck-accent/15 border border-deck-accent/30 flex items-center justify-center text-deck-accent">
-                      <Disc size={15} />
+              {/* Missing Standalone Emulator Alert Banner */}
+              {isNative && flatpakId && flatpakInstalled === false && (
+                <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-10 w-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
+                      <AlertTriangle size={20} />
                     </div>
                     <div>
-                      <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent flex items-center gap-2">
-                        Multi-Disc & File Carousel ({game.files.length} Discs)
-                      </h2>
-                      <div className="text-[11px] text-deck-dim">
-                        Select which disc or revision to boot on launch
+                      <h3 className="font-extrabold text-sm text-white flex items-center gap-2">
+                        Standalone Emulator Required ({activeCoreName})
+                      </h3>
+                      <p className="text-xs text-amber-200/80">
+                        {activeCoreName} ({flatpakId}) is not installed on this Steam Deck. Install it directly from DeckRomM.
+                      </p>
+                      {flatpakError && <p className="text-xs text-red-400 font-semibold mt-1">{flatpakError}</p>}
+                    </div>
+                  </div>
+
+                  <button
+                    data-focusable
+                    disabled={flatpakInstalling}
+                    onClick={handleInstallFlatpak}
+                    className="px-4 py-2.5 rounded-xl text-xs font-extrabold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-2 border border-blue-400/30 shadow-lg transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                  >
+                    {flatpakInstalling ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Installing {flatpakProgress != null ? `${flatpakProgress}%` : ''}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download size={16} />
+                        <span>Install {activeCoreName}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* BIOS requirement indicator */}
+              {(['ps2', 'playstation-2', 'playstation2', 'psx', 'ps1', 'playstation', 'dc', 'dreamcast'].includes(game.platformSlug?.toLowerCase() || '')) && (
+                <div className="flex items-center gap-3 px-3.5 py-2 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs">
+                  <Cpu size={16} className="text-purple-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-bold text-purple-200">
+                      {['ps2', 'playstation-2', 'playstation2'].includes(game.platformSlug?.toLowerCase() || '') ? 'PS2 BIOS Required: ' : 'System BIOS: '}
+                    </span>
+                    <span className="text-purple-300/80">
+                      {['ps2', 'playstation-2', 'playstation2'].includes(game.platformSlug?.toLowerCase() || '')
+                        ? 'PCSX2 requires a PS2 BIOS file to boot.'
+                        : 'Ensure system BIOS files are in ~/Emulation/bios.'}
+                    </span>
+                  </div>
+                  {onOpenBiosModal && (
+                    <button
+                      data-focusable
+                      onClick={() => onOpenBiosModal(game.platformSlug)}
+                      className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all"
+                    >
+                      Manage BIOS
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Xbox Environment requirement indicator */}
+              {(['xbox', 'og-xbox', 'original-xbox'].includes(game.platformSlug?.toLowerCase() || '')) && (
+                <div className="flex flex-wrap items-center gap-3 px-3.5 py-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs">
+                  <HardDrive size={16} className="text-emerald-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-emerald-200">Xbox (xemu) Environment:</span>
+                      <span className="text-emerald-300/80">
+                        Requires 8GB Virtual Hard Disk (xbox_hdd.qcow2), MCPX Boot ROM, & BIOS.
+                      </span>
+                    </div>
+                    {xboxSetupMessage && (
+                      <div className="text-[11px] text-emerald-300 font-semibold mt-1">{xboxSetupMessage}</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      data-focusable
+                      disabled={settingUpXbox}
+                      onClick={async () => {
+                        setSettingUpXbox(true);
+                        soundService.playTick();
+                        try {
+                          const res = await rommApi.autoSetupXbox();
+                          if (res.ok) {
+                            soundService.playSuccess();
+                            setXboxSetupMessage('✓ 8GB HDD created & xemu.toml configured!');
+                          } else {
+                            soundService.playBack();
+                            setXboxSetupMessage(`Setup note: ${res.message}`);
+                          }
+                        } catch (e: any) {
+                          soundService.playBack();
+                          setXboxSetupMessage(`Error: ${e.message}`);
+                        } finally {
+                          setSettingUpXbox(false);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all disabled:opacity-50"
+                    >
+                      {settingUpXbox ? 'Configuring...' : '1-Click Setup Xbox'}
+                    </button>
+                    {onOpenBiosModal && (
+                      <button
+                        data-focusable
+                        onClick={() => onOpenBiosModal('xbox')}
+                        className="px-2.5 py-1 rounded-lg bg-deck-subtle hover:bg-deck-subtle-hover border border-deck-line text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-sm transition-all"
+                      >
+                        Manage BIOS & HDD
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Server Tags */}
+              {game.tags && game.tags.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Tag size={14} className="text-deck-dim" />
+                  <span className="text-xs font-bold text-deck-dim uppercase tracking-wider">Tags:</span>
+                  {game.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-2.5 py-1 rounded-md text-xs font-semibold bg-deck-accent/15 border border-deck-accent/30 text-deck-accent"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* About description */}
+              <section data-focusable tabIndex={-1} className={section}>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent mb-2.5">About</h2>
+                {loadingDetails && !game.summary ? (
+                  <div className="flex items-center gap-2 text-deck-dim">
+                    <Loader2 size={16} className="animate-spin" /> Loading details
+                  </div>
+                ) : (
+                  <p className="text-sm sm:text-base leading-relaxed whitespace-pre-line text-deck-text/90">
+                    {game.summary || 'No description available.'}
+                  </p>
+                )}
+              </section>
+
+              {/* Steam Deck Battery & TDP Profile Optimizer */}
+              <DeckPowerCard platformSlug={game.platformSlug} platformName={game.platformName} />
+
+              {/* Playtime Tracker Section */}
+              <section data-focusable tabIndex={-1} className={`${section} flex flex-col gap-3.5`}>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-11 w-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
+                      <Clock size={22} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-extrabold uppercase tracking-wider text-deck-accent">Hours Played</span>
+                        <span className="text-[10px] text-deck-dim/70 font-mono">(active play)</span>
+                      </div>
+                      <div className="flex items-baseline gap-2.5 flex-wrap">
+                        <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">{playtimeDetail.primary}</span>
+                        {playtimeDetail.secondary && (
+                          <span className="text-xs font-mono text-deck-dim font-medium">({playtimeDetail.secondary})</span>
+                        )}
                       </div>
                     </div>
                   </div>
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-deck-panel-2 border border-deck-line text-deck-dim font-bold">
-                    Active: Disc {selectedFileIndex + 1}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {game.files.map((file, idx) => {
-                    const isSelected = selectedFileIndex === idx;
-                    const ext = file.fileName.split('.').pop()?.toUpperCase() || 'ROM';
-                    return (
+
+                  {/* RomM Sync indicator & manual sync button */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isSyncingPlaytime ? (
+                      <div className="flex items-center gap-2 text-xs font-bold text-deck-dim bg-deck-panel-2 px-3 py-2 rounded-xl border border-deck-line">
+                        <Loader2 size={14} className="animate-spin text-deck-accent" />
+                        <span>Syncing with RomM...</span>
+                      </div>
+                    ) : playtimeRecord?.lastSyncedAt ? (
                       <button
-                        key={file.id || idx}
                         data-focusable
-                        onClick={() => {
-                          setSelectedFileIndex(idx);
-                          setGame((g) => ({ ...g, fileName: file.fileName, fileSizeBytes: file.fileSizeBytes }));
-                          soundService.playSelect();
-                          onToast?.(`Boot target set to Disc ${idx + 1} (${file.fileName})`, 'ok');
-                        }}
-                        className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
-                          isSelected
-                            ? 'bg-deck-accent/20 border-deck-accent shadow-md'
-                            : 'bg-deck-panel-2/90 border-deck-line hover:border-deck-dim'
+                        onClick={handleSyncPlaytime}
+                        title="Playtime is synchronized with your RomM server. Click to re-sync."
+                        className="flex items-center gap-2 text-xs font-bold text-deck-ok bg-deck-ok/10 hover:bg-deck-ok/20 border border-deck-ok/30 px-3.5 py-2 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+                      >
+                        <Cloud size={14} className="text-deck-ok" />
+                        <span>Synced with RomM</span>
+                        <RefreshCw size={12} className="opacity-60 ml-0.5" />
+                      </button>
+                    ) : totalPlaytimeSeconds > 0 ? (
+                      <button
+                        data-focusable
+                        onClick={handleSyncPlaytime}
+                        title="Sync this game's playtime to your RomM server"
+                        className="flex items-center gap-2 text-xs font-bold text-sky-200 bg-sky-950/60 hover:bg-sky-900/70 border border-sky-400/40 px-3.5 py-2 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+                      >
+                        <RefreshCw size={14} className="text-sky-400" />
+                        <span>Sync to RomM</span>
+                      </button>
+                    ) : (
+                      <div className="text-xs text-deck-dim/70 font-mono px-3 py-1.5 rounded-lg bg-deck-panel-2/40 border border-deck-line/40">
+                        Unplayed
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Session breakdown & pause immunity guarantee */}
+                <div className="flex items-center justify-between gap-3 text-xs text-deck-dim pt-2 border-t border-deck-line/40 flex-wrap">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    {Boolean(playtimeRecord?.sessionsCount && playtimeRecord.sessionsCount > 0) && (
+                      <span>
+                        <strong className="text-white font-semibold">{playtimeRecord.sessionsCount}</strong> {playtimeRecord.sessionsCount === 1 ? 'session' : 'sessions'}
+                      </span>
+                    )}
+                    <span>
+                      Last played:{' '}
+                      <span className="text-white font-mono font-medium">
+                        {formatLastPlayed(playtimeRecord?.lastPlayed || game.lastPlayed)}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-deck-dim/60 flex items-center gap-1.5 ml-auto italic">
+                    <span>✓ Paused & suspended time excluded</span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Multi-Disc & Revision Carousel */}
+              {game.files && game.files.length > 1 && (
+                <section data-focusable tabIndex={-1} className={section}>
+                  <div className="flex items-center justify-between mb-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-lg bg-deck-accent/15 border border-deck-accent/30 flex items-center justify-center text-deck-accent">
+                        <Disc size={15} />
+                      </div>
+                      <div>
+                        <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent flex items-center gap-2">
+                          Multi-Disc & File Carousel ({game.files.length} Discs)
+                        </h2>
+                        <div className="text-[11px] text-deck-dim">
+                          Select which disc or revision to boot on launch
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-deck-panel-2 border border-deck-line text-deck-dim font-bold">
+                      Active: Disc {selectedFileIndex + 1}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {game.files.map((file, idx) => {
+                      const isSelected = selectedFileIndex === idx;
+                      const ext = file.fileName.split('.').pop()?.toUpperCase() || 'ROM';
+                      return (
+                        <button
+                          key={file.id || idx}
+                          data-focusable
+                          onClick={() => {
+                            setSelectedFileIndex(idx);
+                            setGame((g) => ({ ...g, fileName: file.fileName, fileSizeBytes: file.fileSizeBytes }));
+                            soundService.playSelect();
+                            onToast?.(`Boot target set to Disc ${idx + 1} (${file.fileName})`, 'ok');
+                          }}
+                          className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                            isSelected
+                              ? 'bg-deck-accent/20 border-deck-accent shadow-md'
+                              : 'bg-deck-panel-2/90 border-deck-line hover:border-deck-dim'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 font-bold font-mono text-xs ${
+                                isSelected
+                                  ? 'bg-deck-accent text-white shadow-sm'
+                                  : 'bg-black/40 text-deck-dim border border-deck-line'
+                              }`}
+                            >
+                              <Disc size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-extrabold text-white flex items-center gap-1.5 truncate">
+                                <span>Disc {idx + 1}</span>
+                                <span className="px-1.5 py-0.2 rounded bg-black/40 text-[9px] font-mono font-bold text-sky-300 border border-sky-400/30">
+                                  {ext}
+                                </span>
+                              </div>
+                              <div className="text-[11px] font-mono text-deck-dim truncate mt-0.5" title={file.fileName}>
+                                {file.fileName}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end shrink-0 gap-1">
+                            <span className="text-[11px] font-mono text-deck-dim">{formatBytes(file.fileSizeBytes)}</span>
+                            {isSelected && (
+                              <span className="text-[10px] font-bold text-deck-ok bg-deck-ok/20 border border-deck-ok/40 px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                <Check size={10} /> Active Target
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: SAVES & STORAGE */}
+          {activeTab === 'saves' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Cloud & Local Save Manager • RPG Backup Vault */}
+              <SaveVaultSection game={game} onToast={onToast} />
+
+              {/* Rich Save State Timeline with Thumbnails */}
+              <section data-focusable tabIndex={-1} className={section}>
+                <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-7 w-7 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                      <Save size={15} />
+                    </div>
+                    <div>
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent flex items-center gap-2">
+                        Save State Timeline (Slots 1–5)
+                      </h2>
+                      <div className="text-[11px] text-deck-dim">
+                        In-game screenshot snapshots & RomM cloud synchronisation
+                      </div>
+                    </div>
+                  </div>
+
+                  {loadingSaveStates ? (
+                    <div className="flex items-center gap-1.5 text-xs text-deck-dim">
+                      <Loader2 size={13} className="animate-spin text-deck-accent" />
+                      <span>Loading states...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-deck-dim flex items-center gap-1">
+                        <Cloud size={13} className={saveStatesData?.cloudOk ? 'text-deck-ok' : 'text-deck-dim'} />
+                        <span>{saveStatesData?.cloudOk ? 'RomM Cloud Linked' : 'Deck Local'}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Slot Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                  {[1, 2, 3, 4, 5].map((slotNum) => {
+                    const state = saveStatesData?.slots[slotNum];
+                    const hasState = Boolean(state);
+                    const isCloud = state?.cloudId != null;
+                    const isLocal = state?.source === 'local' || state?.data != null;
+                    const isBoth = isCloud && isLocal;
+
+                    const dateFormatted = state?.timestamp
+                      ? new Date(state.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      : null;
+
+                    return (
+                      <div
+                        key={slotNum}
+                        className={`relative rounded-xl border overflow-hidden flex flex-col transition-all ${
+                          hasState
+                            ? 'bg-deck-panel-2 border-deck-line shadow-sm'
+                            : 'bg-deck-panel-2/40 border-deck-line/40 opacity-75'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 font-bold font-mono text-xs ${
-                              isSelected
-                                ? 'bg-deck-accent text-white shadow-sm'
-                                : 'bg-black/40 text-deck-dim border border-deck-line'
-                            }`}
-                          >
-                            <Disc size={16} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-extrabold text-white flex items-center gap-1.5 truncate">
-                              <span>Disc {idx + 1}</span>
-                              <span className="px-1.5 py-0.2 rounded bg-black/40 text-[9px] font-mono font-bold text-sky-300 border border-sky-400/30">
-                                {ext}
+                        {/* Slot Header Banner */}
+                        <div className="px-2.5 py-1.5 bg-black/40 border-b border-deck-line/60 flex items-center justify-between text-[11px]">
+                          <span className="font-extrabold text-white font-mono">Slot {slotNum}</span>
+                          {hasState ? (
+                            isBoth ? (
+                              <span className="text-[9px] font-bold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-500/30 flex items-center gap-1">
+                                <Check size={9} /> Synced
                               </span>
-                            </div>
-                            <div className="text-[11px] font-mono text-deck-dim truncate mt-0.5" title={file.fileName}>
-                              {file.fileName}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-end shrink-0 gap-1">
-                          <span className="text-[11px] font-mono text-deck-dim">{formatBytes(file.fileSizeBytes)}</span>
-                          {isSelected && (
-                            <span className="text-[10px] font-bold text-deck-ok bg-deck-ok/20 border border-deck-ok/40 px-1.5 py-0.2 rounded flex items-center gap-0.5">
-                              <Check size={10} /> Active Target
-                            </span>
+                            ) : isCloud ? (
+                              <span className="text-[9px] font-bold text-sky-300 bg-sky-500/20 px-1.5 py-0.2 rounded border border-sky-500/30 flex items-center gap-1">
+                                <Cloud size={9} /> Cloud
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-amber-300 bg-amber-500/20 px-1.5 py-0.2 rounded border border-amber-500/30">
+                                Local Deck
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-[9px] text-deck-dim/60 font-mono">Empty</span>
                           )}
                         </div>
-                      </button>
+
+                        {/* 16:9 Thumbnail Image */}
+                        <div className="relative aspect-video bg-[#080c14] flex items-center justify-center overflow-hidden">
+                          {state?.screenshot ? (
+                            <img
+                              src={state.screenshot}
+                              alt={`Slot ${slotNum} snapshot`}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-deck-dim/50 p-2 text-center gap-1">
+                              <Gamepad2 size={22} className="opacity-40" />
+                              <span className="text-[10px] font-mono">{hasState ? 'State Saved' : 'No State'}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Slot Footer info */}
+                        <div className="p-2 flex flex-col justify-between gap-1 flex-1 bg-black/20 text-[10px]">
+                          <div className="truncate text-deck-text/90 font-mono" title={state?.levelName || `Slot ${slotNum}`}>
+                            {state?.levelName || (hasState ? 'In-Game State' : 'Unused')}
+                          </div>
+                          <div className="text-deck-dim text-[9px] font-mono">
+                            {dateFormatted || 'Available slot'}
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
               </section>
-            )}
 
-            {/* Cloud & Local Save Manager • RPG Backup Vault */}
-            <SaveVaultSection game={game} onToast={onToast} />
+              {/* PCSX2 Memory Card Sync (PlayStation 2) */}
+              {game.platformSlug === 'ps2' && (
+                <Pcsx2MemcardManager game={game} onToast={onToast || ((msg) => {})} />
+              )}
 
-            {/* Rich Save State Timeline with Thumbnails */}
-            <section data-focusable tabIndex={-1} className={section}>
-              <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-7 w-7 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                    <Save size={15} />
-                  </div>
-                  <div>
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent flex items-center gap-2">
-                      Save State Timeline (Slots 1–5)
+              {/* Local Storage & ROM File Management */}
+              <section data-focusable tabIndex={-1} className={section}>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <HardDrive size={18} className="text-deck-accent" />
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent">
+                      Local Storage & ROM File
                     </h2>
-                    <div className="text-[11px] text-deck-dim">
-                      In-game screenshot snapshots & RomM cloud synchronisation
-                    </div>
                   </div>
+                  {installed && (
+                    <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                      Stored Locally on Steam Deck
+                    </span>
+                  )}
                 </div>
 
-                {loadingSaveStates ? (
-                  <div className="flex items-center gap-1.5 text-xs text-deck-dim">
-                    <Loader2 size={13} className="animate-spin text-deck-accent" />
-                    <span>Loading states...</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-black/40 border border-deck-line space-y-1">
+                    <div className="text-deck-dim">ROM File Name</div>
+                    <div className="font-mono font-bold text-white truncate" title={game.fileName}>{game.fileName}</div>
                   </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono text-deck-dim flex items-center gap-1">
-                      <Cloud size={13} className={saveStatesData?.cloudOk ? 'text-deck-ok' : 'text-deck-dim'} />
-                      <span>{saveStatesData?.cloudOk ? 'RomM Cloud Linked' : 'Deck Local'}</span>
-                    </span>
+                  <div className="p-3 rounded-xl bg-black/40 border border-deck-line space-y-1">
+                    <div className="text-deck-dim">File Size on Disk</div>
+                    <div className="font-mono font-bold text-white">{formatBytes(game.fileSizeBytes)}</div>
+                  </div>
+                  {game.localPath && (
+                    <div className="sm:col-span-2 p-3 rounded-xl bg-black/40 border border-deck-line space-y-1">
+                      <div className="text-deck-dim">Installed File Path</div>
+                      <div className="font-mono text-xs text-sky-200 truncate" title={game.localPath}>{game.localPath}</div>
+                    </div>
+                  )}
+                </div>
+
+                {installed && (
+                  <div className="mt-4 pt-3 border-t border-deck-line/60 flex items-center justify-between gap-4">
+                    <div className="text-xs text-deck-dim">
+                      Delete local copy to free storage space. Your RomM server copy and saves remain safe.
+                    </div>
+                    <button
+                      data-focusable
+                      id="detail-delete"
+                      onClick={() => onDelete(game)}
+                      className={`${btn} bg-red-950/40 border-red-500/50 text-red-300 hover:text-white hover:bg-red-900/60 flex items-center gap-2`}
+                      title="Delete local ROM copy to free storage"
+                    >
+                      <Trash2 size={16} className="text-red-400 shrink-0" />
+                      <span>Delete Local ROM</span>
+                    </button>
                   </div>
                 )}
-              </div>
+              </section>
+            </div>
+          )}
 
-              {/* Slot Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
-                {[1, 2, 3, 4, 5].map((slotNum) => {
-                  const state = saveStatesData?.slots[slotNum];
-                  const hasState = Boolean(state);
-                  const isCloud = state?.cloudId != null;
-                  const isLocal = state?.source === 'local' || state?.data != null;
-                  const isBoth = isCloud && isLocal;
-
-                  const dateFormatted = state?.timestamp
-                    ? new Date(state.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                    : null;
-
-                  return (
-                    <div
-                      key={slotNum}
-                      className={`relative rounded-xl border overflow-hidden flex flex-col transition-all ${
-                        hasState
-                          ? 'bg-deck-panel-2 border-deck-line shadow-sm'
-                          : 'bg-deck-panel-2/40 border-deck-line/40 opacity-75'
-                      }`}
-                    >
-                      {/* Slot Header Banner */}
-                      <div className="px-2.5 py-1.5 bg-black/40 border-b border-deck-line/60 flex items-center justify-between text-[11px]">
-                        <span className="font-extrabold text-white font-mono">Slot {slotNum}</span>
-                        {hasState ? (
-                          isBoth ? (
-                            <span className="text-[9px] font-bold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-500/30 flex items-center gap-1">
-                              <Check size={9} /> Synced
-                            </span>
-                          ) : isCloud ? (
-                            <span className="text-[9px] font-bold text-sky-300 bg-sky-500/20 px-1.5 py-0.2 rounded border border-sky-500/30 flex items-center gap-1">
-                              <Cloud size={9} /> Cloud
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-bold text-amber-300 bg-amber-500/20 px-1.5 py-0.2 rounded border border-amber-500/30">
-                              Local Deck
-                            </span>
-                          )
-                        ) : (
-                          <span className="text-[9px] text-deck-dim/60 font-mono">Empty</span>
-                        )}
+          {/* TAB 3: GUIDES & TOOLS */}
+          {activeTab === 'guides' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Retro Game Manual & Strategy Guide Launch Card */}
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-950/30 to-deck-panel border border-amber-500/30 shadow-md flex flex-col justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-10 w-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
+                        <BookOpen size={20} />
                       </div>
-
-                      {/* 16:9 Thumbnail Image */}
-                      <div className="relative aspect-video bg-[#080c14] flex items-center justify-center overflow-hidden">
-                        {state?.screenshot ? (
-                          <img
-                            src={state.screenshot}
-                            alt={`Slot ${slotNum} snapshot`}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-deck-dim/50 p-2 text-center gap-1">
-                            <Gamepad2 size={22} className="opacity-40" />
-                            <span className="text-[10px] font-mono">{hasState ? 'State Saved' : 'No State'}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Slot Footer info */}
-                      <div className="p-2 flex flex-col justify-between gap-1 flex-1 bg-black/20 text-[10px]">
-                        <div className="truncate text-deck-text/90 font-mono" title={state?.levelName || `Slot ${slotNum}`}>
-                          {state?.levelName || (hasState ? 'In-Game State' : 'Unused')}
-                        </div>
-                        <div className="text-deck-dim text-[9px] font-mono">
-                          {dateFormatted || 'Available slot'}
-                        </div>
+                      <div>
+                        <h3 className="font-extrabold text-sm text-white">Manual & Strategy Guide</h3>
+                        <div className="text-[11px] text-amber-200/80">Retro Controls, Story & Cheats</div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section data-focusable tabIndex={-1} className={`${section} grid grid-cols-2 gap-x-8 gap-y-2.5 text-sm`}>
-              <h2 className="col-span-2 text-xs font-bold uppercase tracking-wider text-deck-accent mb-1.5">Details</h2>
-              {[
-                ['Hours Played', playtimeDetail.primary],
-                ['Last Played', formatLastPlayed(playtimeRecord?.lastPlayed || game.lastPlayed)],
-                ['Emulator Core', `${activeCoreName} (${activeCoreObj?.type === 'standalone' ? 'Standalone' : 'RetroArch'})`],
-                ['Steam Deck Power', `${getDeckPowerProfile(game.platformSlug).tdpRange} (${getDeckPowerProfile(game.platformSlug).label})`],
-                ['Est. Battery', `${getDeckPowerProfile(game.platformSlug).estimatedBatteryHours} (LCD) / ${getDeckPowerProfile(game.platformSlug).oledBatteryHours} (OLED)`],
-                ['File', game.fileName],
-                ['Size', formatBytes(game.fileSizeBytes)],
-                ['Publisher', game.publisher],
-                ['Developer', game.developer],
-                ['Region', game.region],
-                ['Players', game.players ? String(game.players) : ''],
-                ['Rating', game.rating ? String(Math.round(game.rating)) : ''],
-                ['Local path', game.localPath],
-              ]
-                .filter(([, v]) => v)
-                .map(([k, v]) => (
-                  <div key={k} className="flex gap-3 min-w-0 text-xs sm:text-sm">
-                    <span className="w-28 shrink-0 text-deck-dim font-medium">{k}</span>
-                    <span className="truncate font-mono text-deck-text font-medium" title={String(v)}>{v}</span>
+                    <p className="text-xs text-deck-dim leading-relaxed">
+                      Handheld strategy guide with original console controller mappings, level objectives, item rosters, and secret passwords.
+                    </p>
                   </div>
-                ))}
-            </section>
 
-            {/* RetroAchievements Integration */}
-            <RetroAchievementsPanel
-              game={game}
-              config={config}
-              onOpenSettings={onOpenSettings}
-              onToast={onToast}
-            />
+                  <button
+                    data-focusable
+                    id="detail-manual-btn"
+                    onClick={() => {
+                      soundService.playTick();
+                      setManualModalOpen(true);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-amber-500/25 hover:bg-amber-500/35 border border-amber-500/50 text-amber-200 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+                  >
+                    <BookOpen size={16} className="text-amber-400 shrink-0" />
+                    <span>Open Game Manual & Guide</span>
+                  </button>
+                </div>
 
-            {/* Other Games in the Series & Similar Games We Have */}
-            <RelatedGamesSection
-              currentGame={game}
-              allGames={allGames || []}
-              onSelectGame={(selected) => {
-                setGame(selected);
-                onSelectGame?.(selected);
-                const container = document.getElementById('game-detail-scroll-container');
-                if (container) {
-                  container.scrollTo({ top: 0, behavior: 'smooth' });
-                }
-              }}
-            />
+                {/* ROM Patcher & Hack Tool Launch Card */}
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-cyan-950/30 to-deck-panel border border-cyan-500/30 shadow-md flex flex-col justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-10 w-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0 shadow-inner">
+                        <Wand2 size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-sm text-white">ROM Patcher & Hacks</h3>
+                        <div className="text-[11px] text-cyan-200/80">Translations & Color Restorations</div>
+                      </div>
+                    </div>
+                    <p className="text-xs text-deck-dim leading-relaxed">
+                      Apply fan translations, bugfix patches, color restoration, or gameplay overhauls (IPS, BPS, and UPS patches) directly on Steam Deck.
+                    </p>
+                  </div>
 
-            {game.screenshots && game.screenshots.length > 0 && (
-              <section className={section}>
-                <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent mb-3">Screenshots</h2>
-                <div className="grid grid-cols-3 gap-3">
-                  {game.screenshots.slice(0, 9).map((s) => (
-                    <div key={s} data-focusable tabIndex={-1} className="rounded-xl overflow-hidden aspect-video bg-deck-panel-2 border border-deck-line">
-                      <img src={s} alt="" loading="lazy" className="w-full h-full object-cover" />
+                  <button
+                    data-focusable
+                    id="detail-patch-rom"
+                    onClick={() => setPatcherOpen(true)}
+                    className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-cyan-500/25 hover:bg-cyan-500/35 border border-cyan-500/50 text-cyan-200 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+                  >
+                    <Wand2 size={16} className="text-cyan-400 shrink-0" />
+                    <span>Launch ROM Patcher</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* RetroAchievements Integration */}
+              <RetroAchievementsPanel
+                game={game}
+                config={config}
+                onOpenSettings={onOpenSettings}
+                onToast={onToast}
+              />
+            </div>
+          )}
+
+          {/* TAB 4: MEDIA & SPECS */}
+          {activeTab === 'media' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Screenshots Gallery */}
+              {game.screenshots && game.screenshots.length > 0 && (
+                <section className={section}>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-deck-accent mb-3">Screenshots</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {game.screenshots.slice(0, 9).map((s) => (
+                      <div key={s} data-focusable tabIndex={-1} className="rounded-xl overflow-hidden aspect-video bg-deck-panel-2 border border-deck-line shadow-sm">
+                        <img src={s} alt="" loading="lazy" className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Full Technical Specifications */}
+              <section data-focusable tabIndex={-1} className={`${section} grid grid-cols-2 gap-x-8 gap-y-2.5 text-sm`}>
+                <h2 className="col-span-2 text-xs font-bold uppercase tracking-wider text-deck-accent mb-1.5">Details & Specifications</h2>
+                {[
+                  ['Hours Played', playtimeDetail.primary],
+                  ['Last Played', formatLastPlayed(playtimeRecord?.lastPlayed || game.lastPlayed)],
+                  ['Emulator Core', `${activeCoreName} (${activeCoreObj?.type === 'standalone' ? 'Standalone' : 'RetroArch'})`],
+                  ['Steam Deck Power', `${getDeckPowerProfile(game.platformSlug).tdpRange} (${getDeckPowerProfile(game.platformSlug).label})`],
+                  ['Est. Battery', `${getDeckPowerProfile(game.platformSlug).estimatedBatteryHours} (LCD) / ${getDeckPowerProfile(game.platformSlug).oledBatteryHours} (OLED)`],
+                  ['File', game.fileName],
+                  ['Size', formatBytes(game.fileSizeBytes)],
+                  ['Publisher', game.publisher],
+                  ['Developer', game.developer],
+                  ['Region', game.region],
+                  ['Players', game.players ? String(game.players) : ''],
+                  ['Rating', game.rating ? String(Math.round(game.rating)) : ''],
+                  ['Local path', game.localPath],
+                ]
+                  .filter(([, v]) => v)
+                  .map(([k, v]) => (
+                    <div key={k} className="flex gap-3 min-w-0 text-xs sm:text-sm">
+                      <span className="w-28 shrink-0 text-deck-dim font-medium">{k}</span>
+                      <span className="truncate font-mono text-deck-text font-medium" title={String(v)}>{v}</span>
                     </div>
                   ))}
-                </div>
               </section>
-            )}
-          </div>
+
+              {/* Other Games in the Series & Similar Games We Have */}
+              <RelatedGamesSection
+                currentGame={game}
+                allGames={allGames || []}
+                onSelectGame={(selected) => {
+                  setGame(selected);
+                  onSelectGame?.(selected);
+                  const container = document.getElementById('game-detail-scroll-container');
+                  if (container) {
+                    container.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
+              />
+            </div>
+          )}
         </div>
       </FocusScope>
 
